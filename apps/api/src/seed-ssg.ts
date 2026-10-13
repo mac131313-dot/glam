@@ -1,0 +1,235 @@
+// Studio SS&G: prawdziwy grafik, cennik i godziny recepcji (materiały studia z 2026-10-13).
+// Dwie sale z osobnymi grafikami (reformery i zajęcia grupowe) oraz siłownia z wejściem QR.
+import type { Pool, ProductRules } from '@glam/core';
+import type { Db } from './db.ts';
+import { StudioScope } from './scope.ts';
+import { bookSession } from './services/booking.ts';
+import { consumeEntry, loadPass } from './services/passes.ts';
+import { fillSchedule } from './services/schedule.ts';
+import { loadStudio } from './services/studio.ts';
+
+export const SSG_STUDIO = 'st_ssg';
+
+export const SSG = {
+  owner: '+48500000201',
+  reception: '+48500000202',
+  weronika: '+48500000203',
+  albina: '+48500000204',
+  basia: '+48500000205',
+  magda: '+48500000206',
+  ania: '+48500000207',
+  piotr: '+48500000208',
+  weronikaB: '+48500000209',
+  weronikaG: '+48500000211',
+  julia: '+48500000212',
+};
+
+type Helpers = {
+  user: (phone: string, name: string) => string;
+  member: (studio: string, userId: string, role: string, joinedDaysAgo?: number, extra?: { bio?: string; goal?: string }) => unknown;
+  product: (studio: string, id: string, name: string, price: number, rules: ProductRules, desc: string, sort: number) => void;
+  buy: (studio: string, userId: string, productId: string, daysAgo: number, method?: string) => string;
+};
+
+const DAY = 86_400_000;
+
+export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpers) {
+  const S = SSG_STUDIO;
+  const iso = (d: Date) => d.toISOString();
+  const run = (sql: string, ...p: (string | number | null)[]) => db.prepare(sql).run(...p);
+
+  run(
+    `INSERT INTO studios (id, name, slug, invite_code, tagline, accent, look_json, logo, phone, policy_json, settings_json, guest_pass_price, welcome_approval, plan_id, status, catalog_visible, regulations, created_at)
+     VALUES (?, 'SS&G', 'ssg', 'SSG2026', 'Pilates reformer, zajęcia grupowe i siłownia', '#b9cfe0', ?, 'S', '+48 530 333 554', ?, ?, 8000, 0, 'studio', 'active', 1, ?, ?)`,
+    S,
+    JSON.stringify({ palette: 'sand', fonts: { display: 'playfair', head: 'urbanist', body: 'jakarta', label: 'urbanist' }, softness: 'softer' }),
+    JSON.stringify({ opensDaysAhead: 14, closesMinutesBefore: 120, cancelMinutesBefore: 120, waitlist: true }),
+    JSON.stringify({
+      support: {
+        hours: {
+          slots: [
+            { weekday: 1, from: '17:30', to: '21:15' },
+            { weekday: 2, from: '07:30', to: '10:15' },
+            { weekday: 2, from: '16:30', to: '21:15' },
+            { weekday: 3, from: '17:30', to: '20:15' },
+            { weekday: 4, from: '07:30', to: '10:15' },
+            { weekday: 4, from: '17:30', to: '21:15' },
+            { weekday: 5, from: '17:30', to: '20:15' },
+            { weekday: 6, from: '08:30', to: '11:15' },
+          ],
+        },
+        autoReply: 'Dzięki za wiadomość! Recepcja odpisze, gdy tylko będzie w studiu. W razie pytań: +48 530 333 554.',
+      },
+      guestPass: { validityDays: 60, variants: [{ id: 'single', label: 'Jedne zajęcia grupowe', priceGrosze: 8000, entries: 1, classTypeIds: ['ss_split', 'ss_aerial_stretch', 'ss_barre_glow', 'ss_aerial_pilates', 'ss_girly', 'ss_burn', 'ss_yoga_stretch'] }] },
+    }),
+    'Karnet Open nie obejmuje zajęć na reformerach. Kurs Szpagatu: karnet podstawowy obowiązuje w stałej grupie, karnet Flexy na dowolne grupy kursu.',
+    iso(now),
+  );
+
+  // ——— Zespół ———
+  const owner = user(SSG.owner, 'Właścicielka SS&G');
+  const reception = user(SSG.reception, 'Recepcja SS&G');
+  const T = {
+    weronika: user(SSG.weronika, 'Weronika'),
+    albina: user(SSG.albina, 'Albina'),
+    basia: user(SSG.basia, 'Basia'),
+    magda: user(SSG.magda, 'Magda'),
+    ania: user(SSG.ania, 'Ania'),
+    piotr: user(SSG.piotr, 'Piotr'),
+    weronikaB: user(SSG.weronikaB, 'Weronika B.'),
+    weronikaG: user(SSG.weronikaG, 'Weronika G.'),
+  };
+  member(S, owner, 'owner', 400);
+  member(S, reception, 'reception', 300);
+  for (const t of Object.values(T)) member(S, t, 'trainer', 200);
+
+  // ——— Obiekt i strefy ———
+  run("INSERT INTO facilities (id, studio_id, name) VALUES ('f_ssg', ?, 'SS&G')", S);
+  const zone = db.prepare("INSERT INTO zones (id, studio_id, facility_id, name, access) VALUES (?, ?, 'f_ssg', ?, ?)");
+  zone.run('z_ss_reformer', S, 'Sala reformerów', 'reserved');
+  zone.run('z_ss_group', S, 'Sala zajęć grupowych', 'reserved');
+  zone.run('z_ss_gym', S, 'Siłownia', 'checkin');
+
+  // ——— Typy zajęć ———
+  const ct = db.prepare('INSERT INTO class_types (id, studio_id, zone_id, name, level, color, description) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const REFORMER: [string, string, string, string, string][] = [
+    ['ss_core', 'Core & Mobility', 'wszystkie poziomy', '#c9d8e6', 'Mięśnie głębokie i mobilność stawów na reformerze.'],
+    ['ss_classic_basic', 'Pilates Klasyczny', 'podstawowy', '#e4d6c5', 'Klasyczna metoda pilates na reformerze – technika od podstaw.'],
+    ['ss_classic_mid', 'Pilates Klasyczny', 'średniozaawansowany', '#d8c3ab', 'Klasyczna metoda pilates na reformerze dla osób z doświadczeniem.'],
+    ['ss_ua', 'Reformer w języku ukraińskim', 'wszystkie poziomy', '#e6dcb8', 'Zajęcia na reformerze prowadzone po ukraińsku.'],
+    ['ss_hips', 'Unlock Your Hips', 'wszystkie poziomy', '#e9c9cf', 'Otwieranie i wzmacnianie bioder na reformerze.'],
+    ['ss_barre_booty', 'Barre & Booty', 'wszystkie poziomy', '#f0cfd8', 'Barre na reformerze z naciskiem na pośladki.'],
+    ['ss_barre_stretch', 'Barre & Stretch', 'wszystkie poziomy', '#dcd3ea', 'Barre na reformerze połączone z rozciąganiem.'],
+    ['ss_flow', 'Reformer Flow', 'wszystkie poziomy', '#cfe0d6', 'Płynne sekwencje na reformerze.'],
+  ];
+  const PRIVATE: [string, string, string][] = [
+    ['ss_private', 'Lekcja prywatna', 'Indywidualna lekcja na reformerze – termin ustalasz z recepcją.'],
+    ['ss_duo', 'Lekcja duo', 'Lekcja na reformerze we dwie – termin ustalasz z recepcją.'],
+  ];
+  const GROUP: [string, string, string, string, string][] = [
+    ['ss_split', 'Kurs Szpagatu', 'wszystkie poziomy', '#f2d9c4', 'Kurs rozciągania prowadzący krok po kroku do szpagatu.'],
+    ['ss_aerial_stretch', 'Aerial Stretch', 'wszystkie poziomy', '#d5e3ef', 'Rozciąganie w hamakach.'],
+    ['ss_barre_glow', 'Barre & Glow', 'wszystkie poziomy', '#f3e1c9', 'Barre przy drążku – smukła sylwetka i postawa.'],
+    ['ss_aerial_pilates', 'Aerial Pilates', 'wszystkie poziomy', '#c6d9e8', 'Pilates w hamakach.'],
+    ['ss_girly', 'Girly Pilates', 'wszystkie poziomy', '#f1d3dc', 'Pilates na macie w kobiecym klimacie.'],
+    ['ss_burn', 'Spalanie & Modelowanie', 'średnie', '#e8cdb9', 'Trening spalający połączony z modelowaniem sylwetki.'],
+    ['ss_yoga_stretch', 'Joga Stretch', 'wszystkie poziomy', '#d6e4d3', 'Joga i głębokie rozciąganie.'],
+  ];
+  for (const [id, name, level, color, desc] of REFORMER) ct.run(id, S, 'z_ss_reformer', name, level, color, desc);
+  for (const [id, name, desc] of PRIVATE) ct.run(id, S, 'z_ss_reformer', name, 'indywidualnie', '#ece4da', desc);
+  for (const [id, name, level, color, desc] of GROUP) ct.run(id, S, 'z_ss_group', name, level, color, desc);
+  const REFORMER_IDS = REFORMER.map(([id]) => id);
+  const GROUP_IDS = GROUP.map(([id]) => id);
+
+  // ——— Harmonogram (1 = poniedziałek) ———
+  const tpl = db.prepare(
+    "INSERT INTO schedule_templates (id, studio_id, class_type_id, trainer_id, weekday, start_time, duration_min, capacity, valid_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '2026-01-01')",
+  );
+  const AERIAL = new Set(['ss_aerial_stretch', 'ss_aerial_pilates']);
+  const capacity = (classTypeId: string) => (REFORMER_IDS.includes(classTypeId) ? 8 : AERIAL.has(classTypeId) ? 8 : 12);
+  const SLOTS: [number, string, string, keyof typeof T][] = [
+    // Reformery
+    [1, '08:00', 'ss_core', 'weronika'],
+    [1, '09:00', 'ss_ua', 'albina'],
+    [1, '18:00', 'ss_hips', 'weronika'],
+    [1, '19:00', 'ss_classic_mid', 'basia'],
+    [1, '20:00', 'ss_barre_booty', 'weronika'],
+    [2, '08:00', 'ss_classic_basic', 'basia'],
+    [2, '17:00', 'ss_ua', 'albina'],
+    [2, '18:00', 'ss_hips', 'basia'],
+    [2, '19:00', 'ss_barre_stretch', 'weronika'],
+    [2, '20:00', 'ss_barre_booty', 'weronika'],
+    [3, '09:00', 'ss_ua', 'albina'],
+    [3, '18:00', 'ss_flow', 'magda'],
+    [3, '19:00', 'ss_hips', 'magda'],
+    [4, '08:00', 'ss_hips', 'basia'],
+    [4, '18:00', 'ss_barre_stretch', 'weronika'],
+    [4, '20:00', 'ss_hips', 'weronika'],
+    [5, '09:00', 'ss_ua', 'albina'],
+    [5, '19:00', 'ss_flow', 'magda'],
+    [6, '09:00', 'ss_flow', 'magda'],
+    [6, '10:00', 'ss_hips', 'magda'],
+    // Zajęcia grupowe
+    [1, '18:00', 'ss_split', 'weronikaB'],
+    [1, '19:00', 'ss_aerial_pilates', 'weronika'],
+    [1, '20:00', 'ss_girly', 'magda'],
+    [2, '09:00', 'ss_split', 'ania'],
+    [2, '17:00', 'ss_aerial_stretch', 'weronika'],
+    [2, '18:00', 'ss_barre_glow', 'weronika'],
+    [2, '19:00', 'ss_split', 'ania'],
+    [3, '18:00', 'ss_burn', 'piotr'],
+    [3, '18:00', 'ss_yoga_stretch', 'weronika'],
+    [3, '19:00', 'ss_girly', 'basia'],
+    [4, '09:00', 'ss_split', 'weronikaG'],
+    [4, '19:00', 'ss_split', 'basia'],
+    [5, '18:00', 'ss_girly', 'weronika'],
+    [6, '09:00', 'ss_aerial_pilates', 'weronika'],
+  ];
+  const qualified = new Set<string>();
+  SLOTS.forEach(([weekday, time, classType, trainer], i) => {
+    tpl.run(`ss_t${i + 1}`, S, classType, T[trainer], weekday, time, 55, capacity(classType));
+    qualified.add(`${T[trainer]}|${classType}`);
+  });
+  for (const key of qualified) {
+    const [trainerId, classTypeId] = key.split('|');
+    run('INSERT INTO trainer_class_types (studio_id, trainer_id, class_type_id) VALUES (?, ?, ?)', S, trainerId, classTypeId);
+  }
+
+  // ——— Cennik: pilates reformer ———
+  const pool = (entries: number, classTypeIds: string[], label: string): Pool[] => [{ id: 'main', label, entries, classTypeIds }];
+  const reformerPass = (entries: number): ProductRules => ({ validityDays: 30, pools: pool(entries, REFORMER_IDS, 'Reformer') });
+  product(S, 'ss_ref1', 'Reformer – pojedyncze wejście', 12000, reformerPass(1), 'Jedne zajęcia na reformerze.', 1);
+  product(S, 'ss_ref4', 'Reformer – karnet 4 wejścia', 44000, reformerPass(4), 'Cztery zajęcia na reformerze.', 2);
+  product(S, 'ss_ref8', 'Reformer – karnet 8 wejść', 75000, reformerPass(8), 'Osiem zajęć na reformerze.', 3);
+  product(S, 'ss_ref10', 'Reformer – karnet 10 wejść', 90000, reformerPass(10), 'Dziesięć zajęć na reformerze.', 4);
+  product(S, 'ss_private1', 'Lekcja prywatna', 18000, { validityDays: 30, pools: pool(1, ['ss_private'], 'Lekcja prywatna') }, 'Indywidualna lekcja na reformerze.', 5);
+  product(S, 'ss_duo1', 'Lekcja duo', 30000, { validityDays: 30, pools: pool(1, ['ss_duo'], 'Lekcja duo') }, 'Lekcja na reformerze dla dwóch osób – cena za lekcję.', 6);
+
+  // ——— Cennik: zajęcia grupowe ———
+  const groupPass = (entries: number, classTypeIds: string[], label: string, validityDays = 30, extra: Partial<ProductRules> = {}): ProductRules => ({ validityDays, ...extra, pools: pool(entries, classTypeIds, label) });
+  product(S, 'ss_split8', 'Kurs Szpagatu – 8 wejść', 25000, groupPass(8, ['ss_split'], 'Kurs Szpagatu', 56, { weeklyLimit: 1 }), 'Osiem spotkań w Twojej stałej grupie kursu (raz w tygodniu).', 10);
+  product(S, 'ss_flexy', 'Karnet Flexy – Kurs Szpagatu', 36000, groupPass(8, ['ss_split'], 'Kurs Szpagatu', 42), 'Ważny 6 tygodni: 8 wejść na Kurs Szpagatu bez ograniczeń grupowych.', 11);
+  product(S, 'ss_yb4', 'Joga Stretch + Barre & Glow – 4 wejścia', 16000, groupPass(4, ['ss_yoga_stretch', 'ss_barre_glow'], 'Joga Stretch / Barre & Glow'), 'Cztery wejścia na Joga Stretch lub Barre & Glow.', 12);
+  product(S, 'ss_yb8', 'Joga Stretch + Barre & Glow – 8 wejść', 22000, groupPass(8, ['ss_yoga_stretch', 'ss_barre_glow'], 'Joga Stretch / Barre & Glow'), 'Osiem wejść na Joga Stretch lub Barre & Glow.', 13);
+  product(S, 'ss_girly4', 'Girly Pilates – 4 wejścia', 20000, groupPass(4, ['ss_girly'], 'Girly Pilates'), 'Cztery wejścia na Girly Pilates.', 14);
+  product(S, 'ss_girly8', 'Girly Pilates – 8 wejść', 25000, groupPass(8, ['ss_girly'], 'Girly Pilates'), 'Osiem wejść na Girly Pilates.', 15);
+  product(S, 'ss_aerial4', 'Aerial – 4 wejścia', 23000, groupPass(4, ['ss_aerial_pilates', 'ss_aerial_stretch'], 'Aerial'), 'Cztery wejścia na Aerial Pilates lub Aerial Stretch.', 16);
+  product(S, 'ss_aerial8', 'Aerial – 8 wejść', 35000, groupPass(8, ['ss_aerial_pilates', 'ss_aerial_stretch'], 'Aerial'), 'Osiem wejść na Aerial Pilates lub Aerial Stretch.', 17);
+  product(S, 'ss_burn4', 'Spalanie & Modelowanie – 4 wejścia', 22000, groupPass(4, ['ss_burn'], 'Spalanie & Modelowanie'), 'Cztery wejścia na Spalanie & Modelowanie.', 18);
+  product(S, 'ss_glow4', 'Back to school & Glow – 4 wejścia', 30000, groupPass(4, GROUP_IDS, 'Zajęcia grupowe'), 'Promocja: cztery wejścia na dowolne zajęcia grupowe.', 19);
+  product(S, 'ss_glow6', 'Back to school & Glow – 6 wejść', 42000, groupPass(6, GROUP_IDS, 'Zajęcia grupowe'), 'Promocja: sześć wejść na dowolne zajęcia grupowe.', 20);
+  product(S, 'ss_single', 'Pojedyncze wejście', 8000, { validityDays: 30, pools: [{ id: 'main', label: 'Wejście', entries: 1, classTypeIds: 'all', zoneIds: ['z_ss_group', 'z_ss_gym'] }] }, 'Jedno wejście na dowolne zajęcia grupowe albo na siłownię.', 21);
+  product(S, 'ss_open', 'Karnet Open', 65000, { validityDays: 28, unlimited: { zoneIds: ['z_ss_group', 'z_ss_gym'], classTypeIds: 'all' } }, 'Ważny 4 tygodnie: wszystkie zajęcia grupowe bez limitu + siłownia. Nie obejmuje reformerów.', 22);
+  product(S, 'ss_gym', 'Siłownia', 15000, { validityDays: 30, unlimited: { zoneIds: ['z_ss_gym'], classTypeIds: 'all' } }, 'Miesiąc na siłowni, wejście z kodem QR.', 23);
+  product(S, 'ss_gym_club', 'Siłownia dla klubowiczów', 12000, { validityDays: 30, unlimited: { zoneIds: ['z_ss_gym'], classTypeIds: 'all' } }, 'Cena dla osób z aktywnym karnetem w SS&G – sprzedaż w recepcji.', 24);
+  run(`UPDATE products SET channels_json = '["desk"]' WHERE id = 'ss_gym_club'`);
+
+  // ——— Grafik: 3 tygodnie wstecz i 4 do przodu ———
+  const scope = new StudioScope(db, S);
+  const studio = loadStudio(db, S);
+  fillSchedule(scope, studio, new Date(now.getTime() - 21 * DAY), 49);
+
+  // ——— Klientka demo: Julia, karnet na 8 reformerów (2 wizyty za nią, jedna rezerwacja) ———
+  const julia = user(SSG.julia, 'Julia');
+  member(S, julia, 'client', 30, { goal: 'Mocne biodra i lepsza postawa' });
+  run("INSERT OR REPLACE INTO consents (user_id, studio_id, kind, granted, updated_at) VALUES (?, '', 'terms', 1, ?)", julia, iso(now));
+  run('UPDATE users SET onboarded_at = ? WHERE id = ?', iso(new Date(now.getTime() - 30 * DAY)), julia);
+  const passId = buy(S, julia, 'ss_ref8', 12);
+  const past = scope.all<{ id: string }>(
+    "SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = 'ss_hips' AND starts_at < $now AND starts_at > $from ORDER BY starts_at DESC LIMIT 2",
+    { now: iso(now), from: iso(new Date(now.getTime() - 11 * DAY)) },
+  );
+  for (const s of past) {
+    const pass = loadPass(scope, passId)!;
+    scope.run(
+      "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'attended', $t, $t)",
+      { id: crypto.randomUUID(), s: s.id, u: julia, p: passId, t: iso(now) },
+    );
+    consumeEntry(scope, pass, 'main');
+  }
+  const next = scope.get<{ id: string }>(
+    "SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = 'ss_flow' AND status = 'scheduled' AND starts_at > $min ORDER BY starts_at LIMIT 1",
+    { min: iso(new Date(now.getTime() + 3 * 3_600_000)) },
+  );
+  if (next) bookSession(scope, studio, julia, next.id, now);
+}

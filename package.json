@@ -1,0 +1,19 @@
+{
+  "name": "glam",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run seed && (npm run dev -w @glam/api & npm run dev -w @glam/web & wait)",
+    "seed": "npm run seed -w @glam/api",
+    "test": "node --test \"packages/core/test/*.test.ts\" \"apps/api/test/*.test.ts\"",
+    "typecheck": "tsc -p packages/core && tsc -p apps/api && tsc -p apps/web"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
