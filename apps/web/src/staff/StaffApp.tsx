@@ -7,7 +7,7 @@ import { can, ROLE_LABEL, type Permission, type Role } from '@glam/core';
 import type { Me, MeStudio } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
-import { Spinner } from '../ui.tsx';
+import { Select, Spinner } from '../ui.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { Desk } from './Desk.tsx';
 import { LookEditor } from './LookEditor.tsx';
@@ -129,19 +129,13 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
         <div className="wordmark" style={{ fontSize: '1.5rem' }}>
           glam
         </div>
-        <select className="input grow" aria-label="Sekcja panelu" value={section} onChange={(e) => setSection(e.target.value)}>
-          {groups.map((g) => (
-            <optgroup key={g} label={g}>
-              {visible
-                .filter((s) => s.group === g)
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
+        <Select
+          className="grow"
+          ariaLabel="Sekcja panelu"
+          value={section}
+          onChange={setSection}
+          options={groups.flatMap((g) => visible.filter((s) => s.group === g).map((s) => ({ value: s.id, label: s.label, group: g })))}
+        />
         <button className="studio-chip" onClick={props.onSwitchStudio} aria-label={`Studio ${props.studio.name} – zmień`}>
           <StudioBrand studio={props.studio} showName={false} />
         </button>

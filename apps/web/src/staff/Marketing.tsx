@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { SEGMENT_LABEL, sentenceCount } from '@glam/core';
 import { api, fmtDay, useApi } from '../api.ts';
-import { Empty, Field, Spinner, Tabs, Toggle, useAction } from '../ui.tsx';
+import { Empty, Field, Select, Spinner, Tabs, Toggle, useAction } from '../ui.tsx';
 
 type Campaign = {
   id: string;
@@ -172,10 +172,15 @@ function Coupons() {
           <input className="input" placeholder="Opis" value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} />
         </div>
         <div className="row">
-          <select className="input" value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })} aria-label="Rodzaj">
-            <option value="percent">procent</option>
-            <option value="amount">kwota (gr)</option>
-          </select>
+          <Select
+            ariaLabel="Rodzaj"
+            value={f.kind}
+            onChange={(v) => setF({ ...f, kind: v })}
+            options={[
+              { value: 'percent', label: 'procent' },
+              { value: 'amount', label: 'kwota (gr)' },
+            ]}
+          />
           <input className="input" type="number" value={f.value} onChange={(e) => setF({ ...f, value: Number(e.target.value) })} aria-label="Wartość" />
           <input className="input" placeholder="Limit użyć" value={f.maxUses} onChange={(e) => setF({ ...f, maxUses: e.target.value })} />
           <input className="input" type="date" value={f.validTo} onChange={(e) => setF({ ...f, validTo: e.target.value })} aria-label="Ważny do" />

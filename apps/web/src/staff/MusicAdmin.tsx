@@ -2,7 +2,7 @@
 // klientek do akceptacji, top tygodnia ze wspólnej playlisty. GLAM nie odtwarza muzyki – tylko linkuje.
 import { useState } from 'react';
 import { api, fmtDay, useApi } from '../api.ts';
-import { Empty, Spinner, useAction } from '../ui.tsx';
+import { Empty, Select, Spinner, useAction } from '../ui.tsx';
 
 const PURPOSE: Record<string, string> = { class: 'Zajęcia', meditation: 'Medytacja', stretch: 'Rozciąganie', sleep: 'Sen', theme: 'Motyw', shared: 'Wspólna playlista klientek' };
 
@@ -85,14 +85,12 @@ export default function MusicAdmin() {
           ))}
         </div>
         {f.purpose === 'class' && (
-          <select className="input" value={f.classTypeId} onChange={(e) => setF({ ...f, classTypeId: e.target.value })} aria-label="Typ zajęć">
-            <option value="">Typ zajęć (opcjonalnie – domyślna playlista)</option>
-            {cfg.data?.classTypes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            ariaLabel="Typ zajęć"
+            value={f.classTypeId}
+            onChange={(v) => setF({ ...f, classTypeId: v })}
+            options={[{ value: '', label: 'Typ zajęć (opcjonalnie – domyślna playlista)' }, ...(cfg.data?.classTypes ?? []).map((c) => ({ value: c.id, label: c.name }))]}
+          />
         )}
         <button className="btn" disabled={!f.url || busy} onClick={() => run(() => api('/staff/playlists', { method: 'POST', body: { ...f, classTypeId: f.classTypeId || null } }).then(() => (setF({ ...f, url: '', name: '' }), data.reload())), 'Playlista dodana')}>
           Dodaj

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { api, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Empty, Field, Spinner, Tabs, Toggle, useAction } from '../ui.tsx';
+import { Empty, Field, Select, Spinner, Tabs, Toggle, useAction } from '../ui.tsx';
 
 type Absence = { id: string; trainer_name: string; date_from: string; date_to: string; note: string | null; sessions: { id: string; starts_at: string; class_name: string; suggestions: { id: string; name: string }[] }[] };
 
@@ -107,22 +107,18 @@ function Special() {
         <input className="input" placeholder="Halloween Flow" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
       </Field>
       <div className="row">
-        <select className="input" value={f.classTypeId} onChange={(e) => setF({ ...f, classTypeId: e.target.value })} aria-label="Typ zajęć">
-          <option value="">Typ zajęć</option>
-          {cfg.data.classTypes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <select className="input" value={f.trainerId} onChange={(e) => setF({ ...f, trainerId: e.target.value })} aria-label="Prowadząca">
-          <option value="">Prowadząca</option>
-          {cfg.data.trainers.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <Select
+          ariaLabel="Typ zajęć"
+          value={f.classTypeId}
+          onChange={(v) => setF({ ...f, classTypeId: v })}
+          options={[{ value: '', label: 'Typ zajęć' }, ...cfg.data.classTypes.map((c) => ({ value: c.id, label: c.name }))]}
+        />
+        <Select
+          ariaLabel="Prowadząca"
+          value={f.trainerId}
+          onChange={(v) => setF({ ...f, trainerId: v })}
+          options={[{ value: '', label: 'Prowadząca' }, ...cfg.data.trainers.map((t) => ({ value: t.id, label: t.name }))]}
+        />
       </div>
       <div className="row">
         <input className="input" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} aria-label="Data" />
@@ -142,14 +138,12 @@ function Special() {
         ))}
       </div>
       {f.kind === 'themed' && (
-        <select className="input" value={f.themeId} onChange={(e) => setF({ ...f, themeId: e.target.value })} aria-label="Motyw">
-          <option value="">Motyw (opcjonalnie)</option>
-          {themes.data?.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <Select
+          ariaLabel="Motyw"
+          value={f.themeId}
+          onChange={(v) => setF({ ...f, themeId: v })}
+          options={[{ value: '', label: 'Motyw (opcjonalnie)' }, ...(themes.data ?? []).map((t) => ({ value: t.id, label: t.name }))]}
+        />
       )}
       <Toggle label="Widoczne w grafiku klientek" checked={f.public} onChange={(v) => setF({ ...f, public: v })} />
       <button className="btn" disabled={!f.classTypeId || !f.trainerId || busy} onClick={() => run(() => api('/staff/sessions', { method: 'POST', body: { ...f, themeId: f.themeId || null } }), 'Zajęcia dodane do grafiku')}>

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { api, ApiError, localDate, useApi } from '../api.ts';
 import { ClassCover } from '../client/ClassCover.tsx';
-import { Spinner, useToast } from '../ui.tsx';
+import { Select, Spinner, useToast } from '../ui.tsx';
 import { preparePhoto } from './logoUpload.ts';
 import { WeekBoard, type BoardConfig } from './WeekBoard.tsx';
 
@@ -92,14 +92,7 @@ export function ScheduleAdmin() {
             </div>
             <div className="field grow">
               <label htmlFor="bz">Strefa</label>
-              <select id="bz" className="input" value={zone} onChange={(e) => setZone(e.target.value)}>
-                <option value="">Cały obiekt</option>
-                {data.zones.map((z) => (
-                  <option key={z.id} value={z.id}>
-                    {z.name}
-                  </option>
-                ))}
-              </select>
+              <Select id="bz" value={zone} onChange={setZone} options={[{ value: '', label: 'Cały obiekt' }, ...data.zones.map((z) => ({ value: z.id, label: z.name }))]} />
             </div>
           </div>
           <div className="field">

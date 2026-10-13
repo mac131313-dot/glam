@@ -1,9 +1,9 @@
 // Grafik tygodnia (C7): siedem kolumn, klik w zajęcia = edycja, „+” w dniu = nowe zajęcia.
 // Zapis od razu uzupełnia sesje na 4 tygodnie – bez osobnego „uzupełnij grafik”.
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { WEEKDAY_LONG, WEEKDAY_SHORT, weekdaysLabel } from '@glam/core';
 import { api, ApiError } from '../api.ts';
-import { Sheet, useToast } from '../ui.tsx';
+import { Select, Sheet, useToast } from '../ui.tsx';
 
 export type Template = {
   id: string;
@@ -33,6 +33,12 @@ function defaultsFor(config: BoardConfig, classTypeId: string): Pick<Draft, 'dur
   return { durationMin: t?.duration_min ?? 55, capacity: t?.capacity ?? 10, trainerId: t?.trainer_id ?? config.trainers[0]?.id ?? '' };
 }
 
+function endTime(start: string, durationMin: number) {
+  const [h, m] = start.split(':').map(Number);
+  const end = (h * 60 + m + durationMin) % (24 * 60);
+  return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
+}
+
 function outcomeText(o: Outcome, verb: string) {
   const parts = [verb];
   if (o.kept) parts.push(`${o.kept} z zapisami zostają w starym terminie`);
@@ -41,8 +47,12 @@ function outcomeText(o: Outcome, verb: string) {
 }
 
 export function WeekBoard({ config, onChange }: { config: BoardConfig; onChange: () => void }) {
-  const [open, setOpen] = useState<{ mode: 'new'; day: number } | { mode: 'edit'; slot: Template } | null>(null);
-  const color = (ctId: string) => config.classTypes.find((c) => c.id === ctId)?.color ?? 'var(--line)';
+  const [open, setOpen] = useState<{ mode: 'new'; day: number; time?: string } | { mode: 'edit'; slot: Template } | null>(null);
+  // Wiersze = godziny rozpoczęcia, kolumny = dni: zajęcia o tej samej porze stoją w jednej linii.
+  const times = [...new Set(config.templates.map((t) => t.start_time))].sort();
+  const today = new Date().getDay() || 7;
+  const at = (day: number, time: string) => config.templates.filter((t) => t.weekday === day && t.start_time === time);
+  const count = (day: number) => config.templates.filter((t) => t.weekday === day).length;
 
   return (
     <section className="card stack">
@@ -56,30 +66,41 @@ export function WeekBoard({ config, onChange }: { config: BoardConfig; onChange:
         </button>
       </div>
 
-      <div className="week-board">
-        {DAYS.map((d) => (
-          <div key={d} className="week-day">
-            <div className="eyebrow">{WEEKDAY_LONG[d]}</div>
-            {config.templates
-              .filter((t) => t.weekday === d)
-              .map((t) => (
-                <button
-                  key={t.id}
-                  className="week-slot"
-                  title={`${t.class_name} · ${t.start_time}, ${t.duration_min} min · ${t.trainer_name} · ${t.capacity} miejsc`}
-                  onClick={() => setOpen({ mode: 'edit', slot: t })}
-                >
-                  <span className="week-dot" style={{ background: color(t.class_type_id) }} />
-                  <b>{t.start_time}</b>
-                  <span>{t.class_name}</span>
-                  <span className="small muted">{t.trainer_name}</span>
-                </button>
+      <div className="wb-scroll">
+        <div className="wb">
+          <div />
+          {DAYS.map((d) => (
+            <div key={d} className={`wb-head${d === today ? ' today' : ''}`}>
+              <span className="wb-day">{WEEKDAY_LONG[d]}</span>
+              <span className="wb-count">{count(d) ? `${count(d)} zajęć` : 'wolne'}</span>
+            </div>
+          ))}
+          {times.map((time) => (
+            <Fragment key={time}>
+              <div className="wb-time">{time}</div>
+              {DAYS.map((d) => (
+                <div key={d} className={`wb-cell${d === today ? ' today' : ''}`}>
+                  {at(d, time).map((t) => (
+                    <button
+                      key={t.id}
+                      className="wb-slot"
+                      title={`${t.class_name} · ${t.start_time}–${endTime(t.start_time, t.duration_min)} · ${t.trainer_name} · ${t.capacity} miejsc`}
+                      onClick={() => setOpen({ mode: 'edit', slot: t })}
+                    >
+                      <span className="wb-name">{t.class_name}</span>
+                      <span className="wb-meta">
+                        {t.trainer_name} · {t.duration_min} min
+                      </span>
+                    </button>
+                  ))}
+                  <button className="wb-add" aria-label={`Dodaj zajęcia: ${WEEKDAY_LONG[d]} ${time}`} onClick={() => setOpen({ mode: 'new', day: d, time })}>
+                    +
+                  </button>
+                </div>
               ))}
-            <button className="week-add" aria-label={`Dodaj zajęcia: ${WEEKDAY_LONG[d]}`} onClick={() => setOpen({ mode: 'new', day: d })}>
-              +
-            </button>
-          </div>
-        ))}
+            </Fragment>
+          ))}
+        </div>
       </div>
 
       {open && (
@@ -87,6 +108,7 @@ export function WeekBoard({ config, onChange }: { config: BoardConfig; onChange:
           config={config}
           slot={open.mode === 'edit' ? open.slot : null}
           day={open.mode === 'new' ? open.day : open.slot.weekday}
+          time={open.mode === 'new' ? open.time : undefined}
           onClose={() => setOpen(null)}
           onSaved={() => {
             setOpen(null);
@@ -98,12 +120,12 @@ export function WeekBoard({ config, onChange }: { config: BoardConfig; onChange:
   );
 }
 
-function SlotSheet({ config, slot, day, onClose, onSaved }: { config: BoardConfig; slot: Template | null; day: number; onClose: () => void; onSaved: () => void }) {
+function SlotSheet({ config, slot, day, time, onClose, onSaved }: { config: BoardConfig; slot: Template | null; day: number; time?: string; onClose: () => void; onSaved: () => void }) {
   const firstType = config.classTypes[0]?.id ?? '';
   const [d, setD] = useState<Draft>(() =>
     slot
       ? { classTypeId: slot.class_type_id, trainerId: slot.trainer_id, weekdays: [slot.weekday], startTime: slot.start_time, durationMin: slot.duration_min, capacity: slot.capacity }
-      : { classTypeId: firstType, weekdays: [day], startTime: '18:00', ...defaultsFor(config, firstType) },
+      : { classTypeId: firstType, weekdays: [day], startTime: time ?? '18:00', ...defaultsFor(config, firstType) },
   );
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -148,14 +170,13 @@ function SlotSheet({ config, slot, day, onClose, onSaved }: { config: BoardConfi
 
         {!slot && (
           <div className="field">
-            <label>Zajęcia</label>
-            <div className="chips" style={{ flexWrap: 'wrap' }}>
-              {config.classTypes.map((c) => (
-                <button key={c.id} className="chip" aria-pressed={d.classTypeId === c.id} onClick={() => set({ classTypeId: c.id, ...defaultsFor(config, c.id) })}>
-                  {c.name}
-                </button>
-              ))}
-            </div>
+            <label htmlFor="ss-class">Zajęcia</label>
+            <Select
+              id="ss-class"
+              value={d.classTypeId}
+              options={config.classTypes.map((c) => ({ value: c.id, label: c.name }))}
+              onChange={(v) => set({ classTypeId: v, ...defaultsFor(config, v) })}
+            />
           </div>
         )}
 
@@ -186,14 +207,8 @@ function SlotSheet({ config, slot, day, onClose, onSaved }: { config: BoardConfi
         </div>
 
         <div className="field">
-          <label>Prowadzi</label>
-          <div className="chips" style={{ flexWrap: 'wrap' }}>
-            {config.trainers.map((t) => (
-              <button key={t.id} className="chip" aria-pressed={d.trainerId === t.id} onClick={() => set({ trainerId: t.id })}>
-                {t.name}
-              </button>
-            ))}
-          </div>
+          <label htmlFor="ss-trainer">Prowadzi</label>
+          <Select id="ss-trainer" value={d.trainerId} options={config.trainers.map((t) => ({ value: t.id, label: t.name }))} onChange={(v) => set({ trainerId: v })} />
         </div>
 
         <p className="small muted" style={{ margin: 0 }}>

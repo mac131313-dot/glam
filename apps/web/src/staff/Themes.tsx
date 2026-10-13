@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { themeContrastErrors, type Palette } from '@glam/core';
 import { api, useApi } from '../api.ts';
-import { Field, Sheet, Spinner, Toggle, useAction } from '../ui.tsx';
+import { Field, Select, Sheet, Spinner, Toggle, useAction } from '../ui.tsx';
 
 type Pack = { badge?: string; challengeTitle?: string; challengeMetric?: string; challengeTarget?: number; couponCode?: string };
 type Theme = {
@@ -229,39 +229,23 @@ function ThemeEditor({ theme, lib, onClose, onDone }: { theme: Partial<Theme>; l
         <Toggle label="Włączaj i wyłączaj automatycznie w tych datach" checked={f.auto} onChange={(v) => setF({ ...f, auto: v })} />
         <Toggle label="Efekt śniegu" checked={f.effect === 'snow'} onChange={(v) => setF({ ...f, effect: v ? 'snow' : '' })} />
         <div className="row">
-          <select className="input" value={f.segment} onChange={(e) => setF({ ...f, segment: e.target.value })} aria-label="Segment">
-            <option value="">Dla wszystkich</option>
-            {Object.entries(lib.segments).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
-          </select>
-          <select className="input" value={f.sound} onChange={(e) => setF({ ...f, sound: e.target.value })} aria-label="Dźwięk">
-            {lib.sounds.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.label}
-              </option>
-            ))}
-          </select>
-          <select className="input" value={f.icon} onChange={(e) => setF({ ...f, icon: e.target.value })} aria-label="Ikona aplikacji">
-            {lib.icons.map((x) => (
-              <option key={x.id} value={x.id}>
-                Ikona: {x.label}
-              </option>
-            ))}
-          </select>
+          <Select
+            ariaLabel="Segment"
+            value={f.segment}
+            onChange={(v) => setF({ ...f, segment: v })}
+            options={[{ value: '', label: 'Dla wszystkich' }, ...Object.entries(lib.segments).map(([k, l]) => ({ value: k, label: String(l) }))]}
+          />
+          <Select ariaLabel="Dźwięk" value={f.sound} onChange={(v) => setF({ ...f, sound: v })} options={lib.sounds.map((x) => ({ value: x.id, label: x.label }))} />
+          <Select ariaLabel="Ikona aplikacji" value={f.icon} onChange={(v) => setF({ ...f, icon: v })} options={lib.icons.map((x) => ({ value: x.id, label: `Ikona: ${x.label}` }))} />
         </div>
         <div className="eyebrow">Pakiet motywu</div>
         <div className="row">
-          <select className="input" value={f.pack.badge ?? ''} onChange={(e) => setF({ ...f, pack: { ...f.pack, badge: e.target.value || undefined } })} aria-label="Odznaka limitowana">
-            <option value="">Bez odznaki limitowanej</option>
-            {lib.badges.map((b) => (
-              <option key={b.code} value={b.code}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            ariaLabel="Odznaka limitowana"
+            value={f.pack.badge ?? ''}
+            onChange={(v) => setF({ ...f, pack: { ...f.pack, badge: v || undefined } })}
+            options={[{ value: '', label: 'Bez odznaki limitowanej' }, ...lib.badges.map((b) => ({ value: b.code, label: b.name }))]}
+          />
           <input className="input" placeholder="Kod rabatowy (np. JESIEN15)" value={f.pack.couponCode ?? ''} onChange={(e) => setF({ ...f, pack: { ...f.pack, couponCode: e.target.value.toUpperCase() || undefined } })} />
         </div>
         <div className="row">

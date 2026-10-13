@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { api, fmtDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Empty, Spinner, Tabs, useAction } from '../ui.tsx';
+import { Empty, Select, Spinner, Tabs, useAction } from '../ui.tsx';
 
 export default function Messages({ roles }: { roles: Role[] }) {
   const options: ['group' | 'chat' | 'followups' | 'inbox', string][] = [
@@ -40,25 +40,17 @@ function GroupMessage({ roles }: { roles: Role[] }) {
   return (
     <div className="stack-lg">
       <section className="card stack">
-        <select className="input" value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Do kogo">
-          {!can(roles, 'messages.group.all') && <option value="">Wybierz zajęcia</option>}
-          {can(roles, 'messages.group.all') && <option value="all">Wszystkie klientki studia</option>}
-          {day.data?.sessions.map((s) => (
-            <option key={s.id} value={`session:${s.id}`}>
-              Dziś {fmtTime(s.starts_at)} · {s.class_name} ({s.participants.length})
-            </option>
-          ))}
-          {cfg.data?.classTypes.map((c) => (
-            <option key={c.id} value={`class_type:${c.id}`}>
-              Uczestniczki zajęć: {c.name}
-            </option>
-          ))}
-          {groups.data?.map((g) => (
-            <option key={g.id} value={`group:${g.id}`}>
-              Grupa: {g.name}
-            </option>
-          ))}
-        </select>
+        <Select
+          ariaLabel="Do kogo"
+          value={target}
+          onChange={setTarget}
+          options={[
+            ...(can(roles, 'messages.group.all') ? [{ value: 'all', label: 'Wszystkie klientki studia' }] : [{ value: '', label: 'Wybierz zajęcia' }]),
+            ...(day.data?.sessions ?? []).map((s) => ({ value: `session:${s.id}`, label: `Dziś ${fmtTime(s.starts_at)} · ${s.class_name} (${s.participants.length})` })),
+            ...(cfg.data?.classTypes ?? []).map((c) => ({ value: `class_type:${c.id}`, label: `Uczestniczki zajęć: ${c.name}` })),
+            ...(groups.data ?? []).map((g) => ({ value: `group:${g.id}`, label: `Grupa: ${g.name}` })),
+          ]}
+        />
         <textarea className="input" placeholder="Np. „Dziś zajęcia w sali 2 – do zobaczenia!”" value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} />
         <button className="btn" disabled={!body.trim() || (!target && !can(roles, 'messages.group.all')) || busy} onClick={send}>
           Wyślij

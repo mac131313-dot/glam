@@ -1,5 +1,6 @@
 import { useAuthedUrl } from './api.ts';
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 type Toast = { text: string; kind: 'ok' | 'error' } | null;
 const ToastCtx = createContext<(text: string, kind?: 'ok' | 'error') => void>(() => {});
@@ -134,6 +135,120 @@ export function Tabs<T extends string>({ value, onChange, options, label }: { va
           {l}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Lista rozwijana w stylu aplikacji (zamiast systemowego <select>). Jak systemowa – otwiera się nad treścią
+ *  (warstwa w portalu, więc arkusz z przewijaniem jej nie ucina), a gdy brak miejsca pod polem – do góry. */
+export type SelectOption = { value: string; label: string; group?: string };
+
+export function Select({
+  id,
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  id?: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (v: string) => void;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [pos, setPos] = useState<React.CSSProperties>({});
+  const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const current = options.find((o) => o.value === value) ?? options[0]; // jak systemowa: bez dopasowania widać pierwszą pozycję
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    const place = () => {
+      const r = ref.current!.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom - 12;
+      const up = below < 220 && r.top > below;
+      const maxHeight = Math.min(300, (up ? r.top : below + 12) - 18);
+      setPos({ left: r.left, minWidth: r.width, maxWidth: window.innerWidth - r.left - 12, maxHeight, ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }) });
+    };
+    place();
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !listRef.current?.contains(t)) setOpen(false);
+    };
+    const onScroll = (e: Event) => !listRef.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', place);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', place);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  useEffect(() => {
+    listRef.current?.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
+  }, [active, open]);
+
+  const pick = (v: string) => {
+    onChange(v);
+    setOpen(false);
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && open) {
+      e.nativeEvent.stopPropagation(); // zamyka listę, nie cały arkusz
+      setOpen(false);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) return setOpen(true);
+      setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length);
+    } else if ((e.key === 'Enter' || e.key === ' ') && open) {
+      e.preventDefault();
+      pick(options[active].value);
+    }
+  };
+
+  return (
+    <div className={`select ${className ?? ''}`} ref={ref} onKeyDown={onKey}>
+      <button type="button" id={id} className="input select-trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span>{current?.label ?? 'Wybierz'}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      {open &&
+        createPortal(
+        <ul ref={listRef} className="select-list" role="listbox" aria-label={ariaLabel} style={pos}>
+          {options.map((o, i) => [
+            o.group && o.group !== options[i - 1]?.group && (
+              <li key={`g:${o.group}`} role="presentation" className="select-group">
+                {o.group}
+              </li>
+            ),
+            <li
+              key={o.value}
+              role="option"
+              aria-selected={o.value === value}
+              className={i === active ? 'active' : undefined}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => pick(o.value)}
+            >
+              {o.label}
+              {o.value === value && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden>
+                  <path d="m5 12 5 5 9-10" />
+                </svg>
+              )}
+            </li>,
+          ])}
+        </ul>,
+          document.body,
+        )}
     </div>
   );
 }

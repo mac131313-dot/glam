@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { BADGES } from '@glam/core';
 import { api, fmtDay, localDate, addDaysStr, useApi } from '../api.ts';
-import { Empty, Field, Spinner, Tabs, useAction } from '../ui.tsx';
+import { Empty, Field, Select, Spinner, Tabs, useAction } from '../ui.tsx';
 
 type Report = { id: string; target_kind: string; target_id: string; reason: string | null; status: string; created_at: string; reporter: string; content?: { body?: string } };
 type Hub = {
@@ -165,22 +165,18 @@ function Challenges({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) 
           </Field>
         </div>
         <div className="row">
-          <select className="input" value={f.badgeCode} onChange={(e) => setF({ ...f, badgeCode: e.target.value })} aria-label="Odznaka">
-            <option value="">Odznaka za ukończenie (opcjonalnie)</option>
-            {BADGES.map((b) => (
-              <option key={b.code} value={b.code}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-          <select className="input" value={f.themeId} onChange={(e) => setF({ ...f, themeId: e.target.value })} aria-label="Motyw">
-            <option value="">Motyw (opcjonalnie)</option>
-            {themes.data?.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            ariaLabel="Odznaka"
+            value={f.badgeCode}
+            onChange={(v) => setF({ ...f, badgeCode: v })}
+            options={[{ value: '', label: 'Odznaka za ukończenie (opcjonalnie)' }, ...BADGES.map((b) => ({ value: b.code, label: b.name }))]}
+          />
+          <Select
+            ariaLabel="Motyw"
+            value={f.themeId}
+            onChange={(v) => setF({ ...f, themeId: v })}
+            options={[{ value: '', label: 'Motyw (opcjonalnie)' }, ...(themes.data ?? []).map((t) => ({ value: t.id, label: t.name }))]}
+          />
         </div>
         <button
           className="btn"

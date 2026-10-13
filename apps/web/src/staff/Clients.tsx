@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { can, SEGMENT_LABEL, type Role } from '@glam/core';
 import { api, fmtDay, fmtTime, useApi } from '../api.ts';
-import { AuthImg, Avatar, Empty, Field, Page, PAYMENT_LABELS, Spinner, Tabs, useAction } from '../ui.tsx';
+import { AuthImg, Avatar, Empty, Field, Page, PAYMENT_LABELS, Select, Spinner, Tabs, useAction } from '../ui.tsx';
 
 type Row = { id: string; name: string | null; phone?: string; goal: string | null; lastVisit: string | null; visits: number; hasActivePass: boolean; segments: string[]; groups: string[] };
 
@@ -177,14 +177,12 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
           {can(roles, 'desk.sell') && products.data && (
             <section className="card flat stack">
               <div className="eyebrow">Sprzedaj karnet</div>
-              <select className="input" value={sell.productId} onChange={(e) => setSell({ ...sell, productId: e.target.value })}>
-                <option value="">Wybierz produkt</option>
-                {products.data.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {p.price}
-                  </option>
-                ))}
-              </select>
+              <Select
+                ariaLabel="Produkt"
+                value={sell.productId}
+                onChange={(v) => setSell({ ...sell, productId: v })}
+                options={[{ value: '', label: 'Wybierz produkt' }, ...products.data.map((p) => ({ value: p.id, label: `${p.name} · ${p.price}` }))]}
+              />
               <div className="chips">
                 {['terminal', 'cash', 'link'].map((m) => (
                   <button key={m} className="chip" aria-pressed={sell.method === m} onClick={() => setSell({ ...sell, method: m })}>
@@ -200,14 +198,11 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
           )}
           {can(roles, 'participants.manage') && cfg.data && (
             <Field label="Trenerka prowadząca (powitanie, kartka)">
-              <select className="input" value={data.trainerId ?? ''} onChange={(e) => run(() => api(`/staff/clients/${id}/trainer`, { method: 'PUT', body: { trainerId: e.target.value } }).then(reload), 'Zapisane')}>
-                <option value="">—</option>
-                {cfg.data.trainers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              <Select
+                value={data.trainerId ?? ''}
+                onChange={(v) => run(() => api(`/staff/clients/${id}/trainer`, { method: 'PUT', body: { trainerId: v } }).then(reload), 'Zapisane')}
+                options={[{ value: '', label: '—' }, ...cfg.data.trainers.map((t) => ({ value: t.id, label: t.name }))]}
+              />
             </Field>
           )}
           <section className="stack" style={{ gap: 4 }}>

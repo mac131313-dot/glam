@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { addDaysStr, api, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Avatar, Empty, Sheet, Spinner, Toggle, useAction } from '../ui.tsx';
+import { Avatar, Empty, Select, Sheet, Spinner, Toggle, useAction } from '../ui.tsx';
 
 type Participant = { booking_id: string; status: string; user_id: string; name: string; phone?: string; goal: string | null; visits: number; guest_name: string | null; confirmed_at: string | null; rating: number | null; health: { limitations?: string; injuries?: string; pregnancy?: boolean } | null };
 type Session = { id: string; starts_at: string; class_name: string; trainer_name: string; trainer_id: string; zone_name: string; capacity: number; status: string; kind: string; playlist_name: string | null; rating: { avg: number | null; n: number }; participants: Participant[] };
@@ -272,13 +272,7 @@ function ManageSession({ session, trainers, onClose, onDone }: { session: Sessio
         </h2>
         <div className="field">
           <span className="field-label">Prowadząca (zastępstwo)</span>
-          <select className="input" value={trainer} onChange={(e) => setTrainer(e.target.value)}>
-            {trainers.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+          <Select ariaLabel="Prowadząca" value={trainer} onChange={setTrainer} options={trainers.map((t) => ({ value: t.id, label: t.name }))} />
           <button className="btn ghost" disabled={trainer === session.trainer_id || busy} onClick={() => run(() => api(`/staff/sessions/${session.id}/trainer`, { method: 'POST', body: { trainerId: trainer } }).then((r) => (onDone(), onClose(), r)))}>
             Zmień i powiadom klientki
           </button>
