@@ -301,10 +301,16 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     const contact = can(roles, 'clients.contact');
     const now = new Date();
     let facts = clientFacts(scope, now);
-    // Trenerka widzi klientki, które były lub są zapisane na jej zajęcia.
+    // Trenerka widzi klientki, które były lub są zapisane na jej zajęcia, oraz przypisane do niej.
     if (!can(roles, 'clients.view')) {
       const mine = new Set(
-        scope.all<{ user_id: string }>('SELECT DISTINCT b.user_id FROM bookings b JOIN class_sessions s ON s.id = b.session_id WHERE b.studio_id = $studio AND s.trainer_id = $me', { me: user.id }).map((r) => r.user_id),
+        scope
+          .all<{ user_id: string }>(
+            `SELECT DISTINCT b.user_id FROM bookings b JOIN class_sessions s ON s.id = b.session_id WHERE b.studio_id = $studio AND s.trainer_id = $me
+             UNION SELECT user_id FROM memberships WHERE studio_id = $studio AND role = 'client' AND trainer_id = $me`,
+            { me: user.id },
+          )
+          .map((r) => r.user_id),
       );
       facts = facts.filter((f) => mine.has(f.userId));
     }
@@ -316,20 +322,31 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'pl'));
   });
 
-  // Rejestracja klientki w recepcji (np. pierwsza wizyta bez aplikacji) – sam numer i imię (minimalizacja danych).
-  app.post<{ Body: { phone: string; name: string } }>('/api/staff/clients', perm('participants.manage'), async (req) => {
-    const { scope, user } = ctx(req);
+  // Dodanie klientki przez recepcję (np. pierwsza wizyta bez aplikacji) albo trenerkę – numer i imię, opcjonalnie
+  // cel i pierwsza notatka (minimalizacja danych). Klientkę dodaną przez trenerkę przypisujemy do niej.
+  app.post<{ Body: { phone: string; name: string; goal?: string; note?: string } }>('/api/staff/clients', perm('clients.create'), async (req) => {
+    const { scope, user, roles } = ctx(req);
     const phone = normalizePhone(req.body?.phone);
-    const name = String(req.body?.name ?? '').trim();
+    const name = String(req.body?.name ?? '').trim().slice(0, 80);
+    const goal = String(req.body?.goal ?? '').trim().slice(0, 200) || null;
+    const note = String(req.body?.note ?? '').trim().slice(0, 2000);
     if (name.length < 2) throw badRequest('Podaj imię.');
+    const byTrainer = !can(roles, 'clients.view');
     let u = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
+    // Trenerka nie może „dopisać” sobie istniejącej klientki studia – to droga do cudzych danych.
+    if (byTrainer && u && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: u.id }))
+      throw conflict('client_exists', 'Ta klientka jest już w studiu. Poproś recepcję o przypisanie jej do Ciebie.');
     if (!u) {
       const uid = id();
       db.prepare('INSERT INTO users (id, phone, name, created_at) VALUES (?, ?, ?, ?)').run(uid, phone, name, nowIso());
       u = { id: uid };
     }
     scope.run("INSERT OR IGNORE INTO memberships (studio_id, user_id, role, joined_at) VALUES ($studio, $u, 'client', $now)", { u: u.id, now: nowIso() });
-    audit(scope, { actorId: user.id, action: 'client.registered_at_desk', entity: 'client', entityId: u.id, subjectUserId: u.id });
+    if (goal) scope.run("UPDATE memberships SET goal = COALESCE(goal, $g) WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { g: goal, u: u.id });
+    if (byTrainer) scope.run("UPDATE memberships SET trainer_id = COALESCE(trainer_id, $me) WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { me: user.id, u: u.id });
+    if (note.length >= 2 && can(roles, 'notes.write'))
+      scope.run('INSERT INTO trainer_notes (id, studio_id, trainer_id, client_id, body, created_at) VALUES ($id, $studio, $me, $u, $b, $now)', { id: id(), me: user.id, u: u.id, b: note, now: nowIso() });
+    audit(scope, { actorId: user.id, action: byTrainer ? 'client.added_by_trainer' : 'client.registered_at_desk', entity: 'client', entityId: u.id, subjectUserId: u.id });
     return { id: u.id };
   });
 
@@ -337,7 +354,8 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     const { scope, studio, user, roles } = ctx(req);
     const m = scope.get<{ joined_at: string; goal: string | null; trainer_id: string | null }>("SELECT joined_at, goal, trainer_id FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: req.params.id });
     if (!m) throw notFound('Nie znaleziono klientki.');
-    const isTrainerOfClient = !!scope.get('SELECT 1 FROM bookings b JOIN class_sessions s ON s.id = b.session_id WHERE b.studio_id = $studio AND b.user_id = $u AND s.trainer_id = $me', { u: req.params.id, me: user.id });
+    const isTrainerOfClient =
+      m.trainer_id === user.id || !!scope.get('SELECT 1 FROM bookings b JOIN class_sessions s ON s.id = b.session_id WHERE b.studio_id = $studio AND b.user_id = $u AND s.trainer_id = $me', { u: req.params.id, me: user.id });
     if (!can(roles, 'clients.view') && !(can(roles, 'notes.write') && isTrainerOfClient)) throw forbidden();
     const u = db.prepare('SELECT id, name, phone, email, avatar_mime, avatar_version FROM users WHERE id = ?').get(req.params.id) as { id: string; name: string | null; phone: string; email: string | null; avatar_mime: string | null; avatar_version: number };
     const contact = can(roles, 'clients.contact');
@@ -654,6 +672,56 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     if (req.body.status === 'ready') notify(scope, { userId: item.user_id, category: 'loyalty', tz: studio.timezone, body: TRIGGERS.reward_ready.text({}), action: 'profile/locker' });
     if (req.body.status === 'shipped') notify(scope, { userId: item.user_id, category: 'loyalty', tz: studio.timezone, body: 'Twoja nagroda jest w drodze 🎁', action: 'profile/locker' });
     audit(scope, { actorId: user.id, action: `locker.${req.body.status}`, entity: 'locker', entityId: req.params.id, subjectUserId: item.user_id });
+    return { ok: true };
+  });
+
+  // ——— Vouchery: kwota na wybrane zajęcia, kod do okazania w recepcji ———
+
+  app.get('/api/staff/vouchers', perm('cards.manage'), async (req) => {
+    const { scope } = ctx(req);
+    const vouchers = scope
+      .all<{ amount_grosze: number; valid_until: string; status: string }>(
+        `SELECT v.id, v.code, v.class_type_id, ct.name AS class_name, v.amount_grosze, v.recipient, v.valid_until, v.status, v.created_at, u.name AS created_by_name
+         FROM vouchers v LEFT JOIN class_types ct ON ct.id = v.class_type_id LEFT JOIN users u ON u.id = v.created_by
+         WHERE v.studio_id = $studio ORDER BY v.status = 'active' DESC, v.created_at DESC LIMIT 50`,
+      )
+      .map((v) => ({ ...v, amount: formatPLN(v.amount_grosze), expired: v.status === 'active' && v.valid_until < nowIso() }));
+    const classTypes = scope.all<{ id: string; name: string; level: string | null }>('SELECT id, name, level FROM class_types WHERE studio_id = $studio ORDER BY name, level');
+    return { vouchers, classTypes };
+  });
+
+  app.post<{ Body: { classTypeId?: string | null; amount: number; recipient?: string; validDays?: number } }>('/api/staff/vouchers', perm('cards.manage'), async (req) => {
+    const { scope, user } = ctx(req);
+    const b = req.body ?? ({} as { amount: number });
+    const amount = Math.round(Number(b.amount));
+    if (!(amount >= 100 && amount <= 1_000_000)) throw badRequest('Kwota vouchera: od 1 do 10 000 zł.');
+    const classTypeId = b.classTypeId || null;
+    if (classTypeId && !scope.get('SELECT 1 FROM class_types WHERE studio_id = $studio AND id = $c', { c: classTypeId })) throw notFound('Nie znaleziono zajęć.');
+    const days = Math.min(365, Math.max(7, Math.round(Number(b.validDays ?? 90))));
+    const now = new Date();
+    // Kod bez mylących znaków (0/O, 1/I), unikalny w studiu.
+    const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    do code = `VC-${Array.from(crypto.getRandomValues(new Uint8Array(6)), (x) => ALPHABET[x % ALPHABET.length]).join('')}`;
+    while (scope.get('SELECT 1 FROM vouchers WHERE studio_id = $studio AND code = $c', { c: code }));
+    const vid = id();
+    scope.run(
+      `INSERT INTO vouchers (id, studio_id, code, class_type_id, amount_grosze, recipient, valid_until, status, created_by, created_at, updated_at)
+       VALUES ($id, $studio, $code, $ct, $amt, $rec, $until, 'active', $me, $now, $now)`,
+      { id: vid, code, ct: classTypeId, amt: amount, rec: String(b.recipient ?? '').trim().slice(0, 80) || null, until: new Date(now.getTime() + days * 86_400_000).toISOString(), me: user.id, now: now.toISOString() },
+    );
+    audit(scope, { actorId: user.id, action: 'voucher.created', entity: 'voucher', entityId: vid, details: { code, amount } });
+    return { id: vid, code };
+  });
+
+  app.patch<{ Params: { id: string }; Body: { status: 'redeemed' | 'cancelled' } }>('/api/staff/vouchers/:id', perm('cards.manage'), async (req) => {
+    const { scope, user } = ctx(req);
+    if (!['redeemed', 'cancelled'].includes(req.body?.status)) throw badRequest('Nieprawidłowy status.');
+    const v = scope.get<{ status: string }>('SELECT status FROM vouchers WHERE studio_id = $studio AND id = $id', { id: req.params.id });
+    if (!v) throw notFound();
+    if (v.status !== 'active') throw conflict('voucher_closed', 'Ten voucher jest już zamknięty.');
+    scope.run('UPDATE vouchers SET status = $s, updated_at = $now WHERE studio_id = $studio AND id = $id', { s: req.body.status, id: req.params.id, now: nowIso() });
+    audit(scope, { actorId: user.id, action: `voucher.${req.body.status}`, entity: 'voucher', entityId: req.params.id });
     return { ok: true };
   });
 

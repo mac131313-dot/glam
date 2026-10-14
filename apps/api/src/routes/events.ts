@@ -32,6 +32,8 @@ type EventRow = {
   id: string;
   client_id: string;
   kind: string;
+  /** Nazwa wydarzenia organizowanego przez studio (np. tematyczne zajęcia); prywatne wydarzenia klientek jej nie mają. */
+  title: string | null;
   package_id: string | null;
   trainer_id: string | null;
   zone_id: string | null;

@@ -1,6 +1,6 @@
 // Studio SS&G: prawdziwy grafik, cennik i godziny recepcji (materiały studia z 2026-10-13).
 // Dwie sale z osobnymi grafikami (reformery i zajęcia grupowe) oraz siłownia z wejściem QR.
-import type { Pool, ProductRules } from '@glam/core';
+import { localParts, zonedToUtc, type Pool, type ProductRules } from '@glam/core';
 import type { Db } from './db.ts';
 import { StudioScope } from './scope.ts';
 import { bookSession } from './services/booking.ts';
@@ -22,6 +22,9 @@ export const SSG = {
   weronikaB: '+48500000209',
   weronikaG: '+48500000211',
   julia: '+48500000212',
+  aleksandra: '+48500000213',
+  michalina: '+48500000214',
+  magdalena: '+48500000215',
 };
 
 type Helpers = {
@@ -209,27 +212,74 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
   const studio = loadStudio(db, S);
   fillSchedule(scope, studio, new Date(now.getTime() - 21 * DAY), 49);
 
-  // ——— Klientka demo: Julia, karnet na 8 reformerów (2 wizyty za nią, jedna rezerwacja) ———
-  const julia = user(SSG.julia, 'Julia');
-  member(S, julia, 'client', 30, { goal: 'Mocne biodra i lepsza postawa' });
-  run("INSERT OR REPLACE INTO consents (user_id, studio_id, kind, granted, updated_at) VALUES (?, '', 'terms', 1, ?)", julia, iso(now));
-  run('UPDATE users SET onboarded_at = ? WHERE id = ?', iso(new Date(now.getTime() - 30 * DAY)), julia);
-  const passId = buy(S, julia, 'ss_ref8', 12);
-  const past = scope.all<{ id: string }>(
-    "SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = 'ss_hips' AND starts_at < $now AND starts_at > $from ORDER BY starts_at DESC LIMIT 2",
-    { now: iso(now), from: iso(new Date(now.getTime() - 11 * DAY)) },
-  );
-  for (const s of past) {
-    const pass = loadPass(scope, passId)!;
-    scope.run(
-      "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'attended', $t, $t)",
-      { id: crypto.randomUUID(), s: s.id, u: julia, p: passId, t: iso(now) },
+  // ——— Klientki demo: karnet na reformery, 2 wizyty za nią, jedna rezerwacja ———
+  // lastVisitDaysAgo: ostatnia wizyta nie później niż tyle dni temu (0 = najświeższe zajęcia przed teraz).
+  const client = (phone: string, name: string, goal: string, productId: string, visited: string, upcoming: string, lastVisitDaysAgo = 0) => {
+    const id = user(phone, name);
+    member(S, id, 'client', 30, { goal });
+    run("INSERT OR REPLACE INTO consents (user_id, studio_id, kind, granted, updated_at) VALUES (?, '', 'terms', 1, ?)", id, iso(now));
+    run('UPDATE users SET onboarded_at = ? WHERE id = ?', iso(new Date(now.getTime() - 30 * DAY)), id);
+    const passId = buy(S, id, productId, 12);
+    const past = scope.all<{ id: string }>(
+      'SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = $ct AND starts_at < $now AND starts_at > $from ORDER BY starts_at DESC LIMIT 2',
+      { ct: visited, now: iso(new Date(now.getTime() - lastVisitDaysAgo * DAY)), from: iso(new Date(now.getTime() - 11 * DAY)) },
     );
-    consumeEntry(scope, pass, 'main');
-  }
-  const next = scope.get<{ id: string }>(
-    "SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = 'ss_flow' AND status = 'scheduled' AND starts_at > $min ORDER BY starts_at LIMIT 1",
-    { min: iso(new Date(now.getTime() + 3 * 3_600_000)) },
+    for (const s of past) {
+      const pass = loadPass(scope, passId)!;
+      scope.run(
+        "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'attended', $t, $t)",
+        { id: crypto.randomUUID(), s: s.id, u: id, p: passId, t: iso(now) },
+      );
+      consumeEntry(scope, pass, 'main');
+    }
+    const next = scope.get<{ id: string }>(
+      "SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = $ct AND status = 'scheduled' AND starts_at > $min ORDER BY starts_at LIMIT 1",
+      { ct: upcoming, min: iso(new Date(now.getTime() + 3 * 3_600_000)) },
+    );
+    if (next) bookSession(scope, studio, id, next.id, now);
+  };
+  client(SSG.julia, 'Julia', 'Mocne biodra i lepsza postawa', 'ss_ref8', 'ss_hips', 'ss_flow');
+  client(SSG.aleksandra, 'Aleksandra', 'Elastyczność i rozciągnięte plecy', 'ss_ref10', 'ss_flow', 'ss_hips', 3);
+  client(SSG.michalina, 'Michalina', 'Silny brzuch po ciąży', 'ss_ref8', 'ss_flow', 'ss_barre_stretch');
+
+  // ——— Prośba o termin: Magdalena czeka na wolne miejsce na dzisiejszą Joga Stretch o 18:00 ———
+  const magdalena = user(SSG.magdalena, 'Magdalena');
+  member(S, magdalena, 'client', 45, { goal: 'Rozciąganie i spokojna głowa po pracy' });
+  run("INSERT OR REPLACE INTO consents (user_id, studio_id, kind, granted, updated_at) VALUES (?, '', 'terms', 1, ?)", magdalena, iso(now));
+  run('UPDATE users SET onboarded_at = ? WHERE id = ?', iso(new Date(now.getTime() - 45 * DAY)), magdalena);
+  const today = localParts(now, studio.timezone).date;
+  run(
+    "INSERT INTO dormant_surveys (id, studio_id, user_id, reasons_json, comment, wants_proposal, status, created_at, answered_at, contact_due_at) VALUES ('ss_ds1', ?, ?, '[\"time\"]', ?, 1, 'answered', ?, ?, ?)",
+    S,
+    magdalena,
+    'Czekam na wolne miejsce na Joga Stretch dziś o 18:00.',
+    iso(new Date(now.getTime() - 2 * 3_600_000)),
+    iso(new Date(now.getTime() - 3_600_000)),
+    iso(zonedToUtc(today, '17:00', studio.timezone)),
   );
-  if (next) bookSession(scope, studio, julia, next.id, now);
+
+  seedHalloween(db, now, owner, T.weronika);
+}
+
+/** Wydarzenie studia: Halloween Flow / Glow in the Dark Pilates, 31.10 wieczorem w sali zajęć grupowych. */
+export function seedHalloween(db: Db, now: Date, organizerId: string, trainerId: string) {
+  const studio = loadStudio(db, SSG_STUDIO);
+  const date = `${localParts(now, studio.timezone).date.slice(0, 4)}-10-31`;
+  const at = now.toISOString();
+  db.prepare(
+    `INSERT INTO private_events (id, studio_id, client_id, kind, title, trainer_id, zone_id, activity, starts_at, ends_at, guests, addons_json, internal_note, status, price_grosze, payment_mode, offer_text, invite_code, terms_accepted_at, history_json, created_at, updated_at)
+     VALUES ('ss_ev_halloween', ?, ?, 'girls_night', 'Halloween Flow / Glow in the Dark Pilates', ?, 'z_ss_group', 'Mat', ?, ?, 12, '["playlist","decor"]', ?, 'confirmed', NULL, 'on_site', ?, 'SSGHALL', ?, ?, ?, ?)`,
+  ).run(
+    SSG_STUDIO,
+    organizerId,
+    trainerId,
+    zonedToUtc(date, '19:00', studio.timezone).toISOString(),
+    zonedToUtc(date, '20:15', studio.timezone).toISOString(),
+    'Lampy UV i świecące opaski kupić do 29.10, dekoracje sali dzień wcześniej po ostatnich zajęciach.',
+    'Pilates na macie przy świetle UV: neonowe dekoracje, halloweenowa playlista i świecące opaski dla każdej uczestniczki. Ubierz się na biało albo neonowo – będzie świecić! Wstęp 80 zł / os., płatność na miejscu.',
+    at,
+    JSON.stringify([{ by: 'Recepcja SS&G', text: 'Wydarzenie studia dodane: 12 miejsc, 80 zł / os.', at }]),
+    at,
+    at,
+  );
 }

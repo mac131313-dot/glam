@@ -8,6 +8,7 @@ import { Empty, Field, Page, Spinner, Tabs, useAction } from '../ui.tsx';
 type Ev = {
   id: string;
   kindLabel: string;
+  title: string | null;
   client: string | null;
   trainer: string | null;
   zone: string | null;
@@ -28,6 +29,9 @@ type Ev = {
   guestsList: { name: string; rsvp: string }[];
 };
 
+// Wydarzenie studia ma własną nazwę; prywatne – rodzaj i imię klientki.
+const heading = (e: Ev) => e.title ?? `${e.kindLabel} · ${e.client}`;
+
 export default function EventsAdmin({ roles }: { roles: Role[] }) {
   const manage = can(roles, 'events.manage');
   const [tab, setTab] = useState<'list' | 'packages'>('list');
@@ -46,9 +50,7 @@ export default function EventsAdmin({ roles }: { roles: Role[] }) {
           list.data.map((e) => (
             <button key={e.id} className="card flat row between" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setOpen(e)}>
               <span>
-                <b>
-                  {e.kindLabel} · {e.client}
-                </b>
+                <b>{heading(e)}</b>
                 <span className="small muted" style={{ display: 'block' }}>
                   {fmtLongDay(e.starts_at)} {fmtTime(e.starts_at)} · {e.guests} os. · {e.activity} · {e.trainer}
                 </span>
@@ -59,7 +61,7 @@ export default function EventsAdmin({ roles }: { roles: Role[] }) {
         ))}
       {tab === 'packages' && <Packages />}
       {open && (
-        <Page title={`${open.kindLabel} · ${open.client}`} onBack={() => setOpen(null)}>
+        <Page title={heading(open)} onBack={() => setOpen(null)}>
           <EventEditor ev={open} manage={manage} onDone={() => (list.reload(), setOpen(null))} />
         </Page>
       )}

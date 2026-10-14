@@ -131,6 +131,8 @@ function Thread({ clientId, onRead }: { clientId: string; onRead: () => void }) 
 function Followups() {
   const list = useApi<{ id: string; name: string; phone: string; reasons_json: string | null; comment: string | null; contact_due_at: string }[]>('/staff/followups');
   const { run } = useAction();
+  // Dwa kroki: „Skontaktuj się” odsłania telefon, a dopiero „Potwierdź kontakt” zdejmuje prośbę z listy.
+  const [contacting, setContacting] = useState<string | null>(null);
   if (!list.data) return <Spinner />;
   const REASON: Record<string, string> = { time: 'czas', health: 'zdrowie', price: 'cena', trainer: 'trenerka', other: 'inne' };
   return (
@@ -149,9 +151,20 @@ function Followups() {
                 {late ? 'Po terminie 24 h' : `Kontakt do ${fmtDay(f.contact_due_at)} ${fmtTime(f.contact_due_at)}`}
               </span>
             </span>
-            <button className="btn sm" onClick={() => run(() => api(`/staff/followups/${f.id}/done`, { method: 'POST' }).then(list.reload), 'Oznaczone')}>
-              Skontaktowano
-            </button>
+            {contacting === f.id ? (
+              <span className="row" style={{ gap: 8, flex: 'none' }}>
+                <a className="btn ghost sm" href={`tel:${f.phone}`}>
+                  Zadzwoń
+                </a>
+                <button className="btn sm" onClick={() => run(() => api(`/staff/followups/${f.id}/done`, { method: 'POST' }).then(() => (setContacting(null), list.reload())), 'Kontakt potwierdzony')}>
+                  Potwierdź kontakt
+                </button>
+              </span>
+            ) : (
+              <button className="btn sm" style={{ flex: 'none' }} onClick={() => setContacting(f.id)}>
+                Skontaktuj się
+              </button>
+            )}
           </div>
         );
       })}

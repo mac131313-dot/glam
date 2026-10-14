@@ -4,6 +4,7 @@ import { buildApp } from '../src/app.ts';
 import { openDb } from '../src/db.ts';
 import { StudioScope, TenantViolation } from '../src/scope.ts';
 import { DEMO, seed } from '../src/seed.ts';
+import { SSG, SSG_STUDIO } from '../src/seed-ssg.ts';
 import { ConsoleSmsGateway, MockPaymentProvider } from '../src/sms.ts';
 import { jpegHeader } from './fixtures.ts';
 
@@ -435,4 +436,37 @@ test('zmiana nazwy studia: właścicielka zmienia, klientka widzi, walidacja', a
   assert.equal(me.studios.find((s: { id: string }) => s.id === R).tagline, 'Pilates i oddech');
   assert.equal(me.studios.find((s: { id: string }) => s.id === K).name, 'Flow Pilates', 'inne studio bez zmian');
   await call(owner, R, 'PUT', '/api/owner/studio', { name: 'Centrum Ruchu', tagline: 'Pilates, stretch i siłownia' });
+});
+
+test('trenerka dodaje klientkę: przypisana do niej, widoczna na liście, z celem i notatką; cudzej nie dopisze', async () => {
+  const weronika = await login(SSG.weronika);
+  const res = await call(weronika, SSG_STUDIO, 'POST', '/api/staff/clients', { name: 'Karolina', phone: '600 555 101', goal: 'Mocne plecy', note: 'Po kontuzji kolana' });
+  assert.equal(res.statusCode, 200, res.body);
+  const list = (await call(weronika, SSG_STUDIO, 'GET', '/api/staff/clients')).json() as { id: string; goal: string | null }[];
+  assert.equal(list.find((c) => c.id === res.json().id)?.goal, 'Mocne plecy');
+  const card = (await call(weronika, SSG_STUDIO, 'GET', `/api/staff/clients/${res.json().id}`)).json();
+  assert.equal(card.notes[0].body, 'Po kontuzji kolana');
+  // Istniejącej klientki studia trenerka nie przypisze sobie numerem telefonu.
+  const taken = await call(weronika, SSG_STUDIO, 'POST', '/api/staff/clients', { name: 'Julia', phone: SSG.julia });
+  assert.equal(taken.statusCode, 409);
+  // Klientka nie dodaje klientek.
+  const julia = await login(SSG.julia);
+  assert.equal((await call(julia, SSG_STUDIO, 'POST', '/api/staff/clients', { name: 'Ktoś', phone: '600 555 102' })).statusCode, 403);
+});
+
+test('vouchery: recepcja wystawia na wybrane zajęcia z kwotą, oznacza wykorzystanie; trenerka nie ma dostępu', async () => {
+  const reception = await login(SSG.reception);
+  const created = await call(reception, SSG_STUDIO, 'POST', '/api/staff/vouchers', { classTypeId: 'ss_yoga_stretch', amount: 15000, recipient: 'Ania', validDays: 90 });
+  assert.equal(created.statusCode, 200, created.body);
+  assert.match(created.json().code, /^VC-[A-Z2-9]{6}$/);
+  const list = (await call(reception, SSG_STUDIO, 'GET', '/api/staff/vouchers')).json();
+  const v = list.vouchers.find((x: { id: string }) => x.id === created.json().id);
+  assert.equal(v.class_name, 'Joga Stretch');
+  assert.equal(v.status, 'active');
+  assert.ok(list.classTypes.length > 0);
+  assert.equal((await call(reception, SSG_STUDIO, 'POST', '/api/staff/vouchers', { amount: 0 })).statusCode, 400);
+  assert.equal((await call(reception, SSG_STUDIO, 'PATCH', `/api/staff/vouchers/${v.id}`, { status: 'redeemed' })).statusCode, 200);
+  assert.equal((await call(reception, SSG_STUDIO, 'PATCH', `/api/staff/vouchers/${v.id}`, { status: 'cancelled' })).statusCode, 409);
+  const weronika = await login(SSG.weronika);
+  assert.equal((await call(weronika, SSG_STUDIO, 'GET', '/api/staff/vouchers')).statusCode, 403);
 });

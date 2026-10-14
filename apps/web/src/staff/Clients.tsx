@@ -14,16 +14,24 @@ export default function Clients({ roles }: { roles: Role[] }) {
   const list = useApi<Row[]>(`/staff/clients?q=${encodeURIComponent(q)}&segment=${segment}`, [q, segment]);
   const risk = useApi<{ clients: { id: string; risk: number; revenue: string }[] }>(can(roles, 'finance.view') ? '/owner/clients' : null);
   const [open, setOpen] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const riskOf = (id: string) => risk.data?.clients.find((c) => c.id === id);
   return (
     <div className="stack-lg">
       <div className="row between wrap">
         <h1 style={{ margin: 0 }}>Klientki</h1>
-        {can(roles, 'finance.export') && (
-          <a className="btn ghost sm" href="/api/owner/export/clients.csv" onClick={(e) => (e.preventDefault(), download('/owner/export/clients.csv', 'klientki.csv'))}>
-            Eksport do Excela
-          </a>
-        )}
+        <div className="row">
+          {can(roles, 'finance.export') && (
+            <a className="btn ghost sm" href="/api/owner/export/clients.csv" onClick={(e) => (e.preventDefault(), download('/owner/export/clients.csv', 'klientki.csv'))}>
+              Eksport do Excela
+            </a>
+          )}
+          {can(roles, 'clients.create') && (
+            <button className="btn sm" onClick={() => setAdding(true)}>
+              Dodaj klientkę
+            </button>
+          )}
+        </div>
       </div>
       <input className="input" placeholder="Szukaj po imieniu lub telefonie" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="chips">
@@ -80,6 +88,48 @@ export default function Clients({ roles }: { roles: Role[] }) {
           <ClientCard id={open} roles={roles} />
         </Page>
       )}
+      {adding && (
+        <Page title="Nowa klientka" onBack={() => setAdding(false)}>
+          <NewClient roles={roles} onDone={(newId) => (setAdding(false), list.reload(), setOpen(newId))} />
+        </Page>
+      )}
+    </div>
+  );
+}
+
+function NewClient({ roles, onDone }: { roles: Role[]; onDone: (id: string) => void }) {
+  const [f, setF] = useState({ name: '', phone: '', goal: '', note: '' });
+  const { run, busy } = useAction();
+  const trainer = !can(roles, 'clients.view');
+  return (
+    <div className="stack-lg">
+      <p className="small muted" style={{ margin: 0 }}>
+        {trainer
+          ? 'Klientka zostanie przypisana do Ciebie. Do aplikacji zaloguje się tym numerem telefonu.'
+          : 'Do aplikacji klientka zaloguje się tym numerem telefonu.'}
+      </p>
+      <Field label="Imię">
+        <input className="input" autoFocus value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Np. Karolina" />
+      </Field>
+      <Field label="Telefon">
+        <input className="input" inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="Np. 600 100 200" />
+      </Field>
+      <Field label="Cel (opcjonalnie)">
+        <input className="input" value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })} placeholder="Np. Mocniejsze plecy i lepsza postawa" />
+      </Field>
+      {can(roles, 'notes.write') && (
+        <Field label="Notatka (opcjonalnie)" hint="Trafi do Twojego notatnika postępów – klientka jej nie widzi.">
+          <textarea className="input" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Np. Po kontuzji kolana, zaczynamy spokojnie" />
+        </Field>
+      )}
+      <button
+        className="btn"
+        style={{ alignSelf: 'flex-start' }}
+        disabled={f.name.trim().length < 2 || !f.phone.trim() || busy}
+        onClick={() => run(() => api<{ id: string }>('/staff/clients', { method: 'POST', body: f }).then((r) => (onDone(r.id), r)), 'Klientka dodana')}
+      >
+        Dodaj klientkę
+      </button>
     </div>
   );
 }
@@ -121,6 +171,7 @@ const ACTION: Record<string, string> = {
   'booking.removed_by_staff': 'Wypisana z zajęć przez recepcję',
   'client.trainer_assigned': 'Przypisana trenerka',
   'client.registered_at_desk': 'Rejestracja w recepcji',
+  'client.added_by_trainer': 'Dodana przez trenerkę',
   'payment_link.sent': 'Wysłany link do płatności',
   'locker.ready': 'Nagroda gotowa do odbioru',
   'locker.collected': 'Nagroda odebrana',

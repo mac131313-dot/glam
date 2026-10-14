@@ -108,6 +108,37 @@ export function ownerRoutes(app: FastifyInstance, deps: Deps) {
     )!;
     const unreadChats = n('SELECT COUNT(DISTINCT client_id) AS n FROM chat_messages WHERE studio_id = $studio AND from_staff = 0 AND read_at IS NULL');
 
+    // Karnety: wygasania i odnowienia. Liczymy tylko karnety płatne – wejściówki i testowe nie są „odnowieniem”.
+    const nowIsoStr = now.toISOString();
+    const in7 = new Date(now.getTime() + 7 * 86_400_000).toISOString();
+    const in30 = new Date(now.getTime() + 30 * 86_400_000).toISOString();
+    const ago30 = new Date(now.getTime() - 30 * 86_400_000).toISOString();
+    const PAID = "source NOT IN ('test', 'guest_pass')";
+    const expiring = scope.get<{ d7: number; d30: number; auto7: number }>(
+      `SELECT SUM(CASE WHEN valid_until < $in7 THEN 1 ELSE 0 END) AS d7, COUNT(*) AS d30,
+              SUM(CASE WHEN valid_until < $in7 AND auto_renew = 1 THEN 1 ELSE 0 END) AS auto7
+       FROM passes WHERE studio_id = $studio AND ${PAID} AND status IN ('active', 'frozen') AND valid_until >= $now AND valid_until < $in30`,
+      { now: nowIsoStr, in7, in30 },
+    )!;
+    const renewed = scope.get<{ total: number; auto: number }>(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN p.source = 'renewal' THEN 1 ELSE 0 END) AS auto FROM passes p
+       WHERE p.studio_id = $studio AND p.${PAID} AND p.created_at >= $from
+         AND EXISTS (SELECT 1 FROM passes o WHERE o.studio_id = $studio AND o.user_id = p.user_id AND o.${PAID} AND o.created_at < p.created_at)`,
+      { from: monthFrom },
+    )!;
+    // Klientki, którym karnet skończył się w ostatnich 30 dniach – czy kupiły następny?
+    const ended = scope.get<{ ended: number; lapsed: number }>(
+      `SELECT COUNT(DISTINCT p.user_id) AS ended,
+              COUNT(DISTINCT CASE WHEN NOT EXISTS (SELECT 1 FROM passes o WHERE o.studio_id = $studio AND o.user_id = p.user_id AND o.${PAID} AND o.created_at > p.created_at) THEN p.user_id END) AS lapsed
+       FROM passes p WHERE p.studio_id = $studio AND p.${PAID} AND p.valid_until >= $ago AND p.valid_until < $now`,
+      { ago: ago30, now: nowIsoStr },
+    )!;
+    const expiringSoon = scope.all<{ name: string | null; product_name: string; valid_until: string; auto_renew: number }>(
+      `SELECT u.name, p.product_name, p.valid_until, p.auto_renew FROM passes p LEFT JOIN users u ON u.id = p.user_id
+       WHERE p.studio_id = $studio AND p.${PAID} AND p.status IN ('active', 'frozen') AND p.valid_until >= $now ORDER BY p.valid_until LIMIT 4`,
+      { now: nowIsoStr },
+    );
+
     return {
       today,
       revenueMonth: { total: formatPLN(revenue.total), count: revenue.count },
@@ -120,6 +151,17 @@ export function ownerRoutes(app: FastifyInstance, deps: Deps) {
       pendingWelcomes: n("SELECT COUNT(*) AS n FROM welcome_messages WHERE studio_id = $studio AND status = 'pending'"),
       guestPasses: { sent: guestPasses.sent ?? 0, activated: guestPasses.activated ?? 0 },
       courses: { published: courses.published ?? 0, pending: courses.pending ?? 0, enrolled: courses.enrolled, completed: courses.completed },
+      passes: {
+        expiring7: expiring.d7 ?? 0,
+        expiring30: expiring.d30,
+        autoRenew7: expiring.auto7 ?? 0,
+        renewedMonth: renewed.total,
+        autoRenewedMonth: renewed.auto ?? 0,
+        ended30: ended.ended,
+        lapsed30: ended.lapsed,
+        renewalRate: pct(ended.ended - ended.lapsed, ended.ended),
+        soon: expiringSoon.map((p) => ({ name: p.name, product: p.product_name, validUntil: p.valid_until, autoRenew: !!p.auto_renew })),
+      },
       unreadChats,
       todo: {
         welcomes: n("SELECT COUNT(*) AS n FROM welcome_messages WHERE studio_id = $studio AND status = 'pending'"),

@@ -26,6 +26,7 @@ export type Permission =
   | 'roles.manage'
   | 'clients.view'
   | 'clients.contact'
+  | 'clients.create'
   | 'community.moderate'
   | 'challenges.edit'
   | 'playlists.moderate'
@@ -47,6 +48,7 @@ const MATRIX: Record<Exclude<Role, 'client'>, Permission[]> = {
     'participants.view',
     'messages.group.own',
     'notes.write',
+    'clients.create',
     'themes.view',
     'courses.create',
     'welcomes.write',
@@ -65,6 +67,7 @@ const MATRIX: Record<Exclude<Role, 'client'>, Permission[]> = {
     'campaigns.edit',
     'clients.view',
     'clients.contact',
+    'clients.create',
     'desk.sell',
     'shop.manage',
     'events.manage',
@@ -91,6 +94,7 @@ const MATRIX: Record<Exclude<Role, 'client'>, Permission[]> = {
     'roles.manage',
     'clients.view',
     'clients.contact',
+    'clients.create',
     'community.moderate',
     'challenges.edit',
     'playlists.moderate',

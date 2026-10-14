@@ -774,6 +774,22 @@ CREATE TABLE IF NOT EXISTS rewards (
   active INTEGER NOT NULL DEFAULT 1
 );
 
+-- Vouchery wystawiane w recepcji: kwota na wybrane zajęcia (NULL = dowolne), kod do okazania przy kasie.
+CREATE TABLE IF NOT EXISTS vouchers (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  code TEXT NOT NULL,
+  class_type_id TEXT REFERENCES class_types(id),
+  amount_grosze INTEGER NOT NULL CHECK (amount_grosze > 0),
+  recipient TEXT,
+  valid_until TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'redeemed', 'cancelled')),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (studio_id, code)
+);
+
 CREATE TABLE IF NOT EXISTS locker_items (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
@@ -864,6 +880,7 @@ CREATE TABLE IF NOT EXISTS private_events (
   studio_id TEXT NOT NULL REFERENCES studios(id),
   client_id TEXT NOT NULL REFERENCES users(id),
   kind TEXT NOT NULL,
+  title TEXT,
   package_id TEXT REFERENCES event_packages(id),
   trainer_id TEXT REFERENCES users(id),
   zone_id TEXT REFERENCES zones(id),

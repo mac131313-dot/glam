@@ -1,5 +1,5 @@
 // Pulpit właścicielki (3, #14): frekwencja dziś, przychód miesiąca, nowe klientki, aktywne / uśpione, obłożenie,
-// popularne zajęcia, płatności, kafelek „Kursy” (K16) i lista „do zrobienia” prowadząca do właściwych sekcji.
+// popularne zajęcia, płatności, kafelki „Kursy” (K16) i „Karnety: wygasania i odnowienia” oraz lista „do zrobienia” prowadząca do właściwych sekcji.
 import { fmtDay, useApi } from '../api.ts';
 import { PAYMENT_LABELS, Spinner, Stat } from '../ui.tsx';
 
@@ -14,6 +14,17 @@ type Dash = {
   payments: { amount: string; method: string; kind: string; created_at: string; name: string | null; description: string | null }[];
   guestPasses: { sent: number; activated: number };
   courses: { published: number; pending: number; enrolled: number; completed: number };
+  passes: {
+    expiring7: number;
+    expiring30: number;
+    autoRenew7: number;
+    renewedMonth: number;
+    autoRenewedMonth: number;
+    ended30: number;
+    lapsed30: number;
+    renewalRate: number;
+    soon: { name: string | null; product: string; validUntil: string; autoRenew: boolean }[];
+  };
   todo: Record<'welcomes' | 'courses' | 'reports' | 'followups' | 'locker' | 'cards' | 'events' | 'orders' | 'tracks' | 'chats', number>;
 };
 
@@ -57,7 +68,7 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
         <Stat label="Obłożenie 7 dni" value={`${data.occupancy7d}%`} hint="zarezerwowane miejsca" />
       </div>
 
-      <div className="grid-2">
+      <div className="grid-2 dash-grid">
         <section className="card stack" style={{ gap: 8 }}>
           <h3>Do zrobienia</h3>
           {open.length === 0 && <p className="small muted" style={{ margin: 0 }}>Wszystko ogarnięte.</p>}
@@ -132,6 +143,69 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
             <b>
               {data.guestPasses.sent} / {data.guestPasses.activated}
             </b>
+          </div>
+        </section>
+
+        <section className="card stack span-wide">
+          <h3>Karnety: wygasania i odnowienia</h3>
+          <div className="split">
+            <div className="stack">
+              <div className="stack" style={{ gap: 4 }}>
+                <div className="row between small">
+                  <span>Wygasają w 7 dni · odnowią się same</span>
+                  <b>
+                    {data.passes.expiring7} · {data.passes.autoRenew7}
+                  </b>
+                </div>
+                <div className="progress">
+                  <span style={{ width: `${(data.passes.expiring7 / Math.max(1, data.passes.expiring30)) * 100}%` }} />
+                </div>
+              </div>
+              <div className="row between small">
+                <span>Wygasają w 30 dni</span>
+                <b>{data.passes.expiring30}</b>
+              </div>
+              <div className="row between small">
+                <span>Odnowione w tym miesiącu · automatycznie</span>
+                <b>
+                  {data.passes.renewedMonth} · {data.passes.autoRenewedMonth}
+                </b>
+              </div>
+              <div className="stack" style={{ gap: 4 }}>
+                <div className="row between small">
+                  <span>Kupiły kolejny po wygaśnięciu (30 dni)</span>
+                  <b>{data.passes.renewalRate}%</b>
+                </div>
+                <div className="progress">
+                  <span style={{ width: `${data.passes.renewalRate}%` }} />
+                </div>
+              </div>
+              <div className="row between small">
+                <span>Bez kolejnego karnetu (30 dni)</span>
+                <b>
+                  {data.passes.lapsed30} / {data.passes.ended30}
+                </b>
+              </div>
+            </div>
+
+            <div className="stack" style={{ gap: 8 }}>
+              <span className="small muted">Najbliższe wygaśnięcia</span>
+              {data.passes.soon.length === 0 && <p className="small muted" style={{ margin: 0 }}>Żaden karnet nie kończy się wkrótce.</p>}
+              {data.passes.soon.map((p, i) => (
+                <div key={i} className="row between small">
+                  <span className="ellipsis">
+                    {p.name ?? 'Klientka'} <span className="muted">· {p.product}</span>
+                  </span>
+                  <span className="row" style={{ gap: 8, flex: 'none' }}>
+                    {p.autoRenew && <span className="badge">auto</span>}
+                    <b>{fmtDay(p.validUntil)}</b>
+                  </span>
+                </div>
+              ))}
+              <button className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => go?.('clients')}>
+                Zobacz klientki
+              </button>
+            </div>
           </div>
         </section>
 

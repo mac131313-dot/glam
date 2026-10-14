@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { api, fmtDay, localDate, session, useApi } from '../api.ts';
-import { PAYMENT_LABELS, Spinner, Stat, useAction } from '../ui.tsx';
+import { Empty, PAYMENT_LABELS, Spinner, Stat, useAction } from '../ui.tsx';
 import { download } from './Clients.tsx';
 
 type Fin = {
@@ -24,9 +24,27 @@ const KIND: Record<string, string> = { pass: 'Karnety', guest_pass: 'Wejściówk
 export default function Finance({ roles }: { roles: Role[] }) {
   const [from, setFrom] = useState(`${localDate().slice(0, 7)}-01`);
   const [to, setTo] = useState(localDate());
-  const fin = useApi<Fin>(`/owner/finance?from=${from}&to=${to}`);
+  // Recepcja ma sam eksport (finance.export) bez wglądu w przychody (finance.view) – widzi tylko narzędzia eksportu.
+  const view = can(roles, 'finance.view');
+  const fin = useApi<Fin>(view ? `/owner/finance?from=${from}&to=${to}` : null);
   const { run, busy } = useAction();
   const exp = can(roles, 'finance.export');
+  const exports = exp && (
+    <section className="card soft row wrap">
+      {['payments', 'clients', 'bookings', 'shop'].map((w) => (
+        <button key={w} className="btn ghost sm" onClick={() => download(`/owner/export/${w}.csv?from=${from}&to=${to}`, `${w}-${from}-${to}.csv`)}>
+          CSV: {w === 'payments' ? 'płatności' : w === 'clients' ? 'klientki' : w === 'bookings' ? 'rezerwacje' : 'sklep'}
+        </button>
+      ))}
+      <button
+        className="btn sm"
+        disabled={busy}
+        onClick={() => run(() => api<{ issued: number }>('/owner/invoices/batch', { method: 'POST', body: { from, to } }).then((r) => (fin.reload(), r)), (r) => `Wystawiono ${r?.issued ?? 0} faktur`)}
+      >
+        Faktury zbiorcze za okres
+      </button>
+    </section>
+  );
   const openInvoice = async (id: string) => {
     const res = await fetch(`/api/invoices/${id}`, { headers: { authorization: `Bearer ${session.token}`, 'x-studio-id': session.studioId ?? '' } });
     const w = window.open('', '_blank');
@@ -41,7 +59,14 @@ export default function Finance({ roles }: { roles: Role[] }) {
           <input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Do" />
         </div>
       </div>
-      {!fin.data ? (
+      {!view ? (
+        <>
+          {exports}
+          <p className="small muted" style={{ margin: 0 }}>Przychody i listę płatności widzi właścicielka. Tutaj pobierzesz zestawienia i wystawisz faktury za wybrany okres.</p>
+        </>
+      ) : fin.error ? (
+        <Empty>{fin.error.message}</Empty>
+      ) : !fin.data ? (
         <Spinner />
       ) : (
         <>
@@ -74,22 +99,7 @@ export default function Finance({ roles }: { roles: Role[] }) {
               ))}
             </section>
           </div>
-          {exp && (
-            <section className="card soft row wrap">
-              {['payments', 'clients', 'bookings', 'shop'].map((w) => (
-                <button key={w} className="btn ghost sm" onClick={() => download(`/owner/export/${w}.csv?from=${from}&to=${to}`, `${w}-${from}-${to}.csv`)}>
-                  CSV: {w === 'payments' ? 'płatności' : w === 'clients' ? 'klientki' : w === 'bookings' ? 'rezerwacje' : 'sklep'}
-                </button>
-              ))}
-              <button
-                className="btn sm"
-                disabled={busy}
-                onClick={() => run(() => api<{ issued: number }>('/owner/invoices/batch', { method: 'POST', body: { from, to } }).then((r) => (fin.reload(), r)), (r) => `Wystawiono ${r?.issued ?? 0} faktur`)}
-              >
-                Faktury zbiorcze za okres
-              </button>
-            </section>
-          )}
+          {exports}
           <table className="table">
             <thead>
               <tr>
