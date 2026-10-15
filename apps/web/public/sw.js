@@ -1,23 +1,43 @@
 // GLAM – service worker: powiadomienia push (sekcja 8) i tryb offline dla grafiku, karnetu i listy zajęć (sekcja 10).
-const CACHE = 'glam-v1';
+const CACHE = 'glam-v2';
+const KEEP = [CACHE, 'glam-offline-media'];
 const OFFLINE_API = ['/api/schedule', '/api/home', '/api/my/passes', '/api/my/bookings', '/api/studio', '/api/me'];
 
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+// Starsze wersje (glam-v1 trzymała dane bez rozróżnienia osoby) – usuwamy przy aktywacji.
+self.addEventListener('activate', (e) =>
+  e.waitUntil(caches.keys().then((names) => Promise.all(names.filter((n) => !KEEP.includes(n)).map((n) => caches.delete(n)))).then(() => self.clients.claim())),
+);
+
+/** Klucz zapisanej odpowiedzi: adres + studio + skrót sesji – inna osoba na tym samym telefonie nie zobaczy cudzych danych. */
+async function apiKey(req, url) {
+  const auth = req.headers.get('authorization');
+  if (!auth) return null;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(auth));
+  const who = Array.from(new Uint8Array(digest).slice(0, 12), (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${url.pathname}${url.search}#${req.headers.get('x-studio-id') ?? ''}#${who}`;
+}
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // API: najpierw sieć, bez sieci – ostatnia zapisana odpowiedź (osobno per studio).
   if (OFFLINE_API.some((p) => url.pathname.startsWith(p))) {
-    const key = `${url.pathname}${url.search}#${e.request.headers.get('x-studio-id') ?? ''}`;
+    const key = apiKey(e.request, url);
     e.respondWith(
       fetch(e.request)
         .then((res) => {
-          if (res.ok) caches.open(CACHE).then((c) => c.put(key, res.clone()));
+          if (res.ok) {
+            const copy = res.clone(); // od razu – strona zaraz przeczyta oryginał
+            key.then((k) => k && caches.open(CACHE).then((c) => c.put(k, copy)));
+          }
           return res;
         })
-        .catch(() => caches.open(CACHE).then((c) => c.match(key)).then((r) => r ?? new Response(JSON.stringify({ error: 'offline', message: 'Brak internetu – pokazujemy ostatnio zapisane dane.' }), { status: 503, headers: { 'content-type': 'application/json' } }))),
+        .catch(() =>
+          key
+            .then((k) => (k ? caches.open(CACHE).then((c) => c.match(k)) : undefined))
+            .then((r) => r ?? new Response(JSON.stringify({ error: 'offline', message: 'Brak internetu – pokazujemy ostatnio zapisane dane.' }), { status: 503, headers: { 'content-type': 'application/json' } })),
+        ),
     );
     return;
   }
@@ -37,7 +57,7 @@ self.addEventListener('push', (e) => {
   try {
     data = { ...data, ...e.data.json() };
   } catch {}
-  e.waitUntil(self.registration.showNotification(data.title, { body: data.body, icon: '/icon.svg', badge: '/icon.svg', data: { url: data.url } }));
+  e.waitUntil(self.registration.showNotification(data.title, { body: data.body, icon: '/icon-192.png', badge: '/icon-192.png', data: { url: data.url } }));
 });
 
 self.addEventListener('notificationclick', (e) => {

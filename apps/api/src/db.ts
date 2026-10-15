@@ -1249,6 +1249,18 @@ CREATE TABLE IF NOT EXISTS usage_log (
 );
 CREATE INDEX IF NOT EXISTS idx_usage_studio ON usage_log (studio_id, created_at);
 
+-- Wiadomości do znajomych wysyłane przez klientki (zaproszenia, polecenia, przepisanie wejściówki) – limity dzienne.
+CREATE TABLE IF NOT EXISTS client_sms_log (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_client_sms_user ON client_sms_log (studio_id, user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_client_sms_phone ON client_sms_log (studio_id, phone, created_at);
+
 CREATE TABLE IF NOT EXISTS request_metrics (
   studio_id TEXT NOT NULL,
   day TEXT NOT NULL,

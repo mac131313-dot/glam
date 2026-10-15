@@ -42,6 +42,8 @@ export const session = {
   studioId: store.get(key('studio')),
   persona: store.get(key('persona')),
   setToken(t: string | null) {
+    // Wylogowanie albo inne konto: dane zapisane offline (grafik, karnety, pobrane lekcje) należą do poprzedniej sesji.
+    if (t !== this.token) clearOfflineData();
     this.token = t;
     store.set(key('token'), t);
   },
@@ -100,13 +102,27 @@ export function useApi<T = any>(path: string | null, deps: unknown[] = []) {
   return { data, error, loading, reload, setData };
 }
 
-// Formaty dat w strefie studia (sekcja 10: polskie formaty dat i godzin).
-const TZ = 'Europe/Warsaw';
+// Formaty dat w strefie studia (sekcja 10: polskie formaty dat i godzin). Godziny zajęć pokazujemy w czasie studia,
+// także gdy klientka ma telefon ustawiony na inną strefę (wyjazd). Strefę ustawia aplikacja po wczytaniu studia.
+let TZ = 'Europe/Warsaw';
+export function setStudioTimezone(tz: string | null | undefined) {
+  if (!tz || tz === TZ) return;
+  try {
+    new Intl.DateTimeFormat('pl-PL', { timeZone: tz });
+    TZ = tz;
+  } catch {
+    /* nieznana strefa – zostaje domyślna */
+  }
+}
 export const fmtTime = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 export const fmtDay = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'numeric' }).format(new Date(iso));
 export const fmtLongDay = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(iso));
 export const localDate = (d: Date = new Date()) => new Intl.DateTimeFormat('sv-SE', { timeZone: TZ }).format(d);
-export const addDaysStr = (date: string, n: number) => {
+/** Okres z regulaminu po ludzku: 120 → „2 h”, 90 → „1 h 30 min”, 45 → „45 min”. */
+export const fmtMinutes = (min: number) => (min < 60 ? `${min} min` : min % 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min / 60} h`);
+/** Numer telefonu w grupach: +48500000212 → „+48 500 000 212”. */
+export const fmtPhone = (phone: string) => phone.replace(/^(\+\d{2})(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3 $4');
+export const addDaysStr =(date: string, n: number) => {
   const [y, m, d] = date.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d) + n * 86_400_000).toISOString().slice(0, 10);
 };
@@ -116,6 +132,16 @@ export const addDaysStr = (date: string, n: number) => {
  * <img>/<video> nie wyślą nagłówka, więc pobieramy plik fetch-em i podajemy lokalny adres (bez tokenu w URL).
  */
 const blobCache = new Map<string, Promise<string>>();
+
+function clearOfflineData() {
+  for (const url of blobCache.values()) url.then(URL.revokeObjectURL, () => {});
+  blobCache.clear();
+  if (typeof caches === 'undefined') return;
+  caches
+    .keys()
+    .then((names) => Promise.all(names.filter((n) => n.startsWith('glam-')).map((n) => caches.delete(n))))
+    .catch(() => {});
+}
 export function authedObjectUrl(src: string): Promise<string> {
   if (!src.startsWith('/api/media/')) return Promise.resolve(src);
   if (!blobCache.has(src)) {

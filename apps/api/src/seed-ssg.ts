@@ -4,6 +4,7 @@ import { localParts, zonedToUtc, type Pool, type ProductRules } from '@glam/core
 import type { Db } from './db.ts';
 import { StudioScope } from './scope.ts';
 import { bookSession } from './services/booking.ts';
+import { awardPoints } from './services/motivation.ts';
 import { consumeEntry, loadPass } from './services/passes.ts';
 import { fillSchedule } from './services/schedule.ts';
 import { loadStudio } from './services/studio.ts';
@@ -226,11 +227,14 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
     );
     for (const s of past) {
       const pass = loadPass(scope, passId)!;
+      const bookingId = crypto.randomUUID();
       scope.run(
         "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'attended', $t, $t)",
-        { id: crypto.randomUUID(), s: s.id, u: id, p: passId, t: iso(now) },
+        { id: bookingId, s: s.id, u: id, p: passId, t: iso(now) },
       );
       consumeEntry(scope, pass, 'main');
+      // Punkty jak przy prawdziwym zaliczeniu zajęć – inaczej Start pokazuje 0 pkt mimo wizyt.
+      awardPoints(scope, studio, id, 'training', bookingId, studio.settings.loyalty.points.training, now);
     }
     const next = scope.get<{ id: string }>(
       "SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = $ct AND status = 'scheduled' AND starts_at > $min ORDER BY starts_at LIMIT 1",

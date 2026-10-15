@@ -1,5 +1,6 @@
 import { useAuthedUrl } from './api.ts';
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayer } from './back.ts';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 type Toast = { text: string; kind: 'ok' | 'error' } | null;
@@ -27,15 +28,28 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 export const useToast = () => useContext(ToastCtx);
 
-export function Sheet({ onClose, children, label }: { onClose: () => void; children: ReactNode; label: string }) {
+/**
+ * Fokus w oknie: po otwarciu przechodzi do okna (czytnik ekranu zaczyna od jego treści, nie od tła),
+ * po zamknięciu wraca do elementu, który okno otworzył.
+ */
+function useDialogFocus() {
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    const opener = document.activeElement as HTMLElement | null;
+    ref.current?.focus({ preventScroll: true });
+    return () => {
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, []);
+  return ref;
+}
+
+export function Sheet({ onClose, children, label }: { onClose: () => void; children: ReactNode; label: string }) {
+  useLayer(onClose);
+  const ref = useDialogFocus();
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
+      <div ref={ref} tabIndex={-1} className="sheet" role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
         {children}
       </div>
@@ -89,20 +103,18 @@ export const PAYMENT_LABELS: Record<string, string> = {
 
 /** Podstrona na pełny ekran z przyciskiem „Wróć” – w aplikacji klientki i w panelu. */
 export function Page({ title, onBack, children, actions }: { title: ReactNode; onBack: () => void; children: ReactNode; actions?: ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onBack();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onBack]);
+  useLayer(onBack);
+  const ref = useDialogFocus();
+  const titleId = useId();
   return (
-    <div className="page" role="dialog" aria-modal="true">
+    <div ref={ref} tabIndex={-1} className="page" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header className="page-bar">
         <button className="icon-btn" style={{ width: 42, height: 42 }} onClick={onBack} aria-label="Wróć">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden>
             <path d="m15 6-6 6 6 6" />
           </svg>
         </button>
-        <h2 style={{ margin: 0, flex: 1, fontSize: '1.15rem' }}>{title}</h2>
+        <h2 id={titleId} style={{ margin: 0, flex: 1, fontSize: '1.15rem' }}>{title}</h2>
         {actions}
       </header>
       <div className="page-body">{children}</div>

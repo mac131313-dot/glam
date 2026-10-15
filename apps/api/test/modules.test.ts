@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.ts';
 import type { Deps } from '../src/context.ts';
 import { openDb } from '../src/db.ts';
 import { DEMO, seed } from '../src/seed.ts';
+import { COUPON_MISSES } from '../src/routes/client.ts';
 import { runJobs } from '../src/services/jobs.ts';
 import { encryptPayload } from '../src/services/webpush.ts';
 import { ConsoleEmailSender, ConsolePushSender, ConsoleSmsGateway, MockPaymentProvider } from '../src/sms.ts';
@@ -132,7 +133,8 @@ test('społeczność: wulgaryzmy odrzucone, zgłoszenie i ukrycie przez koordyna
 
 test('wyzwanie z odhaczaniem: postęp, ukończenie, odznaka i punkty', async () => {
   const owner = await login(DEMO.owner);
-  const today = new Date().toISOString().slice(0, 10);
+  // Dzień w strefie studia, nie w UTC – tuż po północy to dwie różne daty.
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
   const ch = await call(owner, R, 'POST', '/api/staff/challenges', { title: 'Jeden dzień', metric: 'checkins', target: 1, startsOn: today, endsOn: today });
   assert.equal(ch.statusCode, 200, ch.body);
   const ania = await login(DEMO.ania);
@@ -652,4 +654,48 @@ test('wydarzenie: zmiana godziny nie omija innych zajęć, a stare zapytanie wyg
   const after = (await call(magda, R, 'GET', `/api/events/${inq.json().id}`)).json();
   assert.equal(after.status, 'cancelled');
   assert.match(after.history.at(-1).text, /Wygasło/);
+});
+
+test('wiadomości do znajomych: dzienny limit na klientkę i na numer, odpowiedź nie zdradza członkostwa', async () => {
+  const ania = await login(DEMO.ania);
+  const zuza = await login(DEMO.zuza);
+  const s = db.prepare("SELECT id FROM class_sessions WHERE studio_id = ? AND status = 'scheduled' AND public = 1 AND starts_at > ? ORDER BY starts_at LIMIT 1").get(R, new Date().toISOString()) as { id: string };
+  const invite = (token: string, phone: string) => call(token, R, 'POST', `/api/sessions/${s.id}/invite`, { phone });
+  // Ta sama odpowiedź dla klientki studia (Magda) i dla obcego numeru.
+  const member = await invite(ania, DEMO.magda);
+  const stranger = await invite(ania, '600 700 801');
+  assert.equal(member.statusCode, 200, member.body);
+  assert.deepEqual(member.json(), stranger.json());
+  for (const n of [2, 3, 4]) assert.equal((await invite(ania, `600 700 80${n}`)).statusCode, 200);
+  const sixth = await invite(ania, '600 700 809');
+  assert.equal(sixth.statusCode, 429);
+  assert.equal(sixth.json().error, 'sms_limit');
+  // Limit na numer liczy się od wszystkich klientek razem: 600 700 801 dostał już jedno zaproszenie.
+  assert.equal((await invite(zuza, '600 700 801')).statusCode, 200);
+  assert.equal((await invite(zuza, '600 700 801')).statusCode, 429);
+  // Polecenie z numerem korzysta z tego samego dziennego limitu klientki.
+  const ref = await call(ania, R, 'POST', '/api/referrals', { phone: '600 700 900', channel: 'sms' });
+  assert.equal(ref.statusCode, 429);
+});
+
+test('autoodnawianie: tylko w karnecie, którego produkt je przewiduje; studio podaje strefę czasową', async () => {
+  const magda = await login(DEMO.magda);
+  const pass = db.prepare("SELECT p.id FROM passes p JOIN users u ON u.id = p.user_id WHERE p.studio_id = ? AND u.phone = ? AND p.rules_json NOT LIKE '%\"autoRenew\":true%' LIMIT 1").get(R, DEMO.magda) as { id: string } | undefined;
+  assert.ok(pass, 'Magda ma karnet bez odnawiania');
+  const on = await call(magda, R, 'PATCH', `/api/passes/${pass.id}`, { autoRenew: true });
+  assert.equal(on.statusCode, 409, on.body);
+  assert.equal(on.json().error, 'no_renewal');
+  assert.equal((await call(magda, R, 'PATCH', `/api/passes/${pass.id}`)).statusCode, 400);
+  assert.equal((await call(magda, R, 'PATCH', `/api/passes/${pass.id}`, { autoRenew: false })).statusCode, 200);
+  assert.match((await call(magda, R, 'GET', '/api/studio')).json().timezone, /^[A-Za-z]+\/[A-Za-z_]+/);
+});
+
+test('kody rabatowe: po serii nietrafionych sprawdzanie się zatrzymuje', async () => {
+  const zuza = await login(DEMO.zuza);
+  const check = (code: string) => call(zuza, R, 'POST', '/api/coupons/check', { code, kind: 'pass', amountGrosze: 26000 });
+  assert.equal((await check('jesien15')).statusCode, 200);
+  for (let i = 0; i < COUPON_MISSES; i++) assert.equal((await check(`ZGADUJE${i}`)).statusCode, 400);
+  const blocked = await check('jesien15');
+  assert.equal(blocked.statusCode, 429);
+  assert.equal(blocked.json().error, 'too_many_attempts');
 });

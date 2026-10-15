@@ -2,7 +2,7 @@
 // trening we dwie (#6), rezerwacja „na stałe”, lista oczekujących, odwołanie, „umów się z dziewczynami”,
 // playlista zajęć, synchronizacja z kalendarzem telefonu.
 import { useMemo, useState } from 'react';
-import { addDaysStr, api, ApiError, fmtTime, localDate, useApi } from '../api.ts';
+import { addDaysStr, api, ApiError, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
 import { Empty, Field, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { useClient } from './ClientApp.tsx';
@@ -43,7 +43,8 @@ export function Schedule() {
   const { studio, openShop, open } = useClient();
   const today = localDate();
   const [view, setView] = useState<View>('day');
-  const span = view === 'month' ? 35 : 14;
+  // Tydzień może zacząć się od ostatniego dnia z paska (dziś + 13), więc pobieramy 21 dni.
+  const span = view === 'month' ? 35 : 21;
   const { data, reload } = useApi<{ sessions: Session[] }>(`/schedule?from=${today}&days=${span}`, [span]);
   const [day, setDay] = useState(today);
   const [type, setType] = useState<string | null>(null);
@@ -54,6 +55,8 @@ export function Schedule() {
   const [showFilters, setShowFilters] = useState(false);
   const [detail, setDetail] = useState<Session | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Odwołanie po terminie (wejście przepada) wymaga drugiego dotknięcia. */
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [withFriend, setWithFriend] = useState(false);
   const [guest, setGuest] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
@@ -74,6 +77,7 @@ export function Schedule() {
       const res = await fn();
       if (res?.message) toast(res.message);
       setDetail(null);
+      setConfirmCancel(false);
       setWithFriend(false);
       setGuest('');
       reload();
@@ -89,6 +93,7 @@ export function Schedule() {
     }
   };
 
+  const started = (s: Session) => Date.parse(s.starts_at) <= Date.now();
   const lateCancel = (s: Session) => Date.parse(s.starts_at) - Date.now() < studio.policy.cancelMinutesBefore * 60_000;
   const days = Array.from({ length: 14 }, (_, i) => addDaysStr(today, i));
   const activeFilters = [type, trainer, level, zone].filter(Boolean).length + Number(onlyFree);
@@ -171,7 +176,7 @@ export function Schedule() {
               const newDay = view === 'week' && (i === 0 || localDate(new Date(list[i - 1].starts_at)) !== localDate(new Date(s.starts_at)));
               return (
                 <div key={s.id} style={{ display: 'contents' }}>
-                  {newDay && <div className="eyebrow" style={{ marginTop: 10 }}>{new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Warsaw' }).format(new Date(s.starts_at))}</div>}
+                  {newDay && <div className="eyebrow" style={{ marginTop: 10 }}>{fmtLongDay(s.starts_at)}</div>}
                   <ClassCover
                     bleed
                     photoUrl={s.photo_url}
@@ -184,6 +189,8 @@ export function Schedule() {
                     corner={
                       s.my_status === 'booked' ? (
                         <span className="badge ok">{s.my_guest ? 'zapisane we dwie' : 'zapisana'}</span>
+                      ) : s.my_status === 'attended' ? (
+                        <span className="badge">byłaś</span>
                       ) : s.my_status === 'waitlist' ? (
                         <span className="badge warn">na liście</span>
                       ) : s.status === 'cancelled' ? (
@@ -200,14 +207,14 @@ export function Schedule() {
       )}
 
       {detail && (
-        <Sheet onClose={() => setDetail(null)} label={detail.class_name}>
+        <Sheet onClose={() => (setDetail(null), setConfirmCancel(false))} label={detail.class_name}>
           <div className="stack">
             {detail.photo_url && (
               <div className="sheet-cover">
                 <img src={detail.photo_url} alt="" />
               </div>
             )}
-            <div className="eyebrow">{new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Warsaw' }).format(new Date(detail.starts_at))}</div>
+            <div className="eyebrow">{fmtLongDay(detail.starts_at)}</div>
             <h2 style={{ fontSize: '1.8rem' }}>
               {detail.class_name} <span className="serif">{fmtTime(detail.starts_at)}</span>
             </h2>
@@ -221,10 +228,12 @@ export function Schedule() {
             </div>
             {detail.playlist_url && (
               <a className="small" href={detail.playlist_url} target="_blank" rel="noreferrer">
-                🎵 Na zajęciach: {detail.playlist_name}
+                Na zajęciach: {detail.playlist_name}
               </a>
             )}
-            {detail.my_status === 'booked' ? (
+            {detail.my_status === 'attended' ? (
+              <p className="small">Byłaś na tych zajęciach. Ocenisz je w Profilu, w historii zajęć.</p>
+            ) : detail.my_status === 'booked' ? (
               <>
                 {detail.my_guest && <p className="small">Zapisane we dwie – z Tobą idzie {detail.my_guest}.</p>}
                 {!detail.my_confirmed_at && Date.parse(detail.starts_at) - Date.now() < 24 * 3_600_000 && (
@@ -232,10 +241,27 @@ export function Schedule() {
                     Potwierdzam obecność
                   </button>
                 )}
-                {lateCancel(detail) && <p className="small" style={{ color: 'var(--danger)' }}>Do zajęć zostało mniej niż {studio.policy.cancelMinutesBefore / 60} h – po odwołaniu wejście przepada, ale miejsce dostanie inna osoba.</p>}
-                <button className="btn danger block" disabled={busy} onClick={() => act(() => api(`/bookings/${detail.my_booking_id}`, { method: 'DELETE' }))}>
-                  Odwołaj rezerwację
-                </button>
+                {started(detail) ? (
+                  <p className="small muted">Zajęcia już się zaczęły – tej rezerwacji nie da się odwołać.</p>
+                ) : (
+                  <>
+                    {lateCancel(detail) && <p className="small" style={{ color: 'var(--danger)' }}>Do zajęć zostało mniej niż {fmtMinutes(studio.policy.cancelMinutesBefore)} – po odwołaniu wejście przepada, ale miejsce dostanie inna osoba.</p>}
+                    {confirmCancel ? (
+                      <div className="row">
+                        <button className="btn ghost" style={{ flex: 1 }} disabled={busy} onClick={() => setConfirmCancel(false)}>
+                          Zostaję
+                        </button>
+                        <button className="btn danger" style={{ flex: 1 }} disabled={busy} onClick={() => act(() => api(`/bookings/${detail.my_booking_id}`, { method: 'DELETE' }))}>
+                          Tak, odwołuję
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="btn danger block" disabled={busy} onClick={() => (lateCancel(detail) ? setConfirmCancel(true) : act(() => api(`/bookings/${detail.my_booking_id}`, { method: 'DELETE' })))}>
+                        Odwołaj rezerwację
+                      </button>
+                    )}
+                  </>
+                )}
               </>
             ) : detail.my_status === 'waitlist' ? (
               <>
@@ -246,6 +272,8 @@ export function Schedule() {
               </>
             ) : detail.status === 'cancelled' ? (
               <p>Te zajęcia zostały odwołane.</p>
+            ) : started(detail) ? (
+              <p className="small muted">Te zajęcia już się odbyły – zapisz się na kolejny termin.</p>
             ) : detail.taken >= detail.capacity ? (
               <button className="btn block" disabled={busy} onClick={() => act(() => api('/bookings', { method: 'POST', body: { sessionId: detail.id } }))}>
                 Dopisz mnie do listy oczekujących
@@ -266,7 +294,7 @@ export function Schedule() {
             {detail.template_id && detail.status !== 'cancelled' && (
               <Toggle
                 label="Na stałe"
-                hint={`Zapisujemy Cię automatycznie co tydzień (${DOW[new Date(detail.starts_at).getDay()]} ${fmtTime(detail.starts_at)})`}
+                hint={`Zapisujemy Cię automatycznie co tydzień (${DOW[new Date(`${localDate(new Date(detail.starts_at))}T12:00:00Z`).getUTCDay()]} ${fmtTime(detail.starts_at)})`}
                 checked={!!detail.my_recurring_id}
                 onChange={(v) => act(() => (v ? api('/recurring', { method: 'POST', body: { templateId: detail.template_id } }) : api(`/recurring/${detail.my_recurring_id}`, { method: 'DELETE' })))}
               />
@@ -283,7 +311,7 @@ export function Schedule() {
               </details>
             )}
             <p className="tiny muted center">
-              Zapis i bezpłatne odwołanie do {studio.policy.cancelMinutesBefore / 60} h przed zajęciami.
+              Zapis i bezpłatne odwołanie do {fmtMinutes(studio.policy.cancelMinutesBefore)} przed zajęciami.
             </p>
           </div>
         </Sheet>

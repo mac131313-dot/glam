@@ -1,0 +1,30 @@
+/* Poprawki dotykowe i dostępności aplikacji klientki (audyt, październik 2026). */
+
+/* Okno dostaje fokus po otwarciu (czytnik ekranu), ale bez obwódki wokół całego arkusza. */
+.sheet:focus,
+.page:focus { outline: none; }
+
+/* Cel dotyku min. 44 × 44 px (WCAG 2.5.5 / zalecenia iOS i Androida) bez zmiany wyglądu:
+   niewidoczne pole wokół linków, chipów i przełącznika widoku. */
+:is(.phone, .page, .sheet) :is(.link, .chip, .segmented button) { position: relative; }
+:is(.phone, .page, .sheet) :is(.link, .chip, .segmented button)::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
+/* Podpis pod ramką telefonu jest tylko dla komputera – na telefonie wychodził spod paska zakładek. */
+.device-caption { display: none; }
+@media (min-width: 720px) and (min-height: 640px) {
+  .device-caption { display: block; }
+}
+
+/* Gdy otwarty jest arkusz, komunikat pokazujemy u góry, żeby nie zasłaniał przycisków arkusza. */
+body:has(.overlay, .paywall-overlay) .toast {
+  top: calc(16px + env(safe-area-inset-top));
+  bottom: auto;
+}

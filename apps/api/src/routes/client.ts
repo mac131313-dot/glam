@@ -4,6 +4,8 @@
 import type { FastifyInstance } from 'fastify';
 import {
   addDays,
+  affirmationFor,
+  breathRitual,
   dayPart,
   describePass,
   describeRules,
@@ -45,9 +47,14 @@ import { issuePass, loadPasses, passRows } from '../services/passes.ts';
 import { issueInvoice, priceWithCoupon, purchaseProduct, recordPayment } from '../services/payments.ts';
 import { weekProgress } from '../services/progress.ts';
 import { segmentsForUser } from '../services/segments.ts';
+import { claimClientSms } from '../services/sms-quota.ts';
+import { assertAttemptsLeft, recordFailedAttempt } from '../services/attempts.ts';
 import { logoInfo, type Studio } from '../services/studio.ts';
 import { guestRules, prefsOf } from './account.ts';
 import { invitesForHome } from './trainers.ts';
+
+/** Ile nietrafionych kodów rabatowych w kwadransie, zanim sprawdzanie się zatrzyma. */
+export const COUPON_MISSES = 10;
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -149,6 +156,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       id: studio.id,
       name: studio.name,
       city: studio.city,
+      timezone: studio.timezone,
       tagline: studio.tagline,
       logo: studio.logo,
       accent: studio.accent,
@@ -347,6 +355,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const phone = normalizePhone(req.body?.phone);
     const s = scope.get<{ starts_at: string; class_name: string }>("SELECT s.starts_at, ct.name AS class_name FROM class_sessions s JOIN class_types ct ON ct.id = s.class_type_id WHERE s.studio_id = $studio AND s.id = $id AND s.status = 'scheduled' AND s.public = 1", { id: req.params.id });
     if (!s) throw notFound('Nie znaleziono zajęć.');
+    if (phone === user.phone) throw badRequest('Podaj numer koleżanki.');
+    claimClientSms(scope, user.id, 'session_invite', phone);
     const friend = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
     const isMember = friend && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: friend.id });
     const inviteId = id();
@@ -364,7 +374,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       await deps.sms.send(phone, `${user.name ?? 'Znajoma'} zaprasza Cię na ${s.class_name} w ${studio.name} (${time.date.slice(8)}.${time.date.slice(5, 7)}, ${time.time}). Dołącz w aplikacji GLAM, kod studia: ${studio.invite_code}.`);
       logUsage(db, studio.id, 'sms', 1, 9);
     }
-    return { message: isMember ? 'Zaproszenie wysłane w aplikacji.' : 'Wysłałyśmy SMS z zaproszeniem.' };
+    // Ta sama odpowiedź w obu przypadkach – nie zdradzamy, czy numer należy do klientki studia.
+    return { message: 'Zaproszenie wysłane.' };
   });
 
   app.get('/api/my/invites', member, async (req) => {
@@ -443,9 +454,14 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
 
   app.patch<{ Params: { id: string }; Body: { autoRenew: boolean } }>('/api/passes/:id', member, async (req) => {
     const { scope, user } = ctx(req);
-    const r = scope.run('UPDATE passes SET auto_renew = $a WHERE studio_id = $studio AND id = $id AND user_id = $u', { a: Number(!!req.body?.autoRenew), id: req.params.id, u: user.id });
-    if (!r.changes) throw notFound('Nie znaleziono karnetu.');
-    return { message: req.body.autoRenew ? 'Karnet będzie się odnawiał automatycznie.' : 'Automatyczne odnawianie wyłączone.' };
+    if (typeof req.body?.autoRenew !== 'boolean') throw badRequest('Wybierz, czy karnet ma się odnawiać.');
+    const autoRenew = req.body.autoRenew;
+    const p = scope.get<{ rules_json: string }>('SELECT rules_json FROM passes WHERE studio_id = $studio AND id = $id AND user_id = $u', { id: req.params.id, u: user.id });
+    if (!p) throw notFound('Nie znaleziono karnetu.');
+    // Włączyć odnawianie można tylko w karnecie, którego produkt je przewiduje; wyłączyć – zawsze.
+    if (autoRenew && !(JSON.parse(p.rules_json) as ProductRules).autoRenew) throw conflict('no_renewal', 'Ten karnet nie odnawia się automatycznie – kup kolejny, gdy się skończy.');
+    scope.run('UPDATE passes SET auto_renew = $a WHERE studio_id = $studio AND id = $id AND user_id = $u', { a: Number(autoRenew), id: req.params.id, u: user.id });
+    return { message: autoRenew ? 'Karnet będzie się odnawiał automatycznie.' : 'Automatyczne odnawianie wyłączone.' };
   });
 
   app.get('/api/products', member, async (req) => {
@@ -465,8 +481,16 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
 
   app.post<{ Body: { code: string; kind?: 'pass' | 'course' | 'event' | 'shop' | 'guest_pass'; productId?: string; amountGrosze: number } }>('/api/coupons/check', member, async (req) => {
     const { scope, studio, user } = ctx(req);
-    const r = priceWithCoupon(scope, studio, { code: req.body?.code, userId: user.id, kind: req.body?.kind ?? 'pass', productId: req.body?.productId, amountGrosze: Number(req.body?.amountGrosze) || 0 });
-    return { label: r.coupon?.label, discount: formatPLN(r.discount), final: formatPLN(r.final), finalGrosze: r.final };
+    // Zgadywanie kodów: po 10 nietrafionych w kwadransie sprawdzanie stoi do końca okna.
+    const key = `coupon:${studio.id}:${user.id}`;
+    assertAttemptsLeft(key, COUPON_MISSES, 15 * 60_000, 'Za dużo nietrafionych kodów. Spróbuj ponownie za kwadrans.');
+    try {
+      const r = priceWithCoupon(scope, studio, { code: req.body?.code, userId: user.id, kind: req.body?.kind ?? 'pass', productId: req.body?.productId, amountGrosze: Number(req.body?.amountGrosze) || 0 });
+      return { label: r.coupon?.label, discount: formatPLN(r.discount), final: formatPLN(r.final), finalGrosze: r.final };
+    } catch (err) {
+      if (err instanceof HttpError && err.status < 500) recordFailedAttempt(key);
+      throw err;
+    }
   });
 
   app.post<{ Body: { productId: string; method: PaymentMethod; couponCode?: string; autoRenew?: boolean } }>('/api/purchases', member, async (req) => {
@@ -583,6 +607,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     if (Date.parse(gp.expires_at) < Date.now()) throw conflict('expired', 'Ta wejściówka wygasła.');
     const phone = normalizePhone(req.body?.phone);
     if (phone === user.phone) throw badRequest('Podaj numer znajomej.');
+    claimClientSms(scope, user.id, 'guest_pass_transfer', phone);
     const code = guestCode();
     scope.run('UPDATE guest_passes SET recipient_phone = $p, code = $c, transferred_from = $old, activation_attempts = 0 WHERE studio_id = $studio AND id = $id', { p: phone, c: code, old: gp.recipient_phone ?? gp.code, id: gp.id });
     await deliverGuestPass(deps, scope, studio, code, phone, user.name ?? 'Znajoma', gp.message ?? '');
@@ -597,6 +622,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const phone = req.body?.phone ? normalizePhone(req.body.phone) : null;
     if (phone === user.phone) throw badRequest('Podaj numer znajomej.');
     if (phone) {
+      claimClientSms(scope, user.id, 'referral', phone);
       const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
       if (existing && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: existing.id })) {
         throw conflict('already_member', 'Ta osoba już jest w naszym studiu. Umów się z nią na wspólne zajęcia w grafiku!');
@@ -653,6 +679,16 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     });
     if (first && b.kind !== 'stretch') notify(scope, { userId: user.id, category: 'occasional', occasion: 'milestone', tz: studio.timezone, body: 'Pierwsza medytacja za Tobą. Brawo za chwilę tylko dla siebie 🌙', dedupeKey: 'milestone:first_meditation' });
     return { ok: true, week: weekProgress(scope, studio, user.id) };
+  });
+
+  // Codzienny rytuał oddechu w „Dla mnie”: seria dni, bieżący tydzień i myśl na dziś.
+  app.get('/api/my/breath-ritual', member, async (req) => {
+    const { scope, studio, user } = ctx(req);
+    const since = new Date(Date.now() - 400 * 86_400_000).toISOString();
+    const rows = scope.all<{ completed_at: string }>("SELECT completed_at FROM mindful_logs WHERE studio_id = $studio AND user_id = $u AND kind IN ('meditation', 'breath') AND completed_at >= $s", { u: user.id, s: since });
+    const today = localParts(new Date(), studio.timezone).date;
+    const days = rows.map((r) => localParts(new Date(r.completed_at), studio.timezone).date);
+    return { ...breathRitual(days, today), affirmation: affirmationFor(today) };
   });
 
   // ——— Lojalność, odznaki, „Moja szafka”, ramki ———

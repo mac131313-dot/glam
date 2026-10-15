@@ -6,6 +6,7 @@ import { api, fmtDay, useApi } from '../api.ts';
 import { AuthImg, Empty, Field, ListRow, Progress, readFile, Spinner, Toggle, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
+import { useWakeLock } from './senses.ts';
 
 export default function WellbeingPages({ route, arg, close }: RouteProps) {
   if (route === 'journal') return <Journal />;
@@ -238,6 +239,7 @@ function StretchPlayer({ id, onDone }: { id: string; onDone: () => void }) {
       navigator.vibrate?.(200);
     }
   }, [at, routine]);
+  useWakeLock(!!routine && !paused && !finished);
   if (!routine) return <Empty>Nie ma takiej rutyny.</Empty>;
   if (finished || !at)
     return (

@@ -241,7 +241,7 @@ export function Start() {
           )}
           {home.invites > 0 && (
             <button className="card flat" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open('invites')}>
-              <b>Masz zaproszenie na wspólny trening 💛</b>
+              <b>Masz zaproszenie na wspólny trening</b>
             </button>
           )}
           {home.challenge && (

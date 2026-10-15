@@ -1,18 +1,23 @@
 // „Dla mnie” (4.4, decyzja 9): oddech i medytacje prowadzone przez aplikację.
 // Ta zakładka uruchamia sesje; ustawienia haptyki i szumu są wspólne dla wszystkich sesji.
-import { useState } from 'react';
-import { PATTERNS, SESSIONS, patternById, windAt } from '@glam/core';
+import { useEffect, useState } from 'react';
+import { BREATH_LENGTHS, PATTERNS, SESSIONS, patternById, type BreathRitual } from '@glam/core';
 import { Icon } from '../icons.tsx';
-import { MeadowScene } from './MeadowScene.tsx';
 import { ListRow, Toggle } from '../ui.tsx';
-import { api } from '../api.ts';
+import { api, useApi } from '../api.ts';
+import { BreathBloom } from './BreathBloom.tsx';
+import { RitualWeek, streakLine } from './BreathPlayer.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { hapticsSupported, loadSenses, saveSenses, type SenseSettings } from './senses.ts';
 
-const DURATIONS = [2, 3, 5, 10];
-
 export function ForMe() {
-  const { openBreath, open, studio, me, reloadMe } = useClient();
+  const { openBreath, breathOpen, open, studio, me, reloadMe } = useClient();
+  const { data: ritual, reload: reloadRitual } = useApi<BreathRitual>('/my/breath-ritual');
+  // Po ukończonej sesji odświeżamy tydzień kwiatków.
+  useEffect(() => {
+    window.addEventListener('glam:passes-changed', reloadRitual);
+    return () => window.removeEventListener('glam:passes-changed', reloadRitual);
+  }, [reloadRitual]);
   const [patternId, setPatternId] = useState('calm');
   const [minutes, setMinutes] = useState(3);
   const [senses, setSensesState] = useState<SenseSettings>(loadSenses);
@@ -27,47 +32,59 @@ export function ForMe() {
 
   return (
     <div className="stack-lg">
-      <div>
-        <h1>
-          Dla <span className="serif">mnie</span>
-        </h1>
-        <p className="muted" style={{ margin: 0 }}>
-          Chwila tylko dla Ciebie. Bez celu, bez oceniania.
-        </p>
-      </div>
+      {/* Główny motyw zakładki: piwonia na cały ekran – tylko data, jedno zdanie i kwiat.
+          Pod sesją oddechu scena stoi, żeby nie zabierać płynności. */}
+      <section className="forme-hero" aria-label="Oddychaj z piwonią">
+        <BreathBloom variant="full" className={breathOpen ? 'is-paused' : ''} />
+        <header className="forme-hello">
+          <div className="eyebrow">Dla mnie · {new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+          <p className="forme-quote serif">Zacznij dzień od spokojnego oddechu</p>
+        </header>
+        <button className="forme-more" onClick={() => document.getElementById('forme-choose')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+          Twój rytuał <Icon name="down" size={16} />
+        </button>
+      </section>
 
-      <section className="card stack" style={{ gap: 18 }}>
-        <div className="row" style={{ gap: 18 }}>
-          <MeadowScene className="meadow-mini" detail="mini" wind={() => windAt(pattern, performance.now())} />
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 2 }}>
-              Oddychaj z łąką
-            </div>
-            <div className="serif" style={{ fontSize: '1.6rem', lineHeight: 1.15 }}>
-              {pattern.label}
-            </div>
-            <div className="small muted">{pattern.hint}</div>
+      {/* Rytuał w jednej karcie: tydzień kwiatków tuż nad wyborem rytmu i czasu, jeden przycisk startu. */}
+      <section id="forme-choose" className="card ritual-card stack" style={{ gap: 16, scrollMarginTop: 16 }}>
+        <div className="stack center" style={{ gap: 8, alignItems: 'center' }}>
+          <div className="eyebrow" style={{ marginBottom: 0 }}>
+            {ritual?.today ? 'Dzisiejszy kwiatek już zakwitł' : 'Twój codzienny rytuał'}
           </div>
+          {ritual && <RitualWeek ritual={ritual} />}
+          <p className="tiny muted" style={{ margin: 0 }}>
+            {ritual && ritual.streak > 0 ? streakLine(ritual.streak) : 'Jedna chwila oddechu dziennie. Twój kwiat rośnie z każdym dniem.'}
+          </p>
         </div>
-        <div className="chips" role="group" aria-label="Rytm oddechu">
-          {PATTERNS.map((p) => (
-            <button key={p.id} className="chip" aria-pressed={patternId === p.id} onClick={() => setPatternId(p.id)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="row between wrap">
-          <div className="segmented" role="group" aria-label="Długość sesji">
-            {DURATIONS.map((m) => (
-              <button key={m} aria-pressed={minutes === m} onClick={() => setMinutes(m)}>
-                {m} min
+        <hr className="hairline" />
+        <div className="stack" style={{ gap: 10 }}>
+          <div className="eyebrow" style={{ marginBottom: 0 }}>Jak chcesz dziś oddychać?</div>
+          <div className="chips" role="group" aria-label="Rytm oddechu">
+            {PATTERNS.map((p) => (
+              <button key={p.id} className="chip" aria-pressed={patternId === p.id} onClick={() => setPatternId(p.id)}>
+                {p.label}
               </button>
             ))}
           </div>
-          <button className="btn" onClick={() => openBreath({ patternId, minutes })}>
-            <Icon name="play" size={18} /> Zacznij
-          </button>
+          <div className="small muted">{pattern.hint}</div>
         </div>
+        <div className="stack" style={{ gap: 10 }}>
+          <div className="eyebrow" style={{ marginBottom: 0 }}>Ile czasu dajesz sobie?</div>
+          <div className="mood-pick" role="group" aria-label="Długość sesji">
+            {BREATH_LENGTHS.map((l) => (
+              <button key={l.minutes} aria-pressed={minutes === l.minutes} onClick={() => setMinutes(l.minutes)}>
+                <span className="serif">{l.label}</span>
+                <span className="tiny">{l.minutes} min</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <button className="start-min" onClick={() => openBreath({ patternId, minutes })}>
+          <span className="start-min-icon">
+            <Icon name="play" size={16} />
+          </span>
+          Zacznij
+        </button>
       </section>
 
       <section className="stack" style={{ gap: 0 }}>
@@ -107,7 +124,7 @@ export function ForMe() {
           checked={senses.haptics}
           onChange={(v) => setSenses({ ...senses, haptics: v })}
         />
-        <Toggle label="Spokojny szum" hint="Miękki biały szum, który oddycha razem z kołem" checked={senses.noise} onChange={(v) => setSenses({ ...senses, noise: v })} />
+        <Toggle label="Spokojny szum" hint="Miękki biały szum, który oddycha razem z kwiatem" checked={senses.noise} onChange={(v) => setSenses({ ...senses, noise: v })} />
       </section>
 
       <section className="stack" style={{ gap: 0 }}>

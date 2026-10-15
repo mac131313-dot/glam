@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { Look, Palette, SeasonalEffect, SupportHours } from '@glam/core';
-import { useApi } from '../api.ts';
+import { setStudioTimezone, useApi } from '../api.ts';
+import { useLayer } from '../back.ts';
 import type { Me } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
 import { applyLook } from '../look.ts';
@@ -21,6 +22,7 @@ export type Studio = {
   id: string;
   name: string;
   city: string;
+  timezone: string;
   tagline: string;
   logo: string;
   logoUrl: string | null;
@@ -62,6 +64,8 @@ type ClientCtx = {
   go: (t: Tab) => void;
   openShop: (reason?: string, highlight?: string[]) => void;
   openBreath: (req: BreathRequest) => void;
+  /** Sesja oddechu jest otwarta – animacje pod nią mogą stanąć. */
+  breathOpen: boolean;
   /** Podstrona (karnety, kurs, sklep…) – stos nad zakładkami. */
   open: (route: string) => void;
   /** Akcja z powiadomienia (np. „profile/passes”) – zakładka albo podstrona. */
@@ -94,6 +98,12 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Nowa zakładka zaczyna się od góry, a nie w miejscu, do którego przewinięto poprzednią.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+    document.querySelector('.device-scroll')?.scrollTo({ top: 0 });
+  }, [tab]);
+
   // Dostępność (sekcja 10): rozmiar tekstu, wysoki kontrast, ograniczenie ruchu – ustawienia klientki.
   useEffect(() => {
     const a = props.me.user.prefs?.a11y ?? {};
@@ -116,6 +126,8 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
   }
 
   if (!studio) return <Spinner />;
+  // Przed renderem zakładek: grafik i karnety formatują godziny w strefie studia.
+  setStudioTimezone(studio.timezone);
   if (!props.me.user.onboarded) return <Onboarding studio={studio} me={props.me} onDone={props.reloadMe} />;
 
   const ctx: ClientCtx = {
@@ -126,6 +138,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
     go: setTab,
     openShop: (reason, highlight) => setShop({ reason, highlight }),
     openBreath: setBreath,
+    breathOpen: !!breath,
     open: (route) => setStack((st) => [...st, route]),
     follow,
     onSwitchStudio: props.onSwitchStudio,
@@ -134,7 +147,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
 
   return (
     <Ctx.Provider value={ctx}>
-      <div className="phone">
+      <div className="phone" data-tab={tab}>
         {studio.theme?.effect === 'snow' && shouldSnow() && <Snowfall />}
         <header className="topbar">
           <button className="studio-chip" onClick={props.onSwitchStudio} aria-label={`Studio ${studio.name}. Zmień studio`}>
@@ -165,6 +178,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
           ))}
         </nav>
       </div>
+      {tab !== 'start' && <BackToStart onBack={() => setTab('start')} />}
       {stack.map((route, i) => (
         // Warstwa musi być prawdziwym pudełkiem. `display: contents` przepuszczało kliknięcia –
         // katalog było widać, ale karta produktu nie dostawała zdarzenia.
@@ -176,4 +190,10 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
       {shop && <PurchaseSheet reason={shop.reason} highlight={shop.highlight} onClose={() => setShop(null)} />}
     </Ctx.Provider>
   );
+}
+
+/** Na innej zakładce niż Start przycisk Wstecz telefonu wraca na Start, a dopiero stamtąd wychodzi z aplikacji. */
+function BackToStart({ onBack }: { onBack: () => void }) {
+  useLayer(onBack);
+  return null;
 }

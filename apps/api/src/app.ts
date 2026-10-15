@@ -42,7 +42,8 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
 
   // Monitoring per studio (1.2.11): liczba zapytań, błędy, czas odpowiedzi – dziennie.
   app.addHook('onResponse', async (req, reply) => {
-    const studio = String(req.headers['x-studio-id'] ?? '') || '-';
+    // Tylko studio z uwierzytelnionego kontekstu – dowolny nagłówek bez logowania nie tworzy nowych wierszy.
+    const studio = req.studio?.id ?? '-';
     const ms = Math.round(reply.elapsedTime);
     deps.db
       .prepare(
