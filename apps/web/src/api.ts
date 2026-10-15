@@ -42,6 +42,8 @@ export const session = {
   studioId: store.get(key('studio')),
   persona: store.get(key('persona')),
   setToken(t: string | null) {
+    // Wylogowanie albo inne konto: dane zapisane offline (grafik, karnety, pobrane lekcje) należą do poprzedniej sesji.
+    if (t !== this.token) clearOfflineData();
     this.token = t;
     store.set(key('token'), t);
   },
@@ -116,6 +118,16 @@ export const addDaysStr = (date: string, n: number) => {
  * <img>/<video> nie wyślą nagłówka, więc pobieramy plik fetch-em i podajemy lokalny adres (bez tokenu w URL).
  */
 const blobCache = new Map<string, Promise<string>>();
+
+function clearOfflineData() {
+  for (const url of blobCache.values()) url.then(URL.revokeObjectURL, () => {});
+  blobCache.clear();
+  if (typeof caches === 'undefined') return;
+  caches
+    .keys()
+    .then((names) => Promise.all(names.filter((n) => n.startsWith('glam-')).map((n) => caches.delete(n))))
+    .catch(() => {});
+}
 export function authedObjectUrl(src: string): Promise<string> {
   if (!src.startsWith('/api/media/')) return Promise.resolve(src);
   if (!blobCache.has(src)) {

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { Look, Palette, SeasonalEffect, SupportHours } from '@glam/core';
 import { useApi } from '../api.ts';
+import { useLayer } from '../back.ts';
 import type { Me } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
 import { applyLook } from '../look.ts';
@@ -165,6 +166,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
           ))}
         </nav>
       </div>
+      {tab !== 'start' && <BackToStart onBack={() => setTab('start')} />}
       {stack.map((route, i) => (
         <div key={`${route}-${i}`} style={{ display: i === stack.length - 1 ? 'contents' : 'none' }}>
           <RouteView route={route} close={() => setStack((st) => st.slice(0, i))} />
@@ -174,4 +176,10 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
       {shop && <PurchaseSheet reason={shop.reason} highlight={shop.highlight} onClose={() => setShop(null)} />}
     </Ctx.Provider>
   );
+}
+
+/** Na innej zakładce niż Start przycisk Wstecz telefonu wraca na Start, a dopiero stamtąd wychodzi z aplikacji. */
+function BackToStart({ onBack }: { onBack: () => void }) {
+  useLayer(onBack);
+  return null;
 }

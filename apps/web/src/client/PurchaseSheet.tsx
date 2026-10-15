@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { classPackagePlans, type Billing } from '@glam/core';
 import { api, ApiError, useApi } from '../api.ts';
+import { useLayer } from '../back.ts';
 import { Icon } from '../icons.tsx';
 import { PAYMENT_LABELS, Sheet, Spinner, useToast } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
@@ -29,11 +30,7 @@ export function PurchaseSheet({ reason, onClose, highlight }: { reason?: string;
   const { data: products } = useApi<Product[]>('/products');
   const plans = products ? classPackagePlans(products) : [];
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useLayer(onClose);
 
   if (!products) {
     return (

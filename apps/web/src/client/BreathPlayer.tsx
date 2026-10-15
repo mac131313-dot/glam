@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { WIND_CALM, breathAt, patternById, promptAt, sessionById, windAt } from '@glam/core';
 import { Icon } from '../icons.tsx';
 import { api } from '../api.ts';
+import { useLayer } from '../back.ts';
 import { MeadowScene } from './MeadowScene.tsx';
 import { CalmNoise, hapticPhase, hapticsSupported, loadSenses, saveSenses, type SenseSettings } from './senses.ts';
 
@@ -80,11 +81,7 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
     return () => cancelAnimationFrame(raf);
   }, [pattern, totalSec]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useLayer(onClose);
 
   const togglePause = () => {
     const now = performance.now();

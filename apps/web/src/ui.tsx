@@ -1,4 +1,5 @@
 import { useAuthedUrl } from './api.ts';
+import { useLayer } from './back.ts';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -28,11 +29,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 export const useToast = () => useContext(ToastCtx);
 
 export function Sheet({ onClose, children, label }: { onClose: () => void; children: ReactNode; label: string }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useLayer(onClose);
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
@@ -89,11 +86,7 @@ export const PAYMENT_LABELS: Record<string, string> = {
 
 /** Podstrona na pełny ekran z przyciskiem „Wróć” – w aplikacji klientki i w panelu. */
 export function Page({ title, onBack, children, actions }: { title: ReactNode; onBack: () => void; children: ReactNode; actions?: ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onBack();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onBack]);
+  useLayer(onBack);
   return (
     <div className="page" role="dialog" aria-modal="true">
       <header className="page-bar">

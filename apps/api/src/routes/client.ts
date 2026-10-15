@@ -45,6 +45,7 @@ import { issuePass, loadPasses, passRows } from '../services/passes.ts';
 import { issueInvoice, priceWithCoupon, purchaseProduct, recordPayment } from '../services/payments.ts';
 import { weekProgress } from '../services/progress.ts';
 import { segmentsForUser } from '../services/segments.ts';
+import { claimClientSms } from '../services/sms-quota.ts';
 import { logoInfo, type Studio } from '../services/studio.ts';
 import { guestRules, prefsOf } from './account.ts';
 
@@ -340,6 +341,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const phone = normalizePhone(req.body?.phone);
     const s = scope.get<{ starts_at: string; class_name: string }>("SELECT s.starts_at, ct.name AS class_name FROM class_sessions s JOIN class_types ct ON ct.id = s.class_type_id WHERE s.studio_id = $studio AND s.id = $id AND s.status = 'scheduled' AND s.public = 1", { id: req.params.id });
     if (!s) throw notFound('Nie znaleziono zajęć.');
+    if (phone === user.phone) throw badRequest('Podaj numer koleżanki.');
+    claimClientSms(scope, user.id, 'session_invite', phone);
     const friend = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
     const isMember = friend && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: friend.id });
     const inviteId = id();
@@ -357,7 +360,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       await deps.sms.send(phone, `${user.name ?? 'Znajoma'} zaprasza Cię na ${s.class_name} w ${studio.name} (${time.date.slice(8)}.${time.date.slice(5, 7)}, ${time.time}). Dołącz w aplikacji GLAM, kod studia: ${studio.invite_code}.`);
       logUsage(db, studio.id, 'sms', 1, 9);
     }
-    return { message: isMember ? 'Zaproszenie wysłane w aplikacji.' : 'Wysłałyśmy SMS z zaproszeniem.' };
+    // Ta sama odpowiedź w obu przypadkach – nie zdradzamy, czy numer należy do klientki studia.
+    return { message: 'Zaproszenie wysłane.' };
   });
 
   app.get('/api/my/invites', member, async (req) => {
@@ -576,6 +580,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     if (Date.parse(gp.expires_at) < Date.now()) throw conflict('expired', 'Ta wejściówka wygasła.');
     const phone = normalizePhone(req.body?.phone);
     if (phone === user.phone) throw badRequest('Podaj numer znajomej.');
+    claimClientSms(scope, user.id, 'guest_pass_transfer', phone);
     const code = guestCode();
     scope.run('UPDATE guest_passes SET recipient_phone = $p, code = $c, transferred_from = $old, activation_attempts = 0 WHERE studio_id = $studio AND id = $id', { p: phone, c: code, old: gp.recipient_phone ?? gp.code, id: gp.id });
     await deliverGuestPass(deps, scope, studio, code, phone, user.name ?? 'Znajoma', gp.message ?? '');
@@ -590,6 +595,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const phone = req.body?.phone ? normalizePhone(req.body.phone) : null;
     if (phone === user.phone) throw badRequest('Podaj numer znajomej.');
     if (phone) {
+      claimClientSms(scope, user.id, 'referral', phone);
       const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
       if (existing && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: existing.id })) {
         throw conflict('already_member', 'Ta osoba już jest w naszym studiu. Umów się z nią na wspólne zajęcia w grafiku!');

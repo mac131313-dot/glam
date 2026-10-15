@@ -320,3 +320,25 @@ test('CAPTCHA przy podejrzanej aktywności: proof-of-work wymagany po kilku wysy
   }
   assert.ok(needed, phone);
 });
+
+test('wiadomości do znajomych: dzienny limit na klientkę i na numer, odpowiedź nie zdradza członkostwa', async () => {
+  const ania = await login(DEMO.ania);
+  const zuza = await login(DEMO.zuza);
+  const s = db.prepare("SELECT id FROM class_sessions WHERE studio_id = ? AND status = 'scheduled' AND public = 1 AND starts_at > ? ORDER BY starts_at LIMIT 1").get(R, new Date().toISOString()) as { id: string };
+  const invite = (token: string, phone: string) => call(token, R, 'POST', `/api/sessions/${s.id}/invite`, { phone });
+  // Ta sama odpowiedź dla klientki studia (Magda) i dla obcego numeru.
+  const member = await invite(ania, DEMO.magda);
+  const stranger = await invite(ania, '600 700 801');
+  assert.equal(member.statusCode, 200, member.body);
+  assert.deepEqual(member.json(), stranger.json());
+  for (const n of [2, 3, 4]) assert.equal((await invite(ania, `600 700 80${n}`)).statusCode, 200);
+  const sixth = await invite(ania, '600 700 809');
+  assert.equal(sixth.statusCode, 429);
+  assert.equal(sixth.json().error, 'sms_limit');
+  // Limit na numer liczy się od wszystkich klientek razem: 600 700 801 dostał już jedno zaproszenie.
+  assert.equal((await invite(zuza, '600 700 801')).statusCode, 200);
+  assert.equal((await invite(zuza, '600 700 801')).statusCode, 429);
+  // Polecenie z numerem korzysta z tego samego dziennego limitu klientki.
+  const ref = await call(ania, R, 'POST', '/api/referrals', { phone: '600 700 900', channel: 'sms' });
+  assert.equal(ref.statusCode, 429);
+});
