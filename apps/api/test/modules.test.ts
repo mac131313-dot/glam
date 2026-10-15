@@ -320,3 +320,66 @@ test('CAPTCHA przy podejrzanej aktywności: proof-of-work wymagany po kilku wysy
   }
   assert.ok(needed, phone);
 });
+
+test('wydarzenie studia: recepcja dodaje z panelu, termin blokuje salę i trenerkę, trenerka ani klientka nie dodadzą', async () => {
+  const [owner, reception, marzena, magda] = await Promise.all([login(DEMO.owner), login(DEMO.reception), login(DEMO.marzena), login(DEMO.magda)]);
+  const opts = (await call(owner, R, 'GET', '/api/events/options')).json();
+  const zoneId = opts.zones[0].id;
+  const trainerId = opts.trainers[0].id;
+  const date = new Date(Date.now() + 12 * 86_400_000).toISOString().slice(0, 10);
+  const free = (await call(magda, R, 'GET', `/api/events/slots?date=${date}&zoneId=${zoneId}&trainerId=${trainerId}&durationMin=90`)).json();
+  const body = { title: 'Halloween Flow', trainerId, zoneId, activity: 'Mat', startsAt: free[0].startsAt, durationMin: 75, capacity: 12, priceGrosze: 8000 };
+  assert.equal((await call(marzena, R, 'POST', '/api/staff/events', body)).statusCode, 403);
+  assert.equal((await call(magda, R, 'POST', '/api/staff/events', body)).statusCode, 403);
+  const r = await call(reception, R, 'POST', '/api/staff/events', body);
+  assert.equal(r.statusCode, 200, r.body);
+  assert.equal((await call(owner, R, 'POST', '/api/staff/events', body)).statusCode, 409);
+  const ev = (await call(owner, R, 'GET', '/api/staff/events')).json().find((e: { id: string }) => e.id === r.json().id);
+  assert.equal(ev.status, 'confirmed');
+  assert.equal(ev.title, 'Halloween Flow');
+  const after = (await call(magda, R, 'GET', `/api/events/slots?date=${date}&zoneId=${zoneId}&trainerId=${trainerId}&durationMin=90`)).json();
+  assert.ok(!after.some((s: { startsAt: string }) => s.startsAt === free[0].startsAt));
+});
+
+test('właścicielka prowadzi zajęcia: zajęcia specjalne i zastępstwo z nią przechodzą', async () => {
+  const owner = await login(DEMO.owner);
+  const cfg = (await call(owner, R, 'GET', '/api/owner/config')).json();
+  const ownerId = cfg.trainers.find((t: { id: string; name: string }) => !['Marzena', 'Ola'].some((n) => t.name.startsWith(n)))?.id;
+  assert.ok(ownerId, 'właścicielka na liście prowadzących');
+  const date = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+  const r = await call(owner, R, 'POST', '/api/staff/sessions', { classTypeId: cfg.classTypes[0].id, trainerId: ownerId, date, time: '21:00', durationMin: 45, capacity: 6, kind: 'special', public: true });
+  assert.equal(r.statusCode, 200, r.body);
+  const s = futureSession(cfg.classTypes[0].id, 30)[0];
+  const swap = await call(owner, R, 'POST', `/api/staff/sessions/${s.id}/trainer`, { trainerId: ownerId });
+  assert.equal(swap.statusCode, 200, swap.body);
+});
+
+test('wydarzenie: zmiana godziny nie omija innych zajęć, a stare zapytanie wygasa po terminie', async () => {
+  const [owner, magda] = await Promise.all([login(DEMO.owner), login(DEMO.magda)]);
+  const opts = (await call(magda, R, 'GET', '/api/events/options')).json();
+  const zoneId = opts.zones[0].id;
+  const trainerId = opts.trainers[0].id;
+  const date = new Date(Date.now() + 15 * 86_400_000).toISOString().slice(0, 10);
+  const free = (await call(magda, R, 'GET', `/api/events/slots?date=${date}&zoneId=${zoneId}&trainerId=${trainerId}&durationMin=60`)).json();
+  const a = free[0].startsAt;
+  const b = new Date(Date.parse(a) + 2 * 3_600_000).toISOString();
+  // Wydarzenie A potwierdzone, a o godzinie B – inne wydarzenie studia w tej samej sali.
+  const ev = await call(magda, R, 'POST', '/api/events', { kind: 'birthday', trainerId, zoneId, activity: 'Mat', startsAt: a, durationMin: 60, guests: 6, termsAccepted: true });
+  assert.equal(ev.statusCode, 200, ev.body);
+  await call(owner, R, 'POST', `/api/staff/events/${ev.json().id}`, { status: 'confirmed' });
+  const other = await call(owner, R, 'POST', '/api/staff/events', { title: 'Warsztat oddechu', trainerId: opts.trainers[1]?.id ?? trainerId, zoneId, activity: 'Stretch', startsAt: b, durationMin: 60, capacity: 8 });
+  assert.equal(other.statusCode, 200, other.body);
+  // Przeniesienie A na godzinę B koliduje z warsztatem – musi być odrzucone.
+  assert.equal((await call(magda, R, 'POST', `/api/events/${ev.json().id}/client`, { action: 'reschedule', startsAt: b })).statusCode, 409);
+  // Przeniesienie o 30 min nachodzi tylko na samo siebie – przechodzi.
+  const half = new Date(Date.parse(a) + 30 * 60_000).toISOString();
+  assert.equal((await call(magda, R, 'POST', `/api/events/${ev.json().id}/client`, { action: 'reschedule', startsAt: half })).statusCode, 200);
+
+  // Zapytanie bez odpowiedzi wygasa po terminie.
+  const inq = await call(magda, R, 'POST', '/api/events', { kind: 'gift', trainerId, zoneId, activity: 'Mat', startsAt: free.at(-1).startsAt, guests: 4, termsAccepted: true });
+  assert.equal(inq.statusCode, 200, inq.body);
+  await runJobs(deps, new Date(Date.parse(free.at(-1).startsAt) + 86_400_000));
+  const after = (await call(magda, R, 'GET', `/api/events/${inq.json().id}`)).json();
+  assert.equal(after.status, 'cancelled');
+  assert.match(after.history.at(-1).text, /Wygasło/);
+});

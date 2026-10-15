@@ -492,17 +492,26 @@ function shopAndPasses(c: Ctx) {
 }
 
 function privateEvents(c: Ctx) {
+  // Zapytanie albo oferta, na którą nikt nie odpowiedział przed terminem, wygasa – nie wisi w panelu w nieskończoność.
+  c.scope.run(
+    `UPDATE private_events SET status = 'cancelled', updated_at = $now,
+       history_json = json_insert(history_json, '$[#]', json_object('by', 'Studio', 'text', 'Wygasło – termin minął bez potwierdzenia', 'at', $now))
+     WHERE studio_id = $studio AND status IN ('inquiry', 'offer') AND starts_at < $now`,
+    { now: c.now.toISOString() },
+  );
   const rows = c.scope.all<{ id: string; client_id: string; kind: string; starts_at: string; ends_at: string; status: string }>(
     "SELECT id, client_id, kind, starts_at, ends_at, status FROM private_events WHERE studio_id = $studio AND status IN ('confirmed', 'paid', 'offer')",
   );
   for (const e of rows) {
     const eventDay = localParts(new Date(e.starts_at), c.studio.timezone).date;
-    if (addDays(eventDay, -1) === c.today && atOrAfter(c, '18:00') && e.status !== 'offer') {
+    if (addDays(eventDay, -1) === c.today && atOrAfter(c, '18:00') && e.status !== 'offer' && e.kind !== 'studio') {
       const what = e.kind === 'birthday' ? 'Twoje urodziny' : 'Twoje wydarzenie';
       notify(c.scope, { userId: e.client_id, category: 'events', tz: c.studio.timezone, now: c.now, body: TRIGGERS.event_tomorrow.text({ what }), action: `event/${e.id}`, dedupeKey: `event_tomorrow:${e.id}` });
     }
     if (Date.parse(e.ends_at) < c.now.getTime() && e.status !== 'offer') {
       c.scope.run("UPDATE private_events SET status = 'done', updated_at = $now WHERE studio_id = $studio AND id = $id", { id: e.id, now: c.now.toISOString() });
+      // Wydarzenie studia: „klientką” jest organizatorka z zespołu – bez odznaki i podziękowań.
+      if (e.kind === 'studio') continue;
       grantBadge(c.scope, e.client_id, 'event', c.now);
       notify(c.scope, { userId: e.client_id, category: 'events', tz: c.studio.timezone, now: c.now, body: 'Dziękujemy za wspólne świętowanie 💛 Odznaka „Wydarzeniowa” czeka w profilu.', action: 'profile/badges', dedupeKey: `event_done:${e.id}` });
     }

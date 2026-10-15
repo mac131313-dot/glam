@@ -313,7 +313,7 @@ export function rateSession(scope: StudioScope, userId: string, bookingId: strin
 export function changeTrainer(scope: StudioScope, studio: Studio, sessionId: string, trainerId: string, now = new Date()) {
   return scope.tx(() => {
     const s = loadSession(scope, sessionId);
-    const trainer = scope.get<{ name: string }>("SELECT u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.studio_id = $studio AND m.user_id = $t AND m.role = 'trainer'", { t: trainerId });
+    const trainer = scope.get<{ name: string }>("SELECT u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.studio_id = $studio AND m.user_id = $t AND m.role IN ('trainer', 'owner')", { t: trainerId });
     if (!trainer) throw notFound('Nie znaleziono trenerki.');
     scope.run('UPDATE class_sessions SET substitute_for = COALESCE(substitute_for, trainer_id), trainer_id = $t WHERE studio_id = $studio AND id = $id', { t: trainerId, id: sessionId });
     const users = scope.all<{ user_id: string }>("SELECT DISTINCT user_id FROM bookings WHERE studio_id = $studio AND session_id = $sid AND status = 'booked' AND guest_name IS NULL", { sid: sessionId });

@@ -14,6 +14,7 @@ import {
   freeSlots,
   localParts,
   validateEventRequest,
+  validateStudioEvent,
   zonedToUtc,
   type EventStatus,
 } from '@glam/core';
@@ -57,12 +58,13 @@ type EventRow = {
 function busy(scope: StudioScope, studio: Studio, date: string) {
   const from = zonedToUtc(date, '00:00', studio.timezone).toISOString();
   const to = zonedToUtc(addDays(date, 1), '00:00', studio.timezone).toISOString();
-  const sessions = scope.all<{ start: string; end: string; zone_id: string; trainer_id: string }>(
-    "SELECT s.starts_at AS start, s.ends_at AS end, ct.zone_id, s.trainer_id FROM class_sessions s JOIN class_types ct ON ct.id = s.class_type_id WHERE s.studio_id = $studio AND s.status = 'scheduled' AND s.starts_at < $to AND s.ends_at > $from",
+  // `ref`: blokada wydarzenia w grafiku (tytuł sesji) albo id wydarzenia – żeby przy zmianie godziny pominąć samo siebie.
+  const sessions = scope.all<{ start: string; end: string; zone_id: string; trainer_id: string; ref: string | null }>(
+    "SELECT s.starts_at AS start, s.ends_at AS end, ct.zone_id, s.trainer_id, s.title AS ref FROM class_sessions s JOIN class_types ct ON ct.id = s.class_type_id WHERE s.studio_id = $studio AND s.status = 'scheduled' AND s.starts_at < $to AND s.ends_at > $from",
     { from, to },
   );
-  const events = scope.all<{ start: string; end: string; zone_id: string | null; trainer_id: string | null }>(
-    "SELECT starts_at AS start, ends_at AS end, zone_id, trainer_id FROM private_events WHERE studio_id = $studio AND status IN ('offer', 'confirmed', 'paid') AND starts_at < $to AND ends_at > $from",
+  const events = scope.all<{ start: string; end: string; zone_id: string | null; trainer_id: string | null; ref: string }>(
+    "SELECT starts_at AS start, ends_at AS end, zone_id, trainer_id, id AS ref FROM private_events WHERE studio_id = $studio AND status IN ('offer', 'confirmed', 'paid') AND starts_at < $to AND ends_at > $from",
     { from, to },
   );
   return [...sessions, ...events];
@@ -191,7 +193,7 @@ export function eventRoutes(app: FastifyInstance, deps: Deps) {
     addons: JSON.parse(e.addons_json),
     history: internal ? JSON.parse(e.history_json) : (JSON.parse(e.history_json) as { by: string; text: string; at: string }[]).filter((h) => !h.text.startsWith('[wewn.]')),
     statusLabel: EVENT_STATUS_LABEL[e.status],
-    kindLabel: EVENT_KINDS.find((k) => k.id === e.kind)?.label,
+    kindLabel: EVENT_KINDS.find((k) => k.id === e.kind)?.label ?? 'Wydarzenie studia',
     price: e.price_grosze ? formatPLN(e.price_grosze) : null,
     deposit: e.deposit_grosze ? formatPLN(e.deposit_grosze) : null,
     trainer: e.trainer_id ? (scope.db.prepare('SELECT name FROM users WHERE id = ?').get(e.trainer_id) as { name: string }).name : null,
@@ -240,7 +242,7 @@ export function eventRoutes(app: FastifyInstance, deps: Deps) {
       const dur = Date.parse(e.ends_at) - Date.parse(e.starts_at);
       const s = new Date(b.startsAt);
       const en = new Date(s.getTime() + dur);
-      const taken = busy(scope, studio, localParts(s, studio.timezone).date).some((x) => x.start !== e.starts_at && (x.zone_id === e.zone_id || x.trainer_id === e.trainer_id) && x.start < en.toISOString() && s.toISOString() < x.end);
+      const taken = busy(scope, studio, localParts(s, studio.timezone).date).some((x) => x.ref !== e.id && x.ref !== `Wydarzenie prywatne ${e.invite_code}` && (x.zone_id === e.zone_id || x.trainer_id === e.trainer_id) && x.start < en.toISOString() && s.toISOString() < x.end);
       if (taken) throw conflict('slot_taken', 'Ta godzina jest zajęta.');
       scope.run('UPDATE private_events SET starts_at = $s, ends_at = $e, history_json = $h, updated_at = $now WHERE studio_id = $studio AND id = $id', { s: s.toISOString(), e: en.toISOString(), h: history(e, { by: user.name ?? 'Klientka', text: `Zmiana godziny na ${localParts(s, studio.timezone).time}` }), now: nowIso(), id: e.id });
       scope.run("UPDATE class_sessions SET starts_at = $s, ends_at = $e WHERE studio_id = $studio AND kind = 'event' AND title = $t", { s: s.toISOString(), e: en.toISOString(), t: `Wydarzenie prywatne ${e.invite_code}` });
@@ -307,6 +309,66 @@ export function eventRoutes(app: FastifyInstance, deps: Deps) {
     const rows = scope.all<EventRow>(`SELECT * FROM private_events WHERE studio_id = $studio ${internal ? '' : 'AND trainer_id = $me'} ORDER BY status IN ('done', 'cancelled'), starts_at`, internal ? {} : { me: user.id });
     return rows.map((e) => eventView(scope, studio, e, internal));
   });
+
+  // Wydarzenie studia (np. Halloween Flow): dodaje recepcja / właścicielka. Od razu potwierdzone – blokuje salę i trenerkę.
+  app.post<{ Body: { title: string; description?: string; trainerId: string; zoneId: string; activity: string; startsAt: string; durationMin: number; capacity: number; priceGrosze?: number | null; internalNote?: string } }>(
+    '/api/staff/events',
+    manage,
+    async (req) => {
+      const { scope, studio, user } = ctx(req);
+      assertFeature(studio, 'events');
+      const b = req.body ?? ({} as typeof req.body);
+      const title = String(b.title ?? '').trim().slice(0, 80);
+      if (!EVENT_ACTIVITIES.includes(b.activity as (typeof EVENT_ACTIVITIES)[number])) throw badRequest('Wybierz rodzaj zajęć.');
+      const err = validateStudioEvent({ title, startsAt: String(b.startsAt), durationMin: Number(b.durationMin), capacity: Number(b.capacity), priceGrosze: b.priceGrosze ?? null, now: new Date() });
+      if (err) throw badRequest(err);
+      const priceGrosze = b.priceGrosze || null; // 0 zł = bezpłatne
+      if (!scope.get("SELECT 1 FROM zones WHERE studio_id = $studio AND id = $z", { z: b.zoneId })) throw notFound('Nie znaleziono sali.');
+      if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role = 'trainer'", { t: b.trainerId })) throw notFound('Nie znaleziono trenerki.');
+      const start = new Date(b.startsAt);
+      const end = new Date(start.getTime() + Number(b.durationMin) * 60_000);
+      const date = localParts(start, studio.timezone).date;
+      const taken = busy(scope, studio, date).some((x) => (x.zone_id === b.zoneId || x.trainer_id === b.trainerId) && x.start < end.toISOString() && start.toISOString() < x.end);
+      if (taken) throw conflict('slot_taken', 'Sala albo trenerka są wtedy zajęte. Wybierz inną godzinę.');
+      const eid = id();
+      const now = nowIso();
+      const row: EventRow = {
+        id: eid,
+        client_id: user.id,
+        kind: 'studio',
+        title,
+        package_id: null,
+        trainer_id: b.trainerId,
+        zone_id: b.zoneId,
+        activity: b.activity,
+        starts_at: start.toISOString(),
+        ends_at: end.toISOString(),
+        guests: Number(b.capacity),
+        addons_json: '[]',
+        client_note: null,
+        internal_note: b.internalNote?.slice(0, 1000) || null,
+        status: 'confirmed',
+        price_grosze: priceGrosze,
+        deposit_grosze: null,
+        payment_mode: 'on_site',
+        offer_text: b.description?.slice(0, 2000) || null,
+        invite_code: `E${guestCode(7)}`,
+        history_json: JSON.stringify([{ by: user.name ?? 'Studio', text: `Wydarzenie studia dodane: ${b.capacity} miejsc${priceGrosze ? `, ${formatPLN(priceGrosze)} / os.` : ''}`, at: now }]),
+        created_at: now,
+      };
+      scope.tx(() => {
+        scope.run(
+          `INSERT INTO private_events (id, studio_id, client_id, kind, title, trainer_id, zone_id, activity, starts_at, ends_at, guests, internal_note, status, price_grosze, payment_mode, offer_text, invite_code, terms_accepted_at, history_json, created_at, updated_at)
+           VALUES ($id, $studio, $c, 'studio', $title, $t, $z, $a, $s, $e, $g, $n, 'confirmed', $p, 'on_site', $o, $code, $now, $h, $now, $now)`,
+          { id: eid, c: user.id, title, t: row.trainer_id, z: row.zone_id, a: row.activity, s: row.starts_at, e: row.ends_at, g: row.guests, n: row.internal_note, p: priceGrosze, o: row.offer_text, code: row.invite_code, h: row.history_json, now },
+        );
+        blockSchedule(scope, row);
+      });
+      notify(scope, { userId: b.trainerId, category: 'events', tz: studio.timezone, body: `Prowadzisz „${title}” ${date} – sprawdź szczegóły.`, action: 'staff/events' });
+      audit(scope, { actorId: user.id, action: 'event.created', entity: 'event', entityId: eid });
+      return { id: eid, message: 'Wydarzenie dodane – sala i trenerka zablokowane w grafiku.' };
+    },
+  );
 
   app.post<{ Params: { id: string }; Body: { status?: EventStatus; price?: number; deposit?: number | null; paymentMode?: 'deposit' | 'on_site' | 'private'; offer?: string; internalNote?: string; trainerId?: string } }>('/api/staff/events/:id', manage, async (req) => {
     const { scope, studio, user } = ctx(req);

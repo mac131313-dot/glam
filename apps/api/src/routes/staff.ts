@@ -233,7 +233,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       const b = req.body ?? ({} as typeof req.body);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !/^\d{2}:\d{2}$/.test(b.time)) throw badRequest('Podaj datę i godzinę.');
       if (!scope.get('SELECT 1 FROM class_types WHERE studio_id = $studio AND id = $c', { c: b.classTypeId })) throw notFound('Nie znaleziono typu zajęć.');
-      if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role = 'trainer'", { t: b.trainerId })) throw notFound('Nie znaleziono trenerki.');
+      if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role IN ('trainer', 'owner')", { t: b.trainerId })) throw notFound('Nie znaleziono trenerki.');
       if (!(b.durationMin >= 15 && b.durationMin <= 240) || !(b.capacity >= 1 && b.capacity <= 200)) throw badRequest('Czas trwania 15–240 min, miejsca 1–200.');
       const start = zonedToUtc(b.date, b.time, studio.timezone);
       const sid = id();
@@ -272,7 +272,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
   app.post<{ Body: { from: string; to: string; note?: string; trainerId?: string } }>('/api/staff/absences', perm('schedule.view'), async (req) => {
     const { scope, studio, user, roles } = ctx(req);
     const trainerId = req.body?.trainerId && can(roles, 'schedule.edit') ? req.body.trainerId : user.id;
-    if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role = 'trainer'", { t: trainerId })) throw forbidden();
+    if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role IN ('trainer', 'owner')", { t: trainerId })) throw forbidden();
     const b = req.body;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(b?.from ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(b?.to ?? '') || b.to < b.from) throw badRequest('Podaj zakres dat.');
     const aid = id();

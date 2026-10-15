@@ -257,3 +257,17 @@ test('role i SaaS: siatka uprawnień, koordynatorka bez finansów, plany i flagi
   assert.equal(s.freeze.maxTimes, 2);
   assert.deepEqual(s.support.faq, []);
 });
+
+test('wydarzenie studia: nazwa, przyszły termin, czas i miejsca w granicach, cena nieujemna', async () => {
+  const { validateStudioEvent } = await import('../src/events.ts');
+  const now = new Date('2026-10-15T10:00:00Z');
+  const ok = { title: 'Halloween Flow', startsAt: '2026-10-31T18:00:00Z', durationMin: 75, capacity: 12, priceGrosze: 8000, now };
+  assert.equal(validateStudioEvent(ok), null);
+  assert.equal(validateStudioEvent({ ...ok, priceGrosze: null }), null);
+  assert.equal(validateStudioEvent({ ...ok, priceGrosze: 0 }), null);
+  assert.ok(validateStudioEvent({ ...ok, title: ' x ' }));
+  assert.ok(validateStudioEvent({ ...ok, startsAt: '2026-10-01T18:00:00Z' }));
+  assert.ok(validateStudioEvent({ ...ok, durationMin: 10 }));
+  assert.ok(validateStudioEvent({ ...ok, capacity: 0 }));
+  assert.ok(validateStudioEvent({ ...ok, priceGrosze: -100 }));
+});
