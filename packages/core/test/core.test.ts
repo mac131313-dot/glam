@@ -177,6 +177,20 @@ test('oddech: fazy, poziom koła i zatrzymania', async () => {
   assert.equal(promptAt(morning, 71)?.at, 70);
 });
 
+test('rytuał oddechu: seria dni, tydzień, myśl dnia', async () => {
+  const { breathRitual, affirmationFor } = await import('../src/mindful.ts');
+  // 2026-10-15 to czwartek
+  const r = breathRitual(['2026-10-12', '2026-10-13', '2026-10-14'], '2026-10-15');
+  assert.equal(r.today, false);
+  assert.equal(r.streak, 3, 'dzień, który trwa, nie przerywa serii');
+  assert.deepEqual(r.week, [true, true, true, false, false, false, false]);
+  assert.equal(breathRitual(['2026-10-13', '2026-10-15'], '2026-10-15').streak, 1);
+  assert.equal(breathRitual(['2026-10-12'], '2026-10-15').streak, 0);
+  assert.equal(breathRitual([], '2026-10-15').total, 0);
+  assert.equal(affirmationFor('2026-10-15'), affirmationFor('2026-10-15'));
+  assert.notEqual(affirmationFor('2026-10-15'), affirmationFor('2026-10-16'));
+});
+
 test('logo: rozstrzygnięcie trybu automatycznego', async () => {
   const { resolveLogoDisplay, DEFAULT_LOGO_STYLE } = await import('../src/look.ts');
   assert.deepEqual([resolveLogoDisplay(DEFAULT_LOGO_STYLE, true).shape, resolveLogoDisplay(DEFAULT_LOGO_STYLE, true).showName], ['free', false]);

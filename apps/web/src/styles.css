@@ -447,3 +447,135 @@ label.btn { cursor: pointer; }
 .chat-bubble.auto { opacity: 0.8; font-style: italic; }
 html.a11y-contrast { --muted: var(--ink); --line: color-mix(in srgb, var(--ink) 35%, transparent); }
 html.a11y-reduce *, html.a11y-reduce *::before, html.a11y-reduce *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+
+/* Piwonia oddechu (BreathBloom) – kwiat narysowany w SVG (viewBox 200×260, środek kwiatu ok. 50% / 36%).
+   Pętla w komponencie ustawia --l0…--l3 (oddech z rosnącym opóźnieniem) i --lvl (poziom ogólny). */
+.peony { --lvl: 0.3; --l0: 0.3; --l1: 0.3; --l2: 0.3; --l3: 0.3; overflow: hidden; container-type: size; isolation: isolate; background: linear-gradient(165deg, #fff0f4 0%, #fbe7ee 40%, #fdf0e8 100%); }
+.peony-full { position: absolute; inset: 0; z-index: -1; animation: fade 1.6s var(--ease); }
+.peony-card { position: relative; border-radius: var(--radius-sm); margin-inline: auto; flex: none; }
+.peony > * { position: absolute; }
+
+/* Zorza: trzy miękkie plamy koloru, które powoli płyną i oddychają razem z kwiatem. */
+.peony-aurora { width: 90cqmax; height: 90cqmax; border-radius: 50%; will-change: transform; opacity: calc(0.4 + var(--lvl) * 0.25); }
+.peony-aurora.a1 { background: radial-gradient(circle, rgb(255 159 192 / 0.9) 0%, rgb(255 159 192 / 0.35) 35%, transparent 66%); left: -40cqmax; top: -35cqmax; animation: aurora-1 16s ease-in-out infinite alternate; }
+.peony-aurora.a2 { background: radial-gradient(circle, rgb(255 196 163 / 0.9) 0%, rgb(255 196 163 / 0.35) 35%, transparent 66%); right: -45cqmax; bottom: -40cqmax; animation: aurora-2 19s ease-in-out infinite alternate; }
+.peony-aurora.a3 { background: radial-gradient(circle, rgb(217 184 255 / 0.85) 0%, rgb(217 184 255 / 0.3) 35%, transparent 64%); right: -50cqmax; top: -30cqmax; opacity: calc(0.2 + var(--lvl) * 0.2); animation: aurora-3 23s ease-in-out infinite alternate; }
+@keyframes aurora-1 { to { transform: translate(28cqmax, 22cqmax) scale(1.2); } }
+@keyframes aurora-2 { to { transform: translate(-26cqmax, -20cqmax) scale(1.15); } }
+@keyframes aurora-3 { to { transform: translate(-30cqmax, 30cqmax) scale(0.9); } }
+
+/* Bokeh: rozmyte, ciepłe światła, które wolno dryfują – jak w zdjęciu z małą głębią ostrości. */
+.peony-bokeh { inset: 0; }
+.peony-bokeh span { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgb(255 255 255 / 0.9), rgb(255 220 232 / 0.35) 60%, transparent 72%); opacity: 0; will-change: transform, opacity; animation: bokeh 16s ease-in-out infinite; }
+@keyframes bokeh { 0%, 100% { opacity: 0; transform: translate(0, 0) scale(0.8); } 30%, 70% { opacity: 0.55; } 50% { transform: translate(14px, -22px) scale(1.1); } }
+
+/* Scena kwiatu: głowa kwiatu na środku kontenera. */
+.peony-stage { left: 50%; top: 50%; width: min(80cqw, 340px, 62cqh); aspect-ratio: 200 / 260; translate: -50% -36%; }
+.peony-full .peony-stage { top: 58%; }
+.peony-stage > * { position: absolute; }
+/* Ruch kwiatu w różne strony liczy pętla w komponencie (długie, nakładające się fale + przechył na wdechu). */
+.peony-sway { inset: 0; transform-origin: 50% 100%; will-change: transform; }
+.peony-flower { width: 100%; height: 100%; display: block; overflow: visible; }
+/* Głowa kwiatu unosi się i rośnie razem z oddechem; cień pod nią mięknie. */
+.peony-head { transform-origin: 100px 120px; transform: scale(calc(0.95 + var(--l1) * 0.09)); }
+/* bez cienia na kwiecie – zmienia się co klatkę i spowalnia animację; głębię daje poświata */
+/* Każdy płatek obraca się wokół podstawy: --a kąt spoczynku, --o rozchylenie, --lv opóźniony poziom warstwy. */
+.peony-petal { transform: rotate(calc(var(--a) + var(--lv) * var(--o))) scale(calc(0.92 + var(--lv) * 0.1), calc(0.9 + var(--lv) * 0.13)); }
+.pl-inner .peony-petal, .pl-crown .peony-petal { transform: rotate(calc(var(--a) + var(--lv) * var(--o))) scale(calc(0.84 + var(--lv) * 0.2), calc(0.8 + var(--lv) * 0.26)); }
+.peony-flutter { animation: flutter 3.6s ease-in-out infinite; }
+@keyframes flutter { 0%, 100% { rotate: -0.9deg; } 50% { rotate: 1.1deg; } }
+.peony-vein { fill: none; stroke: rgb(255 255 255 / 0.35); stroke-width: 0.35; stroke-linecap: round; }
+.peony-edge { fill: none; stroke: rgb(200 95 135 / 0.14); stroke-width: 0.4; }
+/* Głębia: tylne warstwy lekko rozmyte i przygaszone, przód ostry. */
+.pl-back { opacity: 0.9; }
+.pl-front > g > g > g { opacity: 0.95; }
+.peony-stem { fill: none; stroke-width: 2.4; stroke-linecap: round; }
+.peony-leaf { transform-box: fill-box; transform-origin: 0% 0%; animation: leaf 5.3s ease-in-out infinite; }
+.peony-leaf.leaf-l { transform-origin: 100% 0%; animation-duration: 6.1s; animation-direction: reverse; }
+@keyframes leaf { 0%, 100% { rotate: -3deg; } 50% { rotate: 4deg; } }
+.peony.is-hold .peony-head { animation: peony-beat 1.4s ease-in-out infinite; }
+@keyframes peony-beat { 0%, 100% { scale: 1; } 30% { scale: 1.018; } 60% { scale: 0.997; } }
+.peony-glow { left: 50%; top: 36%; width: 140%; aspect-ratio: 1; border-radius: 50%; translate: -50% -50%; background: radial-gradient(circle, rgb(255 255 255 / 0.9) 0%, rgb(255 200 220 / 0.45) 30%, rgb(255 180 205 / 0.12) 52%, transparent 68%); transform: scale(calc(0.55 + var(--lvl) * 0.5)); opacity: calc(0.35 + var(--lvl) * 0.55); }
+
+/* Płatki: odrywają się od kwiatu i koziołkują w powietrzu (obrót w 3D), dalsze są rozmyte. */
+.peony-petals { inset: 0; pointer-events: none; perspective: 400px; }
+.peony-petals span { position: absolute; top: 28%; border-radius: 80% 10% 80% 10%; background: radial-gradient(circle at 30% 30%, #fff3f6, #f4b0c4 70%, #e48aa8); box-shadow: 0 2px 6px rgb(160 80 110 / 0.18); opacity: 0; animation: peony-petal 12s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite; }
+@keyframes peony-petal {
+  0% { transform: translate3d(0, 0, 0) rotate(var(--rot)) rotateX(0deg) rotateY(0deg) scale(0.5); opacity: 0; }
+  10% { opacity: 0.9; }
+  30% { transform: translate3d(28px, -12cqh, 0) rotate(calc(var(--rot) + 50deg)) rotateX(70deg) rotateY(20deg) scale(1); }
+  55% { transform: translate3d(-18px, -26cqh, 0) rotate(calc(var(--rot) + 110deg)) rotateX(160deg) rotateY(-30deg) scale(0.95); }
+  80% { transform: translate3d(22px, -40cqh, 0) rotate(calc(var(--rot) + 170deg)) rotateX(250deg) rotateY(10deg) scale(0.9); opacity: 0.6; }
+  100% { transform: translate3d(6px, -52cqh, 0) rotate(calc(var(--rot) + 220deg)) rotateX(330deg) rotateY(0deg) scale(0.85); opacity: 0; }
+}
+.peony-card .peony-petals span:nth-child(n + 4), .peony-card .peony-bokeh span:nth-child(n + 5) { display: none; }
+.peony.is-paused { opacity: 0.85; transition: opacity 0.6s var(--ease); }
+.peony.is-paused :is(.peony-aurora, .peony-flutter, .peony-leaf, .peony-bokeh span, .peony-petals span) { animation-play-state: paused; }
+:root[data-theme='dark'] .peony { background: linear-gradient(165deg, #2b1820 0%, #1f151a 50%, #2a1d18 100%); }
+:root[data-theme='dark'] .peony-aurora { opacity: calc(0.25 + var(--lvl) * 0.2); }
+html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
+
+/* Sesja: żywa scena z piwonią na całym ekranie, słowo fazy nad kwiatem, bez licznika czasu. */
+.player-photo { background: #fff0f4; color: var(--ink); }
+.player-photo .breath-stage { justify-content: flex-start; padding-top: 9vh; }
+.player-photo .breath-word { color: #9b4a6a; text-shadow: 0 0 18px rgb(255 255 255 / 0.9); font-size: 1.9rem; }
+.player-photo .breath-prompt { color: #8c6474; text-shadow: 0 0 14px rgb(255 255 255 / 0.9); }
+.player-photo .glass-icon { color: #7a3f57; }
+.player-photo .glass-icon[aria-pressed='true'] { color: #7a3f57; background: linear-gradient(160deg, rgb(255 255 255 / 0.65), rgb(255 255 255 / 0.25)); }
+.player-soft { background: linear-gradient(180deg, #fff0f4 0%, var(--bg) 100%); }
+:root[data-theme='dark'] .player-soft { background: var(--bg); }
+.breath-stage { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; text-align: center; }
+.breath-prompt { min-height: 3.2em; margin: 0; max-width: 300px; font-size: 1.25rem; line-height: 1.3; color: var(--muted); animation: fade 1.4s var(--ease); }
+.breath-word { font-size: 1.6rem; color: var(--muted); letter-spacing: 0.01em; animation: breath-word 1.2s var(--ease); }
+@keyframes breath-word { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } }
+/* Liquid glass: przezroczysty pasek i przyciski – zdjęcie prześwituje, jasna krawędź łapie światło. */
+.player-controls.glass { width: auto !important; max-width: none !important; align-self: center; padding: 8px; border-radius: 999px; background: linear-gradient(135deg, rgb(255 255 255 / 0.28), rgb(255 255 255 / 0.06)); backdrop-filter: blur(22px) saturate(1.8); -webkit-backdrop-filter: blur(22px) saturate(1.8); border: 1px solid rgb(255 255 255 / 0.55); box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.8), inset 0 -1px 1px rgb(255 255 255 / 0.15), 0 12px 32px -14px rgb(180 120 140 / 0.18); }
+.player-controls.glass > .row { align-items: center; }
+.glass-btn, .glass-icon { position: relative; background: linear-gradient(160deg, rgb(255 255 255 / 0.4), rgb(255 255 255 / 0.08)); color: var(--ink); border: 1px solid rgb(255 255 255 / 0.6); backdrop-filter: blur(12px) saturate(1.6); -webkit-backdrop-filter: blur(12px) saturate(1.6); box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.9), 0 6px 16px -10px rgb(180 120 140 / 0.2); }
+.glass-icon[aria-pressed='true'] { background: linear-gradient(160deg, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.3)); color: var(--ink); border-color: rgb(255 255 255 / 0.7); }
+.glass-icon[aria-pressed='false'] { color: var(--muted); opacity: 0.7; }
+.glass-main { width: 60px; height: 60px; color: var(--ink); }
+:root[data-theme='dark'] .player-controls.glass { background: linear-gradient(135deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.03)); border-color: rgb(255 255 255 / 0.18); box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.25), 0 12px 32px -14px rgb(0 0 0 / 0.6); }
+:root[data-theme='dark'] :is(.glass-btn, .glass-icon) { background: linear-gradient(160deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.04)); border-color: rgb(255 255 255 / 0.22); box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.3); }
+
+/* Ekran podziękowania i tydzień pąków. */
+.thanks { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; text-align: center; overflow-y: auto; }
+.affirmation { display: grid; gap: 8px; padding: 20px 22px; border-radius: var(--radius); background: color-mix(in srgb, var(--surface) 70%, transparent); border: 1px solid color-mix(in srgb, #f7a8bd 35%, var(--line)); max-width: 340px; animation: up 0.9s var(--ease) 0.3s backwards; }
+.ritual-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; width: 100%; max-width: 320px; margin-inline: auto; }
+.ritual-day { display: flex; flex-direction: column; align-items: center; gap: 5px; color: var(--muted); }
+.ritual-day.today { color: var(--ink); font-weight: 500; }
+.mini-bloom { width: 24px; height: 24px; fill: transparent; stroke: #f2b8c8; stroke-width: 1; transform: scale(0.8); transition: all 0.6s var(--ease); }
+.mini-bloom-core { fill: transparent; }
+.ritual-day.on .mini-bloom { fill: #f7a8bd; stroke: transparent; transform: scale(1) rotate(36deg); }
+.ritual-day.on .mini-bloom-core { fill: #fff1f4; }
+.ritual-day.today:not(.on) .mini-bloom { stroke-dasharray: 2 2; animation: bud-wait 2s ease-in-out infinite; }
+@keyframes bud-wait { 50% { transform: scale(0.95); } }
+
+/* „Dla mnie”: piwonia jako główny motyw – scena na pełny ekran (pod paskiem studia i nawigacją),
+   na górze tylko data i jedno zdanie, kwiat z łodygą do samego dołu. */
+.phone[data-tab='forme'] { position: relative; }
+.phone[data-tab='forme'] .topbar { position: absolute; top: 0; left: 0; right: 0; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.forme-hero { position: relative; isolation: isolate; overflow: hidden; min-height: 100dvh; margin: -8px -20px 0; padding: calc(80px + env(safe-area-inset-top)) 24px calc(104px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; justify-content: space-between; gap: 20px; }
+.forme-hero .peony-full .peony-stage { top: 50%; width: min(96cqw, 440px, 58cqh); }
+.forme-more { align-self: center; background: none; border: 0; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 0.86rem; color: var(--muted); cursor: pointer; animation: more-hint 2.6s ease-in-out infinite; }
+@keyframes more-hint { 50% { transform: translateY(3px); } }
+
+/* Góra sceny „Dla mnie”: drobna data i jedno zdanie kursywą. */
+.forme-hello { display: grid; gap: 4px; padding-top: 4px; }
+.forme-hello .eyebrow { margin-bottom: 6px; }
+/* Cytat na scenie: kursywa z cienką różową kreską. */
+.forme-quote { margin: 4px 0 0; padding-left: 14px; border-left: 1.5px solid #f2b8c8; max-width: 30ch; font-size: 1.3rem; line-height: 1.3; color: var(--ink); }
+
+/* Minimalny start: cienka pigułka z okrągłą ikoną, bez ciężkiego czarnego tła. */
+.start-min { align-self: center; display: inline-flex; align-items: center; gap: 12px; padding: 6px 22px 6px 6px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: var(--font-head); font-size: 0.95rem; letter-spacing: 0.02em; cursor: pointer; transition: background 0.25s var(--ease), transform 0.2s var(--ease); }
+.start-min:hover { background: color-mix(in srgb, #f7a8bd 12%, transparent); }
+.start-min:active { transform: scale(0.97); }
+.start-min-icon { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, #f7a8bd 30%, var(--surface)); color: var(--ink); }
+
+/* Karta rytuału w „Dla mnie” i wybór długości nastrojem. */
+.ritual-card { background: radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, #f7a8bd 22%, var(--surface)) 0%, var(--surface) 70%); overflow: hidden; }
+.ritual-card .stack.center { align-items: center; }
+.mood-pick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 4px; border-radius: var(--radius-sm); background: var(--soft); }
+.mood-pick button { border: 0; background: transparent; border-radius: 14px; padding: 9px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: pointer; color: var(--muted); transition: all 0.25s var(--ease); font: inherit; }
+.mood-pick button .serif { font-size: 1.05rem; white-space: nowrap; color: var(--ink); }
+.mood-pick button[aria-pressed='true'] { background: var(--surface); box-shadow: var(--shadow); }

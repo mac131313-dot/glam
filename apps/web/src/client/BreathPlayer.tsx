@@ -1,16 +1,22 @@
-// Sesja oddechu / medytacji prowadzona przez aplikację: tempo wyznacza wiatr na łące (bez napisów na ekranie),
-// haptyka na początku każdej fazy i spokojny szum – oba do włączenia i wyłączenia w trakcie.
+// Sesja oddechu / medytacji prowadzona przez aplikację: tempo wyznacza piwonia, która rozkwita na wdechu
+// i mięknie na wydechu. Bez licznika i paska postępu – długość klientka wybrała na początku, w trakcie liczy się
+// tylko oddech. Haptyka na początku każdej fazy i spokojny szum – oba do włączenia i wyłączenia w trakcie.
+// Na końcu podziękowanie, rytuał tygodnia i myśl na dziś – zaproszenie, żeby wrócić jutro.
 import { useEffect, useRef, useState } from 'react';
-import { WIND_CALM, breathAt, patternById, promptAt, sessionById, windAt } from '@glam/core';
+import { breathAt, patternById, promptAt, sessionById, type BreathRitual } from '@glam/core';
 import { Icon } from '../icons.tsx';
 import { api } from '../api.ts';
 import { useLayer } from '../back.ts';
-import { MeadowScene } from './MeadowScene.tsx';
+import { BreathBloom, MiniBloom } from './BreathBloom.tsx';
+import { useClient } from './ClientApp.tsx';
 import { CalmNoise, hapticPhase, hapticsSupported, loadSenses, saveSenses, useWakeLock, type SenseSettings } from './senses.ts';
 
 export type BreathRequest = { sessionId?: string; patternId?: string; minutes?: number };
 
-const fmt = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+type Ritual = BreathRitual & { affirmation: string };
+
+const PHASE_WORD = { in: 'wdech', hold: 'zatrzymaj', out: 'wydech' } as const;
+const WEEKDAYS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
 
 export function BreathPlayer({ request, onClose }: { request: BreathRequest; onClose: () => void }) {
   const session = request.sessionId ? sessionById(request.sessionId) : undefined;
@@ -21,10 +27,12 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   const [senses, setSenses] = useState<SenseSettings>(loadSenses);
   const [paused, setPaused] = useState(false);
   const [done, setDone] = useState(false);
+  const [ritual, setRitual] = useState<Ritual | null>(null);
   const [view, setView] = useState({ index: 0, elapsed: 0 });
+  const [round, setRound] = useState(0);
 
-  // Siła wiatru dla scenki – zapisywana w pętli, czytana przez MeadowScene co klatkę.
-  const wind = useRef(WIND_CALM);
+  // Poziom kwiatu 0..1 – zapisywany w pętli, czytany przez BreathBloom co klatkę.
+  const level = useRef(0);
   const noise = useRef(new CalmNoise());
   const sensesRef = useRef(senses);
   const pausedRef = useRef(false);
@@ -39,34 +47,39 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
 
   // Szum startuje razem z sesją (otwarcie nastąpiło z kliknięcia, więc przeglądarka pozwala grać).
   useEffect(() => {
+    if (done) return;
     const n = noise.current;
     if (sensesRef.current.noise) n.start(sensesRef.current.volume);
     return () => n.stop();
-  }, []);
+  }, [done, round]);
 
-  // Pętla rytmu – wiatr trafia do scenki przez ref, React odświeża tylko pasek postępu.
+  // Pętla rytmu – poziom trafia do kwiatu przez ref, React odświeża tylko fazę i podpowiedź.
   useEffect(() => {
+    if (done) return;
+    clock.current = { start: performance.now(), pausedTotal: 0, pausedAt: 0 };
+    lastIndex.current = -1;
     let raf = 0;
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
-      if (pausedRef.current) {
-        wind.current = WIND_CALM / 2; // w pauzie łąka się uspokaja, ale nie zamiera
-        return;
-      }
+      if (pausedRef.current) return; // w pauzie kwiat zatrzymuje się tam, gdzie był
       const elapsedMs = now - clock.current.start - clock.current.pausedTotal;
       if (elapsedMs >= totalSec * 1000) {
         cancelAnimationFrame(raf);
         noise.current.stop();
+        noise.current = new CalmNoise();
         if (sensesRef.current.haptics) hapticPhase('out');
         setDone(true);
         // Ukończona sesja liczy się do celu tygodnia i KPI „medytacje tygodniowo” (decyzja 9, sekcja 12).
         api('/mindful', { method: 'POST', body: { kind: session ? 'meditation' : 'breath', ref: session?.id ?? pattern.id, minutes: totalSec / 60 } })
           .then(() => window.dispatchEvent(new Event('glam:passes-changed')))
+          .catch(() => {})
+          .then(() => api<Ritual>('/my/breath-ritual'))
+          .then(setRitual)
           .catch(() => {});
         return;
       }
       const st = breathAt(pattern, elapsedMs);
-      wind.current = windAt(pattern, elapsedMs);
+      level.current = st.level;
       noise.current.breathe(st.level);
       // Nowa faza (także ta sama faza w kolejnym cyklu) → jeden sygnał haptyczny.
       const phaseKey = st.cycle * pattern.phases.length + st.index;
@@ -79,7 +92,8 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [pattern, totalSec]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pattern, totalSec, done, round]);
 
   useLayer(onClose);
   useWakeLock(!done && !paused);
@@ -108,60 +122,42 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
     setSenses({ ...senses, noise: next });
   };
 
+  const again = () => {
+    level.current = 0;
+    setRitual(null);
+    setView({ index: 0, elapsed: 0 });
+    setRound((r) => r + 1);
+    setDone(false);
+  };
+
+  if (done) return <Thanks ritual={ritual} onAgain={again} onClose={onClose} />;
+
   const phase = pattern.phases[view.index];
   const prompt = session ? promptAt(session, view.elapsed) : undefined;
-  const remaining = Math.max(0, totalSec - view.elapsed);
-
-  if (done) {
-    return (
-      <div className="player" role="dialog" aria-modal="true" aria-label="Sesja zakończona">
-        <div className="player-stage">
-          <div className="stack center" style={{ gap: 10 }}>
-            <div className="eyebrow">Gotowe</div>
-            <div className="serif" style={{ fontSize: '2.6rem', lineHeight: 1.1 }}>
-              Dziękuję
-              <br />
-              za tę chwilę
-            </div>
-            <p className="muted">{Math.round(totalSec / 60)} min tylko dla Ciebie</p>
-          </div>
-        </div>
-        <button className="btn block" onClick={onClose}>
-          Zamknij
-        </button>
-      </div>
-    );
-  }
 
   return (
-    <div className="player" role="dialog" aria-modal="true" aria-label={title}>
-      {/* Sama scenka na cały ekran, bez napisów – fazę i podpowiedź słyszą tylko czytniki ekranu. */}
-      <MeadowScene className="player-bg" wind={() => wind.current} />
-      <header className="row between">
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 2 }}>
-            {session?.category ?? pattern.hint}
-          </div>
-          <div className="card-title">{title}</div>
-        </div>
-        <button className="icon-btn" onClick={onClose} aria-label="Zakończ sesję">
+    <div className="player player-photo" role="dialog" aria-modal="true" aria-label={title}>
+      {/* Tryb oddechu jest minimalny: piwonia na całym ekranie, słowo fazy i trzy szklane ikony – nic więcej nie rozprasza. */}
+      <BreathBloom variant="full" level={() => level.current} hold={!paused && phase.kind === 'hold'} className={paused ? 'is-paused' : ''} />
+      <header className="row" style={{ justifyContent: 'flex-end' }}>
+        <button className="icon-btn glass-icon" onClick={onClose} aria-label="Zakończ sesję">
           <Icon name="close" />
         </button>
       </header>
 
-      <div className="player-stage" />
-      <p className="sr-only" aria-live="polite">
-        {paused ? 'pauza' : phase.label}
-        {prompt ? `. ${prompt.text}` : ''}
-      </p>
-
-      <footer className="stack player-controls" style={{ gap: 18 }}>
-        <div className="progress" aria-hidden>
-          <span style={{ width: `${(view.elapsed / totalSec) * 100}%`, transition: 'width 1s linear' }} />
+      <div className="player-stage breath-stage">
+        <p key={prompt?.at ?? 'none'} className="breath-prompt serif">
+          {prompt?.text ?? ''}
+        </p>
+        <div key={paused ? 'p' : view.index} className="breath-word serif" aria-live="polite">
+          {paused ? 'pauza' : PHASE_WORD[phase.kind]}
         </div>
-        <div className="row between">
+      </div>
+
+      <footer className="player-controls glass">
+        <div className="row" style={{ gap: 14 }}>
           <button
-            className="icon-btn"
+            className="icon-btn glass-icon"
             aria-pressed={senses.haptics}
             aria-label={senses.haptics ? 'Wyłącz haptykę' : 'Włącz haptykę'}
             title={hapticsSupported() ? 'Haptyka' : 'Haptyka zadziała w aplikacji mobilnej'}
@@ -169,35 +165,80 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
           >
             <Icon name="vibrate" />
           </button>
-          <div className="stack center" style={{ gap: 4 }}>
-            <button className="btn" style={{ minWidth: 150 }} onClick={togglePause}>
-              <Icon name={paused ? 'play' : 'pause'} size={18} /> {paused ? 'Wznów' : 'Pauza'}
-            </button>
-            <span className="code tiny muted">{fmt(remaining)}</span>
-          </div>
-          <button className="icon-btn" aria-pressed={senses.noise} aria-label={senses.noise ? 'Wyłącz szum' : 'Włącz szum'} title="Spokojny szum" onClick={toggleNoise}>
+          <button className="icon-btn glass-icon glass-main" onClick={togglePause} aria-label={paused ? 'Wznów' : 'Pauza'}>
+            <Icon name={paused ? 'play' : 'pause'} size={20} />
+          </button>
+          <button className="icon-btn glass-icon" aria-pressed={senses.noise} aria-label={senses.noise ? 'Wyłącz szum' : 'Włącz szum'} title="Spokojny szum" onClick={toggleNoise}>
             <Icon name="wave" />
           </button>
         </div>
-        {senses.noise && (
-          <label className="row small muted" style={{ justifyContent: 'center' }}>
-            <span>Głośność szumu</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={senses.volume}
-              onChange={(e) => {
-                const volume = Number(e.target.value);
-                noise.current.setVolume(volume);
-                setSenses({ ...senses, volume });
-              }}
-              style={{ accentColor: 'var(--ink)', width: 160 }}
-            />
-          </label>
-        )}
       </footer>
     </div>
   );
+}
+
+function Thanks({ ritual, onAgain, onClose }: { ritual: Ritual | null; onAgain: () => void; onClose: () => void }) {
+  const { me, studio } = useClient();
+  const name = me.user.name;
+  return (
+    <div className="player player-soft" role="dialog" aria-modal="true" aria-label="Sesja zakończona">
+      <div className="player-stage thanks">
+        <BreathBloom style={{ width: 132, height: 172 }} />
+        <div className="stack center" style={{ gap: 6 }}>
+          <div className="eyebrow">Twój rytuał</div>
+          <div className="serif" style={{ fontSize: '2.4rem', lineHeight: 1.05 }}>
+            Dziękuję{name ? `, ${name}` : ''}
+          </div>
+          <p className="muted" style={{ margin: 0 }}>
+            za tę chwilę tylko dla siebie
+          </p>
+        </div>
+
+        {ritual && (
+          <>
+            <RitualWeek ritual={ritual} />
+            <p className="small center" style={{ margin: 0 }}>
+              {streakLine(ritual.streak)}
+            </p>
+            <div className="affirmation">
+              <div className="eyebrow">Myśl na dziś</div>
+              <div className="serif" style={{ fontSize: '1.45rem', lineHeight: 1.2 }}>
+                „{ritual.affirmation}”
+              </div>
+              <div className="tiny muted">z czułością, {studio.name}</div>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="stack" style={{ gap: 10 }}>
+        <button className="btn block" onClick={onClose}>
+          Do jutra
+        </button>
+        <button className="btn ghost block" onClick={onAgain}>
+          Jeszcze chwilę
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Tydzień jako siedem kwiatków – rozkwitnięty to dzień z oddechem. */
+export function RitualWeek({ ritual }: { ritual: BreathRitual }) {
+  const todayIdx = (new Date().getDay() + 6) % 7;
+  return (
+    <div className="ritual-week" role="list" aria-label="Twój tydzień oddechu">
+      {ritual.week.map((on, i) => (
+        <div key={i} role="listitem" className={`ritual-day ${on ? 'on' : ''} ${i === todayIdx ? 'today' : ''}`} aria-label={`${WEEKDAYS[i]}: ${on ? 'była chwila oddechu' : 'jeszcze nie'}`}>
+          <MiniBloom />
+          <span className="tiny">{WEEKDAYS[i]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function streakLine(streak: number): string {
+  if (streak <= 0) return 'Pierwszy kwiatek Twojego rytuału. Wróć jutro, a zakwitnie kolejny.';
+  if (streak === 1) return 'Pierwszy kwiatek rytuału. Jutro kolejny?';
+  return `${streak} dni z rzędu oddychasz dla siebie. Pięknie.`;
 }
