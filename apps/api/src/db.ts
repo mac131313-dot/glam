@@ -46,6 +46,11 @@ CREATE TABLE IF NOT EXISTS studios (
   catalog_visible INTEGER NOT NULL DEFAULT 0,
   founded_on TEXT,
   white_label_json TEXT,
+  -- Strona internetowa (core/site.ts): szkic z edytora i wersja publiczna
+  site_draft_json TEXT,
+  site_draft_updated_at TEXT,
+  site_json TEXT,
+  site_published_at TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -185,8 +190,12 @@ CREATE TABLE IF NOT EXISTS class_types (
   photo_data BLOB,
   photo_version INTEGER NOT NULL DEFAULT 0,
   photo_ratio REAL,
-  playlist_id TEXT
+  playlist_id TEXT,
+  -- kiedy zajęcia weszły do oferty (nowości na stronie); NULL = sprzed wprowadzenia tej kolumny
+  created_at TEXT
 );
+-- Data dodania wypełnia się sama, niezależnie od miejsca, które wstawia zajęcia (panel, presety, import)
+CREATE TRIGGER IF NOT EXISTS trg_class_types_created AFTER INSERT ON class_types WHEN NEW.created_at IS NULL BEGIN UPDATE class_types SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = NEW.id; END;
 
 CREATE TABLE IF NOT EXISTS trainer_class_types (
   studio_id TEXT NOT NULL REFERENCES studios(id),

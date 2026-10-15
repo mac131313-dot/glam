@@ -485,3 +485,80 @@ test('publiczna strona studia: grafik, zajęcia i trenerki bez logowania, bez da
   assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/flow-pilates' })).statusCode, 404);
   db.prepare("UPDATE studios SET published = 1 WHERE id = ?").run(K);
 });
+
+test('edytor strony: autozapis szkicu, publikacja, podgląd tylko dla właścicielki', async () => {
+  const beata = await login(DEMO.krakowOwner);
+  const iza = await login(DEMO.iza);
+  assert.equal((await call(iza, K, 'GET', '/api/site/editor')).statusCode, 403, 'trenerka nie edytuje strony');
+  assert.equal((await app.inject({ method: 'GET', url: '/api/site/preview' })).statusCode, 401);
+
+  const start = (await call(beata, K, 'GET', '/api/site/editor')).json();
+  assert.equal(start.publishedAt, null);
+  assert.equal(start.unpublished, true);
+  const doc = start.doc;
+  doc.hero.values.serif = 'pilates na Kazimierzu';
+  doc.sections.reverse();
+  doc.sections.push({ key: 'a-pierwsza', type: 'article', visible: true, nav: 'Pierwsza wizyta', values: { title: 'Pierwsza wizyta', text: 'Przyjdź 10 minut wcześniej.' } });
+  const logBefore = (db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE studio_id = ? AND action LIKE 'site.%'").get(K) as { n: number }).n;
+  const saved = await call(beata, K, 'PUT', '/api/site/draft', { doc, auto: true });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.equal(saved.json().doc.sections.at(-1).values.layout, 'plain', 'dokument przechodzi przez parser');
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE studio_id = ? AND action LIKE 'site.%'").get(K) as { n: number }).n, logBefore, 'autozapis bez wpisu w rejestrze');
+
+  // Szkic widać w podglądzie, ale nie publicznie.
+  const pub = (await app.inject({ method: 'GET', url: '/api/public/studios/flow-pilates' })).json();
+  assert.equal(pub.site.hero.values.serif, '');
+  const prev = (await call(beata, K, 'GET', '/api/site/preview')).json();
+  assert.equal(prev.site.hero.values.serif, 'pilates na Kazimierzu');
+
+  const published = (await call(beata, K, 'POST', '/api/site/publish')).json();
+  assert.ok(published.publishedAt);
+  assert.equal(published.unpublished, false);
+  const after = (await app.inject({ method: 'GET', url: '/api/public/studios/flow-pilates' })).json();
+  assert.equal(after.site.hero.values.serif, 'pilates na Kazimierzu');
+  assert.equal(after.site.sections.at(-1).key, 'a-pierwsza');
+
+  // Zmiana po publikacji → szkic odrzucony wraca do wersji publicznej.
+  doc.hero.values.serif = 'roboczo';
+  await call(beata, K, 'PUT', '/api/site/draft', { doc });
+  assert.equal((await call(beata, K, 'GET', '/api/site/editor')).json().unpublished, true);
+  const discarded = (await call(beata, K, 'POST', '/api/site/discard')).json();
+  assert.equal(discarded.doc.hero.values.serif, 'pilates na Kazimierzu');
+  assert.ok((db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE studio_id = ? AND action = 'site.save'").get(K) as { n: number }).n >= 1, 'ręczny zapis w rejestrze');
+});
+
+test('strona studia: nowe zajęcia dostają datę dodania (nowość), startowe – nie', async () => {
+  const beata = await login(DEMO.krakowOwner);
+  const created = await call(beata, K, 'POST', '/api/owner/class-types', { zoneId: 'z_kr_sala', name: 'Aerial Yoga', description: 'Joga w hamakach.' });
+  assert.equal(created.statusCode, 200, created.body);
+  const site = (await app.inject({ method: 'GET', url: '/api/public/studios/flow-pilates' })).json();
+  const fresh = site.classes.find((c: { name: string }) => c.name === 'Aerial Yoga');
+  assert.ok(fresh.createdAt, 'trigger wypełnia datę dodania');
+  assert.ok(Date.now() - Date.parse(fresh.createdAt) < 60_000);
+  assert.ok(site.classes.filter((c: { name: string }) => c.name !== 'Aerial Yoga').every((c: { createdAt: string | null }) => !c.createdAt || Date.parse(c.createdAt) - Date.parse(site.createdAt) < 86_400_000));
+});
+
+test('zdjęcia strony: wgranie, użycie w szkicu, publiczny adres; cudze zdjęcie odrzucone', async () => {
+  const beata = await login(DEMO.krakowOwner);
+  const joanna = await login(DEMO.owner);
+  const dataUrl = 'data:image/jpeg;base64,' + jpegHeader(1600, 1000).toString('base64');
+  const up = await call(beata, K, 'POST', '/api/site/images', { dataUrl });
+  assert.equal(up.statusCode, 200, up.body);
+  const { id, url, ratio } = up.json();
+  assert.equal(url, `/api/public-media/${id}`);
+  assert.equal(ratio, 1.6);
+  assert.equal((await app.inject({ method: 'GET', url })).statusCode, 200, 'zdjęcie strony jest publiczne');
+
+  const doc = (await call(beata, K, 'GET', '/api/site/editor')).json().doc;
+  doc.hero.values.image = id;
+  doc.photos.classes.kr_reformer = id;
+  const saved = await call(beata, K, 'PUT', '/api/site/draft', { doc, auto: true });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.equal(saved.json().doc.hero.values.image, id);
+  assert.ok(saved.json().catalog.classes.length > 0, 'edytor dostaje listę zajęć do zdjęć');
+
+  // Innemu studiu to id nic nie da.
+  const other = (await call(joanna, R, 'GET', '/api/site/editor')).json().doc;
+  other.hero.values.image = id;
+  assert.equal((await call(joanna, R, 'PUT', '/api/site/draft', { doc: other })).statusCode, 400);
+});

@@ -4,7 +4,7 @@
 // Inne konto demo: ?jako=marzena, ?jako=kasia, ?jako=ania … (lista w PERSONAS).
 // Ekran logowania SMS (screens/Login.tsx) wraca po wyłączeniu DEMO_MODE.
 import { useCallback, useEffect, useState } from 'react';
-import type { Look } from '@glam/core';
+import { can, type Look } from '@glam/core';
 import { api, session, SURFACE } from './api.ts';
 import { PERSONAS } from './demo.ts';
 import { ClientApp } from './client/ClientApp.tsx';
@@ -13,6 +13,7 @@ import { DeviceFrame, Landing } from './screens/Landing.tsx';
 import { StudioPicker } from './screens/StudioPicker.tsx';
 import { StudioSite } from './site/StudioSite.tsx';
 import { StaffApp } from './staff/StaffApp.tsx';
+import { SiteEditor } from './staff/site-editor/SiteEditor.tsx';
 import { Spinner } from './ui.tsx';
 
 export type MeStudio = { id: string; name: string; city: string; logo: string; logoUrl: string | null; logoWide: boolean; accent: string; tagline: string; roles: string[]; look: Look };
@@ -155,6 +156,10 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
         onClose={() => setPicking(false)}
       />
     );
+  }
+  // Edytor strony WWW: pełny ekran poza menu panelu – z własną bramką uprawnień (layout panelu go nie chroni).
+  if (surface === 'panel' && location.pathname.startsWith('/panel/strona')) {
+    return can(studio.roles, 'config.edit') ? <SiteEditor key={studioId} /> : <div className="empty" style={{ paddingTop: 80 }}>Edytor strony jest dostępny dla właścicielki studia.</div>;
   }
   if (surface === 'panel') {
     return (
