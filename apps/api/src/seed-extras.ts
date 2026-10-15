@@ -196,6 +196,71 @@ export function seedExtras(db: Db, now = new Date()) {
     ago(2),
   );
 
+  // ——— Kurs ze stroną sprzedażową (wzór: audyt STRETCH&GLOW; osoby fikcyjne) ———
+  const later = (days: number) => iso(new Date(now.getTime() + days * DAY));
+  run(
+    `INSERT INTO courses (id, studio_id, author_id, title, subtitle, description, kind, level, goal, day_part, contraindications, access_days, included_product_ids_json, status, page_json, created_at, updated_at)
+     VALUES ('co4', ?, ?, 'Stretch & Shine', 'Barre, stretching i rzeźbienie w 25 minut dziennie', ?, 'program', 'wszystkie poziomy', 'elastyczność', 'rano', 'Ciąża, świeże urazy i operacje – przed startem skonsultuj się z lekarzem.', NULL, '["pr_r9"]', 'published', ?, ?, ?)`,
+    R,
+    marzena,
+    'Autorska metoda Barre & Stretch, treningi rzeźbiące i lekcje zaproszonych ekspertek. Krótko, regularnie, z planem na każdy dzień.',
+    JSON.stringify({
+      promise: 'Wszystko, by zbudować zdrową rutynę i zadbać o swoje ciało',
+      outcomes: ['Dłuższe, elastyczne mięśnie i lżejszy krok', 'Lepsza postawa przy biurku', 'Mocniejszy środek ciała', 'Spokojniejsza, mniej opuchnięta twarz rano', 'Rutyna, która mieści się w 25 minutach'],
+      forWhom: ['Chcesz wysmuklić i wydłużyć mięśnie bez dźwigania ciężarów', 'Masz mało czasu – trening trwa 20–25 minut', 'Lubisz intensywne, ale świadome zajęcia'],
+      equipment: 'mata, mała piłka i krzesło',
+      faq: [
+        { q: 'Kiedy dostanę dostęp?', a: 'Od razu po płatności. Zaloguj się w aplikacji numerem telefonu z zamówienia – wyślemy kod SMS.' },
+        { q: 'Jakiego sprzętu potrzebuję?', a: 'Mata, mała piłka i krzesło. Piłkę możesz zastąpić zwiniętym ręcznikiem.' },
+        { q: 'Czy dam radę bez doświadczenia?', a: 'Tak. Każdy trening ma wersję łatwiejszą, a kalendarz zaczyna się od spokojnych dni.' },
+        { q: 'Na jakich urządzeniach obejrzę kurs?', a: 'Telefon, tablet i komputer. Z telefonu puścisz trening na telewizor przez AirPlay lub Chromecast.' },
+        { q: 'Czy mogę zwrócić kurs?', a: 'Dostęp do treści cyfrowych zaczyna się od razu, dlatego prawo odstąpienia wygasa przy zakupie. Napisz do nas, jeśli coś nie działa – pomożemy.' },
+        { q: 'Mam karnet w studiu. Czy muszę kupować kurs?', a: 'Nie. Karnet Pilates Reformer 9 obejmuje ten kurs – znajdziesz go w aplikacji w zakładce Kursy.' },
+      ],
+    }),
+    ago(20),
+    ago(1),
+  );
+  run(
+    "INSERT INTO course_editions (id, studio_id, course_id, name, theme, sales_from, sales_until, starts_at, access_until, news_json, created_at) VALUES ('ed4', ?, 'co4', 'Edycja jesienna', 'fit & healthy routine', ?, ?, ?, ?, ?, ?)",
+    R,
+    ago(10),
+    later(20),
+    ago(1),
+    later(120),
+    JSON.stringify([
+      { title: 'Kalendarz treningowy', body: 'Gotowy plan rozpisany dzień po dniu – nie musisz nic wybierać.' },
+      { title: 'Treningi rzeźbiące', body: 'Nowy blok z Julią: wzmocnienie i modelowanie sylwetki.' },
+      { title: 'Nowe Barre & Stretch', body: 'Świeże zajęcia autorską metodą Marzeny.' },
+      { title: 'Masaż twarzy', body: 'Krótkie lekcje z Niną na rano i wieczór.' },
+    ]),
+    ago(10),
+  );
+  const tier = (id: string, name: string, price: number, features: string[], sort: number, highlight = 0, seats: number | null = null) =>
+    run('INSERT INTO course_tiers (id, studio_id, course_id, name, price_grosze, features_json, highlight, seat_limit, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', id, R, 'co4', name, price, JSON.stringify(features), highlight, seats, sort);
+  const base = ['Wszystkie treningi edycji', 'Kalendarz treningowy dzień po dniu', 'Dostęp do końca edycji'];
+  tier('t4_std', 'Standard', 19900, base, 1);
+  tier('t4_full', 'Full', 27900, [...base, 'Lekcje zaproszonych ekspertek', 'Społeczność uczestniczek'], 2, 1);
+  tier('t4_pers', 'Personal', 54900, [...base, 'Lekcje zaproszonych ekspertek', 'Społeczność uczestniczek', 'Konsultacja 1:1 online (30 min)'], 3, 0, 10);
+  const person = (id: string, user: string | null, name: string, role: string, title: string, bio: string, sort: number) =>
+    run('INSERT INTO course_people (id, studio_id, course_id, user_id, name, role, title, bio, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', id, R, 'co4', user, name, role, title, bio, sort);
+  person('p4_m', marzena, 'Marzena', 'author', 'autorka metody Barre & Stretch', 'Od 15 lat uczy pilatesu i baletu dla dorosłych. Łączy pracę przy drążku ze stretchingiem, żeby trening był krótki, a efekty – długie.', 1);
+  person('p4_j', null, 'Julia Sadowska', 'trainer', 'trenerka przygotowania motorycznego', 'Pracuje z tancerkami i biegaczkami. Jej treningi rzeźbiące są krótkie i bardzo precyzyjne.', 2);
+  person('p4_n', null, 'Nina Zawadzka', 'expert', 'kosmetolożka', 'Specjalizuje się w masażu twarzy i pracy z napięciem żuchwy.', 3);
+  person('p4_t', null, 'dr Tomasz Weller', 'expert', 'fizjoterapeuta', 'Łączy wiedzę medyczną z uważnym ruchem. Prowadzi trening barre z naciskiem na bezpieczne stawy.', 4);
+  const lesson4 = (id: string, module: string, title: string, dur: number, day: number, who: string, sort: number, free = 0) =>
+    run('INSERT INTO course_lessons (id, studio_id, course_id, module, title, kind, duration_sec, unlock_day, free_preview, person_id, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', id, R, 'co4', module, title, 'text', dur, day, free, who, sort);
+  lesson4('l4_1', 'Barre & Stretch', 'Pierwszy trening przy krześle', 1320, 0, 'p4_m', 1, 1);
+  lesson4('l4_2', 'Barre & Stretch', 'Długie nogi, lekkie biodra', 1500, 1, 'p4_m', 2);
+  lesson4('l4_3', 'Barre & Stretch', 'Plecy i postawa', 1380, 3, 'p4_m', 3);
+  lesson4('l4_4', 'Barre & Stretch', 'Pełny stretch', 1500, 5, 'p4_m', 4);
+  lesson4('l4_5', 'Rzeźbienie', 'Pośladki i uda', 1260, 2, 'p4_j', 5);
+  lesson4('l4_6', 'Rzeźbienie', 'Ramiona bez ciężarów', 1200, 4, 'p4_j', 6);
+  lesson4('l4_7', 'Rzeźbienie', 'Środek ciała', 1320, 6, 'p4_j', 7);
+  lesson4('l4_8', 'Masaż twarzy', 'Poranny drenaż', 600, 1, 'p4_n', 8);
+  lesson4('l4_9', 'Masaż twarzy', 'Wieczorne rozluźnienie żuchwy', 720, 4, 'p4_n', 9);
+  lesson4('l4_10', 'Barre z fizjoterapeutą', 'Bezpieczne kolana i biodra', 1500, 7, 'p4_t', 10);
+
   // ——— Muzyka ———
   run("INSERT INTO playlists (id, studio_id, provider, url, name, purpose, class_type_id, created_by, created_at) VALUES ('pl1', ?, 'spotify', 'https://open.spotify.com/playlist/37i9dQZF1DX9uKNf5jGX6m', 'Reformer – spokojny flow', 'class', 'ct_reformer', ?, ?)", R, marzena, ago(20));
   run("INSERT INTO playlists (id, studio_id, provider, url, name, purpose, created_by, created_at) VALUES ('pl2', ?, 'spotify', 'https://open.spotify.com/playlist/37i9dQZF1DWZqd5JICZI0u', 'Na sen', 'sleep', ?, ?)", R, ola, ago(20));

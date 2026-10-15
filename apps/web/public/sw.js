@@ -22,8 +22,9 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   // Pobrane lekcje kursów (offline, K11) i powłoka aplikacji.
-  if (url.pathname.startsWith('/api/media/')) {
-    e.respondWith(caches.open('glam-offline-media').then((c) => c.match(url.pathname).then((hit) => hit ?? fetch(e.request))));
+  // /api/stream/ – wideo lekcji z podpisem w query; w pamięci podręcznej trzymamy je pod samą ścieżką.
+  if (url.pathname.startsWith('/api/media/') || url.pathname.startsWith('/api/stream/')) {
+    e.respondWith(caches.open('glam-offline-media').then((c) => c.match(url.pathname).then((hit) => (hit ? ranged(hit, e.request) : fetch(e.request)))));
     return;
   }
   if (url.pathname === '/app' || url.pathname === '/') {
@@ -50,3 +51,16 @@ self.addEventListener('notificationclick', (e) => {
     }),
   );
 });
+
+// Safari odtwarza <video> tylko z odpowiedzi 206 na nagłówek Range – kroimy film zapisany offline.
+async function ranged(res, req) {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get('range') ?? '');
+  if (!m) return res;
+  const buf = await res.arrayBuffer();
+  const start = m[1] ? Number(m[1]) : Math.max(0, buf.byteLength - Number(m[2]));
+  const end = m[1] && m[2] ? Math.min(Number(m[2]), buf.byteLength - 1) : buf.byteLength - 1;
+  return new Response(buf.slice(start, end + 1), {
+    status: 206,
+    headers: { 'content-type': res.headers.get('content-type') ?? 'video/mp4', 'content-range': `bytes ${start}-${end}/${buf.byteLength}`, 'accept-ranges': 'bytes' },
+  });
+}

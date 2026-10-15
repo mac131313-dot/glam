@@ -144,3 +144,82 @@ export function useAuthedUrl(src: string | null | undefined): string | null {
   }, [src]);
   return url;
 }
+
+// ——— Wgrywanie dużych filmów (pełne treningi 0,5–2 GB) ———
+// Kawałkami po ~8 MB: pasek postępu, ponawianie po zerwanym połączeniu, a po odświeżeniu strony
+// ten sam plik wznawia się od miejsca, w którym przerwał (id wgrywania w localStorage).
+
+export type UploadProgress = { sent: number; total: number };
+
+const uploadKey = (f: File) => `glam.upload.${session.studioId}.${f.name}.${f.size}.${f.lastModified}`;
+
+function putChunk(id: string, offset: number, chunk: Blob, onSent: (n: number) => void, signal?: AbortSignal) {
+  return new Promise<{ offset: number; done: boolean; media?: { id: string } }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', `/api/creator/uploads/${id}`);
+    if (session.token) xhr.setRequestHeader('authorization', `Bearer ${session.token}`);
+    if (session.studioId) xhr.setRequestHeader('x-studio-id', session.studioId);
+    xhr.setRequestHeader('content-type', 'application/octet-stream');
+    xhr.setRequestHeader('upload-offset', String(offset));
+    xhr.upload.onprogress = (e) => onSent(e.loaded);
+    xhr.onload = () => {
+      const data = (() => {
+        try {
+          return JSON.parse(xhr.responseText);
+        } catch {
+          return {};
+        }
+      })();
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new ApiError(xhr.status, data.error ?? 'error', data.message ?? 'Nie udało się wgrać fragmentu filmu.', data.details));
+    };
+    xhr.onerror = () => reject(new ApiError(0, 'network', 'Brak połączenia.'));
+    signal?.addEventListener('abort', () => xhr.abort());
+    xhr.onabort = () => reject(new DOMException('Przerwano', 'AbortError'));
+    xhr.send(chunk);
+  });
+}
+
+/** Wgrywa film lekcji i zwraca id pliku do POST /creator/courses/:id/lessons { videoId }. */
+export async function uploadVideo(file: File, durationSec: number, onProgress: (p: UploadProgress) => void, signal?: AbortSignal): Promise<string> {
+  const key = uploadKey(file);
+  let up: { id: string; offset: number; chunkSize: number } | null = null;
+  const saved = store.get(key);
+  if (saved) up = await api(`/creator/uploads/${saved}`).catch(() => null);
+  if (!up) {
+    up = await api(`/creator/uploads`, { method: 'POST', body: { mime: file.type || 'video/mp4', size: file.size, durationSec } });
+    store.set(key, up!.id);
+  }
+  const { id, chunkSize } = up!;
+  let offset = up!.offset;
+  let failures = 0;
+  onProgress({ sent: offset, total: file.size });
+  while (offset < file.size) {
+    try {
+      const r = await putChunk(id, offset, file.slice(offset, offset + chunkSize), (n) => onProgress({ sent: offset + n, total: file.size }), signal);
+      offset = r.offset;
+      failures = 0;
+      if (r.done) break;
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      const err = e as ApiError;
+      // 409: serwer ma inny stan (np. kawałek doszedł, ale odpowiedź nie) – wznawiamy od jego offsetu.
+      if (err.status === 409 && typeof err.details?.offset === 'number') offset = err.details.offset;
+      else if (err.status && err.status !== 409 && err.status < 500) {
+        store.set(key, null);
+        throw err;
+      } else if (++failures > 6) throw new ApiError(0, 'network', 'Połączenie zrywa się – spróbuj ponownie, wgrywanie wznowi się od miejsca przerwania.');
+      else await new Promise((r) => setTimeout(r, Math.min(30_000, 1000 * 2 ** failures)));
+      if (err.status !== 409) offset = (await api<{ offset: number }>(`/creator/uploads/${id}`).catch(() => ({ offset })))!.offset;
+    }
+    onProgress({ sent: offset, total: file.size });
+  }
+  store.set(key, null);
+  return id;
+}
+
+export const cancelVideoUpload = (file: File) => {
+  const id = store.get(uploadKey(file));
+  store.set(uploadKey(file), null);
+  return id ? api(`/creator/uploads/${id}`, { method: 'DELETE' }).catch(() => {}) : Promise.resolve();
+};

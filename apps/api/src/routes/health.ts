@@ -4,7 +4,7 @@
 import type { FastifyInstance } from 'fastify';
 import { localParts } from '@glam/core';
 import { assertFeature, ctx, isStaff, requireStudio, type Deps } from '../context.ts';
-import { seal, unseal } from '../crypto.ts';
+import { seal, unseal, verifyStream } from '../crypto.ts';
 import { id, nowIso } from '../db.ts';
 import { HttpError, badRequest, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
@@ -123,7 +123,7 @@ export function healthRoutes(app: FastifyInstance, deps: Deps) {
 
   app.get<{ Params: { id: string } }>('/api/media/:id', member, async (req, reply) => {
     const { scope, user, roles } = ctx(req);
-    const m = scope.get<{ id: string; kind: string; owner_id: string | null; mime: string; data: Uint8Array; private: number }>('SELECT * FROM media WHERE studio_id = $studio AND id = $id', { id: req.params.id });
+    const m = scope.get<{ id: string; kind: string; owner_id: string | null; mime: string; data: Uint8Array | null; path: string | null; private: number }>('SELECT * FROM media WHERE studio_id = $studio AND id = $id', { id: req.params.id });
     if (!m) throw notFound();
     const staff = isStaff(roles);
     let ok = !m.private || m.owner_id === user.id;
@@ -136,13 +136,22 @@ export function healthRoutes(app: FastifyInstance, deps: Deps) {
       ok = staff || lessonAccess(scope, user.id, m.id);
     }
     if (!ok) throw notFound();
-    return sendMedia(req, reply, m, m.private ? 'private, no-store' : 'private, max-age=86400');
+    return sendMedia(db, req, reply, m, m.private ? 'private, no-store' : 'private, max-age=86400');
+  });
+
+  // Wideo lekcji po podpisanym linku (bez sesji) – AirPlay i Chromecast pobierają plik same, bez naszego tokenu.
+  // Link wydaje GET /api/courses/:id tylko klientce z dostępem do lekcji (signStreamUrl).
+  app.get<{ Params: { id: string }; Querystring: { e?: string; sig?: string } }>('/api/stream/:id', async (req, reply) => {
+    if (!verifyStream(req.params.id, req.query.e, req.query.sig)) throw notFound();
+    const m = db.prepare("SELECT mime, data, path FROM media WHERE id = ? AND kind = 'course'").get(req.params.id) as { mime: string; data: Uint8Array | null; path: string | null } | undefined;
+    if (!m) throw notFound();
+    return sendMedia(db, req, reply, m, 'private, max-age=3600');
   });
 
   // Okładki kursów, zdjęcia produktów sklepu i zdjęcia strony WWW są publiczne (bez danych osobowych).
   app.get<{ Params: { id: string } }>('/api/public-media/:id', async (req, reply) => {
-    const m = db.prepare("SELECT mime, data FROM media WHERE id = ? AND kind IN ('cover', 'shop', 'site') AND private = 0").get(req.params.id) as { mime: string; data: Uint8Array } | undefined;
+    const m = db.prepare("SELECT mime, data, path FROM media WHERE id = ? AND kind IN ('cover', 'shop', 'site') AND private = 0").get(req.params.id) as { mime: string; data: Uint8Array | null; path: string | null } | undefined;
     if (!m) throw notFound();
-    return sendMedia(req, reply, m, 'public, max-age=31536000, immutable');
+    return sendMedia(db, req, reply, m, 'public, max-age=31536000, immutable');
   });
 }

@@ -447,3 +447,5 @@ label.btn { cursor: pointer; }
 .chat-bubble.auto { opacity: 0.8; font-style: italic; }
 html.a11y-contrast { --muted: var(--ink); --line: color-mix(in srgb, var(--ink) 35%, transparent); }
 html.a11y-reduce *, html.a11y-reduce *::before, html.a11y-reduce *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+.cast-btn { gap: 6px; }
+.cast-btn.on { background: var(--ink); color: var(--bg); }

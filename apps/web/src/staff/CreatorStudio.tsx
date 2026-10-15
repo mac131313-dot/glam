@@ -1,10 +1,12 @@
 // Creator Studio (5.4, K4–K6): kursy trenerek – szkic → beta dla testerek → akceptacja → publikacja,
 // lekcje (wideo, link, tekst, live, zadanie, spotkanie stacjonarne) z dripem, pytania pod lekcjami, raport wypłat.
 // Właścicielka: akceptacja, udział trenerki (domyślnie 70%), promocja zbiorcza.
-import { useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { can, COURSE_KIND_LABEL, COURSE_STATUS_LABEL, COURSE_TRANSITIONS, type CourseKind, type CourseStatus, type Role } from '@glam/core';
-import { api, fmtDay, useApi } from '../api.ts';
+import { api, cancelVideoUpload, fmtDay, uploadVideo, useApi, type UploadProgress } from '../api.ts';
 import { Empty, Field, Page, readFile, Spinner, Stat, Tabs, Toggle, useAction } from '../ui.tsx';
+
+const CoursePageEditor = lazy(() => import('./CoursePageEditor.tsx'));
 
 type Lesson = { id: string; module: string; title: string; kind: string; duration_sec: number; unlock_day: number; free_preview: number; live_at: string | null; media_id: string | null; video_url: string | null };
 type Course = {
@@ -178,7 +180,7 @@ function CourseForm({ course, onSaved }: { course?: Course; onSaved: (id: string
 }
 
 function CourseDetail({ course, owner, reload }: { course: Course; owner: boolean; reload: () => Promise<void> }) {
-  const [tab, setTab] = useState<'lessons' | 'edit' | 'stats'>('lessons');
+  const [tab, setTab] = useState<'lessons' | 'edit' | 'page' | 'stats'>('lessons');
   const [note, setNote] = useState('');
   const [testers, setTesters] = useState('');
   const clients = useApi<{ id: string; name: string }[]>(course.status === 'draft' ? '/staff/clients' : null);
@@ -207,6 +209,7 @@ function CourseDetail({ course, owner, reload }: { course: Course; owner: boolea
         options={[
           ['lessons', 'Lekcje'],
           ['edit', 'Opis i cena'],
+          ['page', 'Strona sprzedażowa'],
           ['stats', 'Statystyki'],
         ]}
       />
@@ -220,6 +223,11 @@ function CourseDetail({ course, owner, reload }: { course: Course; owner: boolea
           </label>
           {owner && <OwnerTerms course={course} reload={reload} />}
         </>
+      )}
+      {tab === 'page' && (
+        <Suspense fallback={<Spinner />}>
+          <CoursePageEditor courseId={course.id} />
+        </Suspense>
       )}
       {tab === 'stats' && (
         <div className="kpis">
@@ -253,16 +261,37 @@ function CourseDetail({ course, owner, reload }: { course: Course; owner: boolea
 
 function Lessons({ course, reload }: { course: Course; reload: () => Promise<void> }) {
   const [f, setF] = useState({ module: course.lessons.at(-1)?.module ?? 'Moduł 1', title: '', kind: 'video', body: '', videoUrl: '', unlockDay: 0, freePreview: false, liveAt: '' });
-  const [video, setVideo] = useState<{ dataUrl: string; durationSec: number } | null>(null);
+  // Film wgrywa się od razu po wybraniu (kawałkami, z wznawianiem); lekcja dostaje potem tylko jego id.
+  const [video, setVideo] = useState<{ file: File; durationSec: number; progress: UploadProgress; id?: string; error?: string } | null>(null);
+  const abort = useRef<AbortController | null>(null);
   const [attachment, setAttachment] = useState<string | null>(null);
   const { run, busy } = useAction();
+  const durationOf = (file: File) =>
+    new Promise<number>((resolve) => {
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.src = URL.createObjectURL(file);
+      v.onloadedmetadata = () => (resolve(Math.round(v.duration) || 0), URL.revokeObjectURL(v.src));
+      v.onerror = () => (resolve(0), URL.revokeObjectURL(v.src));
+    });
   const pickVideo = async (file: File) => {
-    const dataUrl = await readFile(file);
-    const v = document.createElement('video');
-    v.preload = 'metadata';
-    v.src = URL.createObjectURL(file);
-    v.onloadedmetadata = () => (setVideo({ dataUrl, durationSec: Math.round(v.duration) }), URL.revokeObjectURL(v.src));
+    abort.current?.abort();
+    const ctrl = (abort.current = new AbortController());
+    const durationSec = await durationOf(file);
+    setVideo({ file, durationSec, progress: { sent: 0, total: file.size } });
+    try {
+      const id = await uploadVideo(file, durationSec, (progress) => setVideo((v) => (v?.file === file ? { ...v, progress } : v)), ctrl.signal);
+      setVideo((v) => (v?.file === file ? { ...v, id } : v));
+    } catch (e) {
+      if (!ctrl.signal.aborted) setVideo((v) => (v?.file === file ? { ...v, error: (e as Error).message } : v));
+    }
   };
+  const dropVideo = () => {
+    abort.current?.abort();
+    if (video && !video.id) cancelVideoUpload(video.file);
+    setVideo(null);
+  };
+  const pct = video ? Math.floor((100 * video.progress.sent) / Math.max(1, video.progress.total)) : 0;
   const modules = [...new Set(course.lessons.map((l) => l.module))];
   return (
     <div className="stack-lg">
@@ -301,10 +330,36 @@ function Lessons({ course, reload }: { course: Course; reload: () => Promise<voi
         </div>
         {f.kind === 'video' && (
           <>
-            <label className="btn ghost">
-              {video ? `Wideo wybrane (${video.durationSec} s) ✓` : 'Wgraj wideo'}
-              <input type="file" accept="video/*" hidden onChange={(e) => e.target.files?.[0] && pickVideo(e.target.files[0])} />
-            </label>
+            {video ? (
+              <div className="stack" style={{ gap: 6 }}>
+                <div className="row between tiny">
+                  <span>
+                    {video.file.name} · {(video.file.size / 1e9 >= 1 ? `${(video.file.size / 1e9).toFixed(2)} GB` : `${Math.round(video.file.size / 1e6)} MB`)}
+                    {video.durationSec ? ` · ${Math.round(video.durationSec / 60)} min` : ''}
+                  </span>
+                  <span className="muted">{video.error ? 'przerwano' : video.id ? 'wgrane ✓' : `${pct}%`}</span>
+                </div>
+                <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Wgrywanie filmu">
+                  <span style={{ width: `${pct}%`, transition: 'width 0.3s' }} />
+                </div>
+                {video.error && <div className="tiny" role="alert">{video.error}</div>}
+                <div className="row">
+                  {video.error && (
+                    <button className="link tiny" onClick={() => pickVideo(video.file)}>
+                      wznów
+                    </button>
+                  )}
+                  <button className="link tiny" onClick={dropVideo}>
+                    {video.id ? 'zmień film' : 'anuluj'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="btn ghost">
+                Wgraj wideo
+                <input type="file" accept="video/mp4,video/quicktime,video/webm" hidden onChange={(e) => e.target.files?.[0] && pickVideo(e.target.files[0])} />
+              </label>
+            )}
             <input className="input" placeholder="…albo link https:// (Vimeo, YouTube niepubliczny)" value={f.videoUrl} onChange={(e) => setF({ ...f, videoUrl: e.target.value })} />
           </>
         )}
@@ -322,12 +377,12 @@ function Lessons({ course, reload }: { course: Course; reload: () => Promise<voi
         <Toggle label="Darmowy podgląd" checked={f.freePreview} onChange={(v) => setF({ ...f, freePreview: v })} />
         <button
           className="btn"
-          disabled={!f.title || busy}
+          disabled={!f.title || busy || (!!video && !video.id)}
           onClick={() =>
             run(async () => {
               await api(`/creator/courses/${course.id}/lessons`, {
                 method: 'POST',
-                body: { ...f, videoUrl: f.videoUrl || undefined, liveAt: f.liveAt ? new Date(f.liveAt).toISOString() : null, video, attachment },
+                body: { ...f, videoUrl: f.videoUrl || undefined, liveAt: f.liveAt ? new Date(f.liveAt).toISOString() : null, videoId: f.kind === 'video' ? (video?.id ?? null) : null, attachment },
               });
               setF({ ...f, title: '', body: '', videoUrl: '' });
               setVideo(null);

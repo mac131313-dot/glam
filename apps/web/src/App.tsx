@@ -11,6 +11,7 @@ import { ClientApp } from './client/ClientApp.tsx';
 import { applyLook, applySystemLook } from './look.ts';
 import { DeviceFrame, Landing } from './screens/Landing.tsx';
 import { StudioPicker } from './screens/StudioPicker.tsx';
+import { CourseSite } from './site/CourseSite.tsx';
 import { StudioSite } from './site/StudioSite.tsx';
 import { StaffApp } from './staff/StaffApp.tsx';
 import { SiteEditor } from './staff/site-editor/SiteEditor.tsx';
@@ -59,6 +60,9 @@ export type Me = {
 
 export function App() {
   // Publiczna strona studia: /s/:slug – bez logowania, dane z /api/public.
+  // Strona sprzedażowa kursu: /s/:slug/kurs/:id – też publiczna.
+  const coursePage = location.pathname.match(/^\/s\/([^/]+)\/kurs\/([^/]+)/);
+  if (coursePage) return <CourseSite slug={decodeURIComponent(coursePage[1])} courseId={decodeURIComponent(coursePage[2])} />;
   const site = location.pathname.match(/^\/s\/([^/]+)/);
   if (site) return <StudioSite slug={decodeURIComponent(site[1])} />;
   if (SURFACE === 'home') return <Landing />;

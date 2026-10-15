@@ -10,6 +10,7 @@ import { StudioBrand } from '../StudioBrand.tsx';
 import { Spinner } from '../ui.tsx';
 import { EditorBridge } from './EditorBridge.tsx';
 import { FOOTER_ID, HERO_ID } from './protocol.ts';
+import { SideRays } from './SideRays.tsx';
 import './site.css';
 
 type PublicSession = { id: string; startsAt: string; endsAt: string; classTypeId: string; className: string; trainer: string; zone: string; kind: string; spotsLeft: number };
@@ -326,15 +327,18 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
       {layout === 'cover' && photo ? (
         <div className="site-hero-cover">
           <MediaEl src={photo} />
+          <SideRays className="site-hero-rays" rayColor1="#FFD9A0" rayColor2="#FFF4E2" intensity={1.6} speed={1.6} dust={0.3} />
           {text}
         </div>
       ) : layout === 'side' && photo ? (
         <div className="site-split">
+          <SideRays className="site-hero-rays bleed" lightMode rayColor1="#E8B27A" rayColor2="#F2C9B8" intensity={1.8} speed={1.6} opacity={0.75} />
           {text}
           <Photo src={photo} className="tall" />
         </div>
       ) : (
         <>
+          <SideRays className="site-hero-rays bleed" lightMode rayColor1="#E8B27A" rayColor2="#F2C9B8" intensity={1.8} speed={1.6} opacity={0.75} />
           {photo && <Photo src={photo} className="wide" />}
           {text}
         </>

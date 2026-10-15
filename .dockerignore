@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+apps/api/data
+backups
+**/*.db
+**/*.db-*
+.env
+.env.*
+.git
+.claude
+docs

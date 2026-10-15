@@ -11,6 +11,7 @@ import {
   courseAccess,
   coursePrice,
   courseProgress,
+  editionState,
   formatPLN,
   lessonUnlocked,
   localParts,
@@ -18,17 +19,19 @@ import {
   moderate,
   MODERATION_COPY,
   MILESTONES,
+  parseCoursePage,
   revenueSplit,
   unlockDate,
   type CourseStatus,
 } from '@glam/core';
 import { assertFeature, ctx, isStaff, requirePerm, requireStudio, type Deps } from '../context.ts';
+import { signStreamUrl } from '../crypto.ts';
 import { id, nowIso } from '../db.ts';
 import { HttpError, badRequest, conflict, forbidden, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
 import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
-import { storeMedia } from '../services/media.ts';
+import { deleteMedia, storeMedia } from '../services/media.ts';
 import { awardPoints, grantBadge } from '../services/motivation.ts';
 import { notify } from '../services/notify.ts';
 import { loadPasses } from '../services/passes.ts';
@@ -61,6 +64,7 @@ type CourseRow = {
   status: CourseStatus;
   review_note: string | null;
   cover_media_id: string | null;
+  page_json: string | null;
   created_at: string;
 };
 
@@ -219,7 +223,7 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
           unlocked: open,
           unlocksAt: !open && started ? unlockDate(lessonOf(l), started, c.drip_days, i) : null,
           body: open ? l.body : null,
-          videoUrl: open ? (l.media_id ? `/api/media/${l.media_id}` : l.video_url) : null,
+          videoUrl: open ? (l.media_id ? signStreamUrl(l.media_id) : l.video_url) : null,
           captions: open ? l.captions : null,
           attachmentUrl: open && l.attachment_id ? `/api/media/${l.attachment_id}` : null,
           position: p?.position_sec ?? 0,
@@ -459,9 +463,10 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
   });
 
   // Lekcja: wideo (wgrane lub link – live / zewnętrzny odtwarzacz), tekst, zadanie domowe, spotkanie stacjonarne; materiały PDF.
-  app.post<{ Params: { id: string }; Body: { module: string; title: string; kind: string; body?: string; video?: { dataUrl: string; durationSec: number } | null; videoUrl?: string; captions?: string; attachment?: string | null; durationSec?: number; unlockDay?: number; freePreview?: boolean; liveAt?: string | null } }>(
+  app.post<{ Params: { id: string }; Body: { module: string; title: string; kind: string; body?: string; video?: { dataUrl: string; durationSec: number } | null; videoId?: string | null; videoUrl?: string; captions?: string; attachment?: string | null; durationSec?: number; unlockDay?: number; freePreview?: boolean; liveAt?: string | null } }>(
     '/api/creator/courses/:id/lessons',
-    { ...creator, bodyLimit: 60 * 1024 * 1024 },
+    // Duże filmy idą osobno (POST /api/creator/uploads) – tu zostaje PDF w base64 i krótkie wideo z dataUrl.
+    { ...creator, bodyLimit: 16 * 1024 * 1024 },
     async (req) => {
       const { scope, studio, user, roles } = ctx(req);
       const c = ownCourse(scope, req.params.id, user.id, roles);
@@ -470,7 +475,15 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
       if (!['video', 'text', 'live', 'homework', 'stationary'].includes(b.kind)) throw badRequest('Wybierz rodzaj lekcji.');
       if (b.videoUrl && !/^https:\/\//.test(b.videoUrl)) throw badRequest('Link do wideo musi zaczynać się od https://');
       if (b.captions && !/^WEBVTT/.test(b.captions.trim())) throw badRequest('Napisy w formacie WebVTT (zaczynają się od „WEBVTT”).');
-      const media = b.video ? storeMedia(scope, studio, { dataUrl: b.video.dataUrl, kind: 'course', ownerId: user.id, durationSec: b.video.durationSec, allow: ['video'] }) : null;
+      // Film wgrany wcześniej kawałkami (POST /api/creator/uploads) albo – krótki – jako dataUrl w tym samym zapytaniu.
+      const uploaded = b.videoId
+        ? scope.get<{ id: string; duration_sec: number | null }>(
+            "SELECT id, duration_sec FROM media WHERE studio_id = $studio AND id = $m AND kind = 'course' AND owner_id = $u AND NOT EXISTS (SELECT 1 FROM course_lessons WHERE studio_id = $studio AND media_id = $m)",
+            { m: b.videoId, u: user.id },
+          )
+        : null;
+      if (b.videoId && !uploaded) throw badRequest('Nie znaleziono wgranego filmu – wgraj go ponownie.');
+      const media = uploaded ?? (b.video ? storeMedia(scope, studio, { dataUrl: b.video.dataUrl, kind: 'course', ownerId: user.id, durationSec: b.video.durationSec, allow: ['video'] }) : null);
       const attachment = b.attachment ? storeMedia(scope, studio, { dataUrl: b.attachment, kind: 'attachment', ownerId: user.id, allow: ['pdf', 'image'] }) : null;
       const lid = id();
       scope.run(
@@ -487,7 +500,7 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
           url: b.videoUrl ?? null,
           cap: b.captions ?? null,
           att: attachment?.id ?? null,
-          dur: Math.round(b.video?.durationSec ?? b.durationSec ?? 0),
+          dur: Math.round(b.video?.durationSec ?? b.durationSec ?? uploaded?.duration_sec ?? 0),
           unlock: Math.max(0, b.unlockDay ?? 0),
           free: Number(!!b.freePreview),
           live: b.liveAt ?? null,
@@ -507,6 +520,8 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
       scope.run('DELETE FROM lesson_progress WHERE studio_id = $studio AND lesson_id = $id', { id: l.id });
       scope.run('DELETE FROM course_questions WHERE studio_id = $studio AND lesson_id = $id', { id: l.id });
       scope.run('DELETE FROM course_lessons WHERE studio_id = $studio AND id = $id', { id: l.id });
+      // Film i materiał należą tylko do tej lekcji – zwalniamy miejsce w planie (i plik na dysku).
+      for (const m of [l.media_id, l.attachment_id]) if (m) deleteMedia(scope, m);
     });
     return { ok: true };
   });
@@ -585,6 +600,267 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
       }),
       note: 'GLAM liczy raport – wypłaty realizuje studio (decyzja 23). Model rozliczeń do potwierdzenia z księgową (5.7).',
     };
+  });
+
+  // ——— Strona sprzedażowa kursu (/s/:slug/kurs/:id): treści, edycje, pakiety, prowadzące ———
+  // Te same uprawnienia co reszta Creator Studio (autorka kursu albo właścicielka). Teksty idą przez medicalClaims (5.6).
+
+  const noClaims = (...texts: (string | null | undefined)[]) => {
+    const claims = medicalClaims(texts.filter(Boolean).join(' '));
+    if (claims.length) throw badRequest(`Bez obietnic medycznych (5.6): usuń „${claims[0]}”.`);
+  };
+  const isoOrNull = (v: unknown, label: string) => {
+    if (v === undefined || v === null || v === '') return null;
+    if (typeof v !== 'string' || Number.isNaN(Date.parse(v))) throw badRequest(`Nieprawidłowa data: ${label}.`);
+    return new Date(v).toISOString();
+  };
+  const textOrNull = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+  const childOf = <T extends { course_id: string }>(scope: StudioScope, table: 'course_editions' | 'course_tiers' | 'course_people', rowId: string, userId: string, roles: string[]) => {
+    const row = scope.get<T>(`SELECT * FROM ${table} WHERE studio_id = $studio AND id = $id`, { id: rowId });
+    if (!row) throw notFound();
+    return { row, course: ownCourse(scope, row.course_id, userId, roles) };
+  };
+  const touch = (scope: StudioScope, courseId: string) => scope.run('UPDATE courses SET updated_at = $now WHERE studio_id = $studio AND id = $id', { id: courseId, now: nowIso() });
+
+  app.get<{ Params: { id: string } }>('/api/creator/courses/:id/page', creator, async (req) => {
+    const { scope, studio, user, roles } = ctx(req);
+    const c = ownCourse(scope, req.params.id, user.id, roles);
+    const site = db.prepare('SELECT slug, published FROM studios WHERE id = ?').get(studio.id) as { slug: string; published: number };
+    return {
+      slug: site.slug,
+      sitePublished: !!site.published,
+      status: c.status,
+      page: parseCoursePage(c.page_json ? JSON.parse(c.page_json) : null),
+      editions: scope
+        .all<{ id: string; name: string; theme: string | null; sales_from: string | null; sales_until: string | null; starts_at: string | null; access_until: string | null; news_json: string }>(
+          'SELECT * FROM course_editions WHERE studio_id = $studio AND course_id = $c ORDER BY COALESCE(sales_from, created_at)',
+          { c: c.id },
+        )
+        .map((e) => ({
+          id: e.id,
+          name: e.name,
+          theme: e.theme,
+          salesFrom: e.sales_from,
+          salesUntil: e.sales_until,
+          startsAt: e.starts_at,
+          accessUntil: e.access_until,
+          news: JSON.parse(e.news_json),
+          state: editionState({ salesFrom: e.sales_from, salesUntil: e.sales_until }, new Date()),
+          enrollments: scope.get<{ n: number }>('SELECT COUNT(*) AS n FROM course_enrollments WHERE studio_id = $studio AND edition_id = $e', { e: e.id })!.n,
+        })),
+      tiers: scope
+        .all<{ id: string; name: string; price_grosze: number; features_json: string; highlight: number; seat_limit: number | null; active: number; sort: number }>(
+          'SELECT * FROM course_tiers WHERE studio_id = $studio AND course_id = $c ORDER BY sort',
+          { c: c.id },
+        )
+        .map((t) => ({
+          id: t.id,
+          name: t.name,
+          priceGrosze: t.price_grosze,
+          features: JSON.parse(t.features_json),
+          highlight: !!t.highlight,
+          seatLimit: t.seat_limit,
+          active: !!t.active,
+          sort: t.sort,
+          sold: scope.get<{ n: number }>('SELECT COUNT(*) AS n FROM course_enrollments WHERE studio_id = $studio AND tier_id = $t', { t: t.id })!.n,
+        })),
+      people: scope
+        .all<{ id: string; user_id: string | null; name: string; role: string; title: string | null; bio: string | null; photo_media_id: string | null; sort: number }>(
+          'SELECT * FROM course_people WHERE studio_id = $studio AND course_id = $c ORDER BY sort',
+          { c: c.id },
+        )
+        .map((p) => ({ id: p.id, userId: p.user_id, name: p.name, role: p.role, title: p.title, bio: p.bio, photoUrl: p.photo_media_id ? `/api/public-media/${p.photo_media_id}` : null, sort: p.sort })),
+      lessons: scope.all('SELECT id, module, title, person_id AS personId FROM course_lessons WHERE studio_id = $studio AND course_id = $c ORDER BY sort', { c: c.id }),
+      // Do podpięcia prowadzącej z kontem w studiu (zdjęcie z profilu, gdy nie wgrano osobnego).
+      staff: scope.all("SELECT DISTINCT u.id, u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.studio_id = $studio AND m.role IN ('owner', 'trainer') ORDER BY u.name"),
+    };
+  });
+
+  app.put<{ Params: { id: string }; Body: unknown }>('/api/creator/courses/:id/page', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const c = ownCourse(scope, req.params.id, user.id, roles);
+    const page = parseCoursePage(req.body);
+    noClaims(page.promise, page.equipment, ...page.outcomes, ...page.forWhom, ...page.faq.flatMap((f) => [f.q, f.a]));
+    scope.run('UPDATE courses SET page_json = $p, updated_at = $now WHERE studio_id = $studio AND id = $id', { p: JSON.stringify(page), id: c.id, now: nowIso() });
+    return { page };
+  });
+
+  // Edycje: daty sprzedaży i dostępu w jednym miejscu. Nowości edycji – krótkie wpisy na stronie.
+  type EditionBody = { name?: string; theme?: string | null; salesFrom?: string | null; salesUntil?: string | null; startsAt?: string | null; accessUntil?: string | null; news?: { title: string; body: string }[] };
+  const editionFields = (b: EditionBody) => {
+    const name = textOrNull(b.name, 80);
+    if (!name) throw badRequest('Podaj nazwę edycji.');
+    const salesFrom = isoOrNull(b.salesFrom, 'start sprzedaży');
+    const salesUntil = isoOrNull(b.salesUntil, 'koniec sprzedaży');
+    const startsAt = isoOrNull(b.startsAt, 'start kursu');
+    const accessUntilAt = isoOrNull(b.accessUntil, 'koniec dostępu');
+    if (salesFrom && salesUntil && Date.parse(salesFrom) >= Date.parse(salesUntil)) throw badRequest('Koniec sprzedaży musi być po jej starcie.');
+    if (startsAt && accessUntilAt && Date.parse(accessUntilAt) <= Date.parse(startsAt)) throw badRequest('Dostęp musi trwać dłużej niż do startu kursu.');
+    const news = (Array.isArray(b.news) ? b.news : [])
+      .filter((n) => n && typeof n.title === 'string' && n.title.trim())
+      .map((n) => ({ title: n.title.trim().slice(0, 120), body: String(n.body ?? '').trim().slice(0, 600) }))
+      .slice(0, 10);
+    const theme = textOrNull(b.theme, 80);
+    noClaims(name, theme, ...news.flatMap((n) => [n.title, n.body]));
+    return { n: name, th: theme, sf: salesFrom, su: salesUntil, sa: startsAt, au: accessUntilAt, news: JSON.stringify(news) };
+  };
+
+  app.post<{ Params: { id: string }; Body: EditionBody }>('/api/creator/courses/:id/editions', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const c = ownCourse(scope, req.params.id, user.id, roles);
+    const eid = id();
+    scope.run(
+      'INSERT INTO course_editions (id, studio_id, course_id, name, theme, sales_from, sales_until, starts_at, access_until, news_json, created_at) VALUES ($id, $studio, $c, $n, $th, $sf, $su, $sa, $au, $news, $now)',
+      { id: eid, c: c.id, ...editionFields(req.body ?? {}), now: nowIso() },
+    );
+    touch(scope, c.id);
+    return { id: eid };
+  });
+
+  app.put<{ Params: { id: string }; Body: EditionBody }>('/api/creator/editions/:id', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const { row, course } = childOf<{ course_id: string; id: string }>(scope, 'course_editions', req.params.id, user.id, roles);
+    scope.run('UPDATE course_editions SET name = $n, theme = $th, sales_from = $sf, sales_until = $su, starts_at = $sa, access_until = $au, news_json = $news WHERE studio_id = $studio AND id = $id', {
+      id: row.id,
+      ...editionFields(req.body ?? {}),
+    });
+    touch(scope, course.id);
+    return { ok: true };
+  });
+
+  // Edycji, w której ktoś kupił dostęp, nie usuwamy – zapisy na nią wskazują (daty dostępu, raporty).
+  app.delete<{ Params: { id: string } }>('/api/creator/editions/:id', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const { row, course } = childOf<{ course_id: string; id: string }>(scope, 'course_editions', req.params.id, user.id, roles);
+    if (scope.get('SELECT 1 FROM course_enrollments WHERE studio_id = $studio AND edition_id = $e', { e: row.id })) throw conflict('has_enrollments', 'W tej edycji są już uczestniczki – zmień daty zamiast usuwać.');
+    scope.run('DELETE FROM course_editions WHERE studio_id = $studio AND id = $id', { id: row.id });
+    touch(scope, course.id);
+    return { ok: true };
+  });
+
+  // Pakiety: cena, cechy do tabeli porównawczej, wyróżnienie, limit miejsc.
+  type TierBody = { name?: string; price?: number; features?: string[]; highlight?: boolean; seatLimit?: number | null; sort?: number; active?: boolean };
+  const tierFields = (b: TierBody) => {
+    const name = textOrNull(b.name, 60);
+    if (!name) throw badRequest('Podaj nazwę pakietu.');
+    if (!Number.isInteger(b.price) || b.price! < 0) throw badRequest('Podaj cenę pakietu.');
+    if (b.seatLimit !== undefined && b.seatLimit !== null && !(Number.isInteger(b.seatLimit) && b.seatLimit > 0)) throw badRequest('Limit miejsc to liczba większa od zera (albo puste).');
+    const features = (Array.isArray(b.features) ? b.features : []).filter((f): f is string => typeof f === 'string' && !!f.trim()).map((f) => f.trim().slice(0, 160)).slice(0, 20);
+    noClaims(name, ...features);
+    return { n: name, p: b.price!, f: JSON.stringify([...new Set(features)]), h: Number(!!b.highlight), seats: b.seatLimit ?? null };
+  };
+
+  app.post<{ Params: { id: string }; Body: TierBody }>('/api/creator/courses/:id/tiers', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const c = ownCourse(scope, req.params.id, user.id, roles);
+    const tid = id();
+    scope.run(
+      `INSERT INTO course_tiers (id, studio_id, course_id, name, price_grosze, features_json, highlight, seat_limit, active, sort)
+       VALUES ($id, $studio, $c, $n, $p, $f, $h, $seats, 1, (SELECT COALESCE(MAX(sort), 0) + 1 FROM course_tiers WHERE studio_id = $studio AND course_id = $c))`,
+      { id: tid, c: c.id, ...tierFields(req.body ?? {}) },
+    );
+    touch(scope, c.id);
+    return { id: tid };
+  });
+
+  app.put<{ Params: { id: string }; Body: TierBody }>('/api/creator/tiers/:id', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const { row, course } = childOf<{ course_id: string; id: string; sort: number; active: number }>(scope, 'course_tiers', req.params.id, user.id, roles);
+    const b = req.body ?? {};
+    scope.run('UPDATE course_tiers SET name = $n, price_grosze = $p, features_json = $f, highlight = $h, seat_limit = $seats, sort = $sort, active = $a WHERE studio_id = $studio AND id = $id', {
+      id: row.id,
+      ...tierFields(b),
+      sort: Number.isInteger(b.sort) ? b.sort! : row.sort,
+      a: b.active === undefined ? row.active : Number(!!b.active),
+    });
+    touch(scope, course.id);
+    return { ok: true };
+  });
+
+  // Pakiet ze sprzedażą nie znika z bazy (zapisy i raporty na niego wskazują) – tylko chowa się ze strony.
+  app.delete<{ Params: { id: string } }>('/api/creator/tiers/:id', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const { row, course } = childOf<{ course_id: string; id: string }>(scope, 'course_tiers', req.params.id, user.id, roles);
+    const hasSales = !!scope.get('SELECT 1 FROM course_enrollments WHERE studio_id = $studio AND tier_id = $t', { t: row.id });
+    if (hasSales) scope.run('UPDATE course_tiers SET active = 0 WHERE studio_id = $studio AND id = $id', { id: row.id });
+    else scope.run('DELETE FROM course_tiers WHERE studio_id = $studio AND id = $id', { id: row.id });
+    touch(scope, course.id);
+    return { ok: true, archived: hasSales, message: hasSales ? 'Pakiet ma już sprzedaż – ukryłyśmy go ze strony, zapisy zostają.' : 'Pakiet usunięty.' };
+  });
+
+  // Prowadzące i eksperci: osoba z kontem w studiu (userId) albo gość bez konta.
+  type PersonBody = { userId?: string | null; name?: string; role?: string; title?: string | null; bio?: string | null; sort?: number };
+  const personFields = (scope: StudioScope, b: PersonBody) => {
+    if (!['author', 'trainer', 'expert'].includes(String(b.role))) throw badRequest('Wybierz rolę: autorka, trenerka albo ekspertka.');
+    const userId = b.userId || null;
+    if (userId && !scope.get('SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u', { u: userId })) throw badRequest('Ta osoba nie należy do studia.');
+    const linked = userId ? (db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as { name: string | null } | undefined) : undefined;
+    const name = textOrNull(b.name, 80) ?? textOrNull(linked?.name, 80);
+    if (!name) throw badRequest('Podaj imię i nazwisko.');
+    const title = textOrNull(b.title, 120);
+    const bio = textOrNull(b.bio, 1500);
+    noClaims(title, bio);
+    return { u: userId, n: name, r: b.role!, t: title, b: bio };
+  };
+
+  app.post<{ Params: { id: string }; Body: PersonBody }>('/api/creator/courses/:id/people', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const c = ownCourse(scope, req.params.id, user.id, roles);
+    const pid = id();
+    scope.run(
+      `INSERT INTO course_people (id, studio_id, course_id, user_id, name, role, title, bio, sort)
+       VALUES ($id, $studio, $c, $u, $n, $r, $t, $b, (SELECT COALESCE(MAX(sort), 0) + 1 FROM course_people WHERE studio_id = $studio AND course_id = $c))`,
+      { id: pid, c: c.id, ...personFields(scope, req.body ?? {}) },
+    );
+    touch(scope, c.id);
+    return { id: pid };
+  });
+
+  app.put<{ Params: { id: string }; Body: PersonBody }>('/api/creator/people/:id', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const { row, course } = childOf<{ course_id: string; id: string; sort: number }>(scope, 'course_people', req.params.id, user.id, roles);
+    const b = req.body ?? {};
+    scope.run('UPDATE course_people SET user_id = $u, name = $n, role = $r, title = $t, bio = $b, sort = $sort WHERE studio_id = $studio AND id = $id', {
+      id: row.id,
+      ...personFields(scope, b),
+      sort: Number.isInteger(b.sort) ? b.sort! : row.sort,
+    });
+    touch(scope, course.id);
+    return { ok: true };
+  });
+
+  app.put<{ Params: { id: string }; Body: { dataUrl: string } }>('/api/creator/people/:id/photo', { ...creator, bodyLimit: 4 * 1024 * 1024 }, async (req) => {
+    const { scope, studio, user, roles } = ctx(req);
+    const { row } = childOf<{ course_id: string; id: string; photo_media_id: string | null }>(scope, 'course_people', req.params.id, user.id, roles);
+    const m = storeMedia(scope, studio, { dataUrl: req.body?.dataUrl, kind: 'cover', ownerId: user.id, allow: ['image'] });
+    scope.run('UPDATE course_people SET photo_media_id = $m WHERE studio_id = $studio AND id = $id', { m: m.id, id: row.id });
+    if (row.photo_media_id) deleteMedia(scope, row.photo_media_id);
+    return { url: `/api/public-media/${m.id}` };
+  });
+
+  // Usunięcie osoby odpina ją od lekcji (lekcje zostają, program pokazuje je bez prowadzącej).
+  app.delete<{ Params: { id: string } }>('/api/creator/people/:id', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const { row, course } = childOf<{ course_id: string; id: string; photo_media_id: string | null }>(scope, 'course_people', req.params.id, user.id, roles);
+    scope.tx(() => {
+      scope.run('UPDATE course_lessons SET person_id = NULL WHERE studio_id = $studio AND person_id = $p', { p: row.id });
+      scope.run('DELETE FROM course_people WHERE studio_id = $studio AND id = $id', { id: row.id });
+      if (row.photo_media_id) deleteMedia(scope, row.photo_media_id);
+    });
+    touch(scope, course.id);
+    return { ok: true };
+  });
+
+  // Kto prowadzi lekcję (program moduł po module na stronie).
+  app.put<{ Params: { id: string }; Body: { personId: string | null } }>('/api/creator/lessons/:id/person', creator, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const l = scope.get<LessonRow>('SELECT * FROM course_lessons WHERE studio_id = $studio AND id = $id', { id: req.params.id });
+    if (!l) throw notFound();
+    ownCourse(scope, l.course_id, user.id, roles);
+    const personId = req.body?.personId || null;
+    if (personId && !scope.get('SELECT 1 FROM course_people WHERE studio_id = $studio AND id = $p AND course_id = $c', { p: personId, c: l.course_id })) throw badRequest('Ta osoba nie prowadzi tego kursu.');
+    scope.run('UPDATE course_lessons SET person_id = $p WHERE studio_id = $studio AND id = $id', { p: personId, id: l.id });
+    return { ok: true };
   });
 
   // ——— Właścicielka (5.5): akceptacja, udział trenerki, promocje zbiorcze, moderacja opinii ———
