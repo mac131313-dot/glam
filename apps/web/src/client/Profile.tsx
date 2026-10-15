@@ -1,6 +1,6 @@
 // Profil (3: zakładka 5): karnety, menu podstron (wiadomości, płatności, lojalność, kursy, zdrowie, ustawienia), historia z oceną zajęć.
 import { useEffect, useState } from 'react';
-import { api, ApiError, DEMO_MODE, fmtDay, fmtTime, useApi } from '../api.ts';
+import { api, ApiError, DEMO_MODE, fmtDay, fmtPhone, fmtTime, useApi } from '../api.ts';
 import { Avatar, Empty, ListRow, Sheet, useToast } from '../ui.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 
@@ -41,7 +41,7 @@ export function Profile() {
         <Avatar name={me.user.name} />
         <div>
           <h1 className="serif" style={{ margin: 0, fontSize: '2.2rem' }}>{me.user.name ?? 'Twój profil'}</h1>
-          <div className="muted small">{me.user.phone}</div>
+          <div className="muted small">{fmtPhone(me.user.phone)}</div>
         </div>
       </section>
 

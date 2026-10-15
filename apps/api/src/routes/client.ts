@@ -46,8 +46,12 @@ import { issueInvoice, priceWithCoupon, purchaseProduct, recordPayment } from '.
 import { weekProgress } from '../services/progress.ts';
 import { segmentsForUser } from '../services/segments.ts';
 import { claimClientSms } from '../services/sms-quota.ts';
+import { assertAttemptsLeft, recordFailedAttempt } from '../services/attempts.ts';
 import { logoInfo, type Studio } from '../services/studio.ts';
 import { guestRules, prefsOf } from './account.ts';
+
+/** Ile nietrafionych kodów rabatowych w kwadransie, zanim sprawdzanie się zatrzyma. */
+export const COUPON_MISSES = 10;
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -468,8 +472,16 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
 
   app.post<{ Body: { code: string; kind?: 'pass' | 'course' | 'event' | 'shop' | 'guest_pass'; productId?: string; amountGrosze: number } }>('/api/coupons/check', member, async (req) => {
     const { scope, studio, user } = ctx(req);
-    const r = priceWithCoupon(scope, studio, { code: req.body?.code, userId: user.id, kind: req.body?.kind ?? 'pass', productId: req.body?.productId, amountGrosze: Number(req.body?.amountGrosze) || 0 });
-    return { label: r.coupon?.label, discount: formatPLN(r.discount), final: formatPLN(r.final), finalGrosze: r.final };
+    // Zgadywanie kodów: po 10 nietrafionych w kwadransie sprawdzanie stoi do końca okna.
+    const key = `coupon:${studio.id}:${user.id}`;
+    assertAttemptsLeft(key, COUPON_MISSES, 15 * 60_000, 'Za dużo nietrafionych kodów. Spróbuj ponownie za kwadrans.');
+    try {
+      const r = priceWithCoupon(scope, studio, { code: req.body?.code, userId: user.id, kind: req.body?.kind ?? 'pass', productId: req.body?.productId, amountGrosze: Number(req.body?.amountGrosze) || 0 });
+      return { label: r.coupon?.label, discount: formatPLN(r.discount), final: formatPLN(r.final), finalGrosze: r.final };
+    } catch (err) {
+      if (err instanceof HttpError && err.status < 500) recordFailedAttempt(key);
+      throw err;
+    }
   });
 
   app.post<{ Body: { productId: string; method: PaymentMethod; couponCode?: string; autoRenew?: boolean } }>('/api/purchases', member, async (req) => {

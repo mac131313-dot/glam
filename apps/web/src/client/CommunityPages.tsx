@@ -87,7 +87,7 @@ export function Feed({ group }: { group?: string | null }) {
       {!feed.data ? (
         <Spinner />
       ) : feed.data.length === 0 ? (
-        <Empty>Jeszcze tu cicho. Napisz pierwsza 💛</Empty>
+        <Empty>Jeszcze tu cicho. Napisz pierwsza</Empty>
       ) : (
         feed.data.map((p) => (
           <article key={p.id} className={`card ${p.kind === 'announcement' ? 'soft' : ''} stack`} style={{ gap: 10, opacity: p.hidden ? 0.5 : 1 }}>
@@ -252,7 +252,7 @@ function Challenges({ focus }: { focus: string | null }) {
                   {c.progress} / {c.target} {METRIC[c.metric]}
                 </span>
                 {c.metric === 'checkins' && c.active && !c.completed_at && (
-                  <button className="btn sm" disabled={c.checkedToday} onClick={() => run(() => api(`/challenges/${c.id}/checkin`, { method: 'POST' }).then(list.reload), 'Odhaczone 💛')}>
+                  <button className="btn sm" disabled={c.checkedToday} onClick={() => run(() => api(`/challenges/${c.id}/checkin`, { method: 'POST' }).then(list.reload), 'Odhaczone')}>
                     {c.checkedToday ? 'Dziś odhaczone' : 'Odhacz dziś'}
                   </button>
                 )}

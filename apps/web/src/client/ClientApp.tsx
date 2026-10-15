@@ -96,6 +96,12 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Nowa zakładka zaczyna się od góry, a nie w miejscu, do którego przewinięto poprzednią.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+    document.querySelector('.device-scroll')?.scrollTo({ top: 0 });
+  }, [tab]);
+
   // Dostępność (sekcja 10): rozmiar tekstu, wysoki kontrast, ograniczenie ruchu – ustawienia klientki.
   useEffect(() => {
     const a = props.me.user.prefs?.a11y ?? {};

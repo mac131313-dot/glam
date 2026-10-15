@@ -2,7 +2,7 @@
 // trening we dwie (#6), rezerwacja „na stałe”, lista oczekujących, odwołanie, „umów się z dziewczynami”,
 // playlista zajęć, synchronizacja z kalendarzem telefonu.
 import { useMemo, useState } from 'react';
-import { addDaysStr, api, ApiError, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
+import { addDaysStr, api, ApiError, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
 import { Empty, Field, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { useClient } from './ClientApp.tsx';
@@ -42,7 +42,8 @@ export function Schedule() {
   const { studio, openShop, open } = useClient();
   const today = localDate();
   const [view, setView] = useState<View>('day');
-  const span = view === 'month' ? 35 : 14;
+  // Tydzień może zacząć się od ostatniego dnia z paska (dziś + 13), więc pobieramy 21 dni.
+  const span = view === 'month' ? 35 : 21;
   const { data, reload } = useApi<{ sessions: Session[] }>(`/schedule?from=${today}&days=${span}`, [span]);
   const [day, setDay] = useState(today);
   const [type, setType] = useState<string | null>(null);
@@ -224,7 +225,7 @@ export function Schedule() {
             </div>
             {detail.playlist_url && (
               <a className="small" href={detail.playlist_url} target="_blank" rel="noreferrer">
-                🎵 Na zajęciach: {detail.playlist_name}
+                Na zajęciach: {detail.playlist_name}
               </a>
             )}
             {detail.my_status === 'attended' ? (
@@ -241,7 +242,7 @@ export function Schedule() {
                   <p className="small muted">Zajęcia już się zaczęły – tej rezerwacji nie da się odwołać.</p>
                 ) : (
                   <>
-                    {lateCancel(detail) && <p className="small" style={{ color: 'var(--danger)' }}>Do zajęć zostało mniej niż {studio.policy.cancelMinutesBefore / 60} h – po odwołaniu wejście przepada, ale miejsce dostanie inna osoba.</p>}
+                    {lateCancel(detail) && <p className="small" style={{ color: 'var(--danger)' }}>Do zajęć zostało mniej niż {fmtMinutes(studio.policy.cancelMinutesBefore)} – po odwołaniu wejście przepada, ale miejsce dostanie inna osoba.</p>}
                     {confirmCancel ? (
                       <div className="row">
                         <button className="btn ghost" style={{ flex: 1 }} disabled={busy} onClick={() => setConfirmCancel(false)}>
@@ -307,7 +308,7 @@ export function Schedule() {
               </details>
             )}
             <p className="tiny muted center">
-              Zapis i bezpłatne odwołanie do {studio.policy.cancelMinutesBefore / 60} h przed zajęciami.
+              Zapis i bezpłatne odwołanie do {fmtMinutes(studio.policy.cancelMinutesBefore)} przed zajęciami.
             </p>
           </div>
         </Sheet>

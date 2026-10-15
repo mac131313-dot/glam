@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.ts';
 import type { Deps } from '../src/context.ts';
 import { openDb } from '../src/db.ts';
 import { DEMO, seed } from '../src/seed.ts';
+import { COUPON_MISSES } from '../src/routes/client.ts';
 import { runJobs } from '../src/services/jobs.ts';
 import { encryptPayload } from '../src/services/webpush.ts';
 import { ConsoleEmailSender, ConsolePushSender, ConsoleSmsGateway, MockPaymentProvider } from '../src/sms.ts';
@@ -132,7 +133,8 @@ test('społeczność: wulgaryzmy odrzucone, zgłoszenie i ukrycie przez koordyna
 
 test('wyzwanie z odhaczaniem: postęp, ukończenie, odznaka i punkty', async () => {
   const owner = await login(DEMO.owner);
-  const today = new Date().toISOString().slice(0, 10);
+  // Dzień w strefie studia, nie w UTC – tuż po północy to dwie różne daty.
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Warsaw' }).format(new Date());
   const ch = await call(owner, R, 'POST', '/api/staff/challenges', { title: 'Jeden dzień', metric: 'checkins', target: 1, startsOn: today, endsOn: today });
   assert.equal(ch.statusCode, 200, ch.body);
   const ania = await login(DEMO.ania);
@@ -353,4 +355,14 @@ test('autoodnawianie: tylko w karnecie, którego produkt je przewiduje; studio p
   assert.equal((await call(magda, R, 'PATCH', `/api/passes/${pass.id}`)).statusCode, 400);
   assert.equal((await call(magda, R, 'PATCH', `/api/passes/${pass.id}`, { autoRenew: false })).statusCode, 200);
   assert.match((await call(magda, R, 'GET', '/api/studio')).json().timezone, /^[A-Za-z]+\/[A-Za-z_]+/);
+});
+
+test('kody rabatowe: po serii nietrafionych sprawdzanie się zatrzymuje', async () => {
+  const zuza = await login(DEMO.zuza);
+  const check = (code: string) => call(zuza, R, 'POST', '/api/coupons/check', { code, kind: 'pass', amountGrosze: 26000 });
+  assert.equal((await check('jesien15')).statusCode, 200);
+  for (let i = 0; i < COUPON_MISSES; i++) assert.equal((await check(`ZGADUJE${i}`)).statusCode, 400);
+  const blocked = await check('jesien15');
+  assert.equal(blocked.statusCode, 429);
+  assert.equal(blocked.json().error, 'too_many_attempts');
 });
