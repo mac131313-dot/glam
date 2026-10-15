@@ -470,3 +470,18 @@ test('vouchery: recepcja wystawia na wybrane zajęcia z kwotą, oznacza wykorzys
   const weronika = await login(SSG.weronika);
   assert.equal((await call(weronika, SSG_STUDIO, 'GET', '/api/staff/vouchers')).statusCode, 403);
 });
+
+test('publiczna strona studia: grafik, zajęcia i trenerki bez logowania, bez danych klientek', async () => {
+  const r = await app.inject({ method: 'GET', url: '/api/public/studios/ssg' });
+  assert.equal(r.statusCode, 200, r.body);
+  const s = r.json();
+  assert.equal(s.id, SSG_STUDIO);
+  assert.ok(s.classes.length > 0 && s.trainers.length > 0);
+  assert.ok(s.schedule.sessions.length > 0);
+  assert.ok(s.schedule.sessions.every((x: Record<string, unknown>) => typeof x.spotsLeft === 'number' && !('my_booking_id' in x)));
+  assert.ok(!('gateway_enc' in s) && !('nip' in s));
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/nie-ma-takiego' })).statusCode, 404);
+  db.prepare("UPDATE studios SET published = 0 WHERE id = ?").run(K);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/flow-pilates' })).statusCode, 404);
+  db.prepare("UPDATE studios SET published = 1 WHERE id = ?").run(K);
+});

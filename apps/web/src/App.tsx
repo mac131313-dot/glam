@@ -11,6 +11,7 @@ import { ClientApp } from './client/ClientApp.tsx';
 import { applyLook, applySystemLook } from './look.ts';
 import { DeviceFrame, Landing } from './screens/Landing.tsx';
 import { StudioPicker } from './screens/StudioPicker.tsx';
+import { StudioSite } from './site/StudioSite.tsx';
 import { StaffApp } from './staff/StaffApp.tsx';
 import { Spinner } from './ui.tsx';
 
@@ -56,6 +57,9 @@ export type Me = {
 
 
 export function App() {
+  // Publiczna strona studia: /s/:slug – bez logowania, dane z /api/public.
+  const site = location.pathname.match(/^\/s\/([^/]+)/);
+  if (site) return <StudioSite slug={decodeURIComponent(site[1])} />;
   if (SURFACE === 'home') return <Landing />;
   return SURFACE === 'app' ? (
     <DeviceFrame>

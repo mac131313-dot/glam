@@ -45,6 +45,9 @@ export function Landing() {
             </div>
           ))}
         </div>
+        <p className="small center">
+          <a href="/s/ssg">Strona internetowa studia SS&amp;G</a>
+        </p>
         <p className="tiny muted center">Tryb demo: bez logowania, płatności i SMS-y są symulowane.</p>
       </div>
     </main>
