@@ -1,6 +1,7 @@
 // Oddech i medytacje prowadzone przez aplikację (decyzja 9): bez lektorki, rytm wyznacza
 // animowane koło, a prowadzenie to krótkie podpowiedzi na ekranie. Sesja = dane, nie kod.
 // Treści ogólne, nie porada medyczna (4.4).
+import { addDays, weekStart } from './time.ts';
 
 export type PhaseKind = 'in' | 'hold' | 'out';
 
@@ -235,4 +236,58 @@ export function promptAt(session: MindfulSession, elapsedSec: number): Prompt | 
   let current: Prompt | undefined;
   for (const pr of session.prompts) if (pr.at <= elapsedSec) current = pr;
   return current;
+}
+
+/**
+ * Długość wybierana raz, na początku – nazwana nastrojem, nie liczbą. W trakcie sesji
+ * nie pokazujemy ani licznika, ani paska postępu, żeby chwila się nie dłużyła.
+ */
+export const BREATH_LENGTHS = [
+  { minutes: 2, label: 'Chwilka' },
+  { minutes: 3, label: 'Lekko' },
+  { minutes: 5, label: 'Spokojnie' },
+  { minutes: 10, label: 'Głęboko' },
+];
+
+export type BreathRitual = {
+  /** czy dziś już był oddech lub medytacja */
+  today: boolean;
+  /** dni z rzędu; dzień, który jeszcze trwa, nie przerywa serii */
+  streak: number;
+  /** bieżący tydzień, poniedziałek … niedziela */
+  week: boolean[];
+  /** wszystkie dni z chwilą dla siebie */
+  total: number;
+};
+
+/** Codzienny rytuał oddechu z listy dni (YYYY-MM-DD, w strefie studia). */
+export function breathRitual(days: string[], today: string): BreathRitual {
+  const set = new Set(days);
+  let streak = 0;
+  for (let d = set.has(today) ? today : addDays(today, -1); set.has(d); d = addDays(d, -1)) streak++;
+  const monday = weekStart(today);
+  return { today: set.has(today), streak, week: Array.from({ length: 7 }, (_, i) => set.has(addDays(monday, i))), total: set.size };
+}
+
+/** Myśl na dziś po sesji – jedna na dzień, ta sama przez cały dzień. */
+export const AFFIRMATIONS = [
+  'Jestem dla siebie łagodna.',
+  'Mam prawo zwolnić.',
+  'Mój oddech jest zawsze ze mną.',
+  'Wystarczy, że jestem.',
+  'Dbam o siebie bez pośpiechu.',
+  'Moje ciało jest moim domem.',
+  'Każdy wydech robi miejsce na spokój.',
+  'Nie muszę być idealna, żeby być wystarczająca.',
+  'Zasługuję na chwilę tylko dla siebie.',
+  'Moje tempo jest dobrym tempem.',
+  'Odpuszczam to, na co nie mam wpływu.',
+  'Jestem wdzięczna za ten dzień.',
+  'Rosnę po cichu, każdego dnia.',
+  'Miękkość też jest siłą.',
+];
+
+export function affirmationFor(date: string): string {
+  const day = Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
+  return AFFIRMATIONS[((day % AFFIRMATIONS.length) + AFFIRMATIONS.length) % AFFIRMATIONS.length];
 }

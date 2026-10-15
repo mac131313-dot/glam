@@ -4,6 +4,8 @@
 import type { FastifyInstance } from 'fastify';
 import {
   addDays,
+  affirmationFor,
+  breathRitual,
   dayPart,
   describePass,
   describeRules,
@@ -670,6 +672,16 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     });
     if (first && b.kind !== 'stretch') notify(scope, { userId: user.id, category: 'occasional', occasion: 'milestone', tz: studio.timezone, body: 'Pierwsza medytacja za Tobą. Brawo za chwilę tylko dla siebie 🌙', dedupeKey: 'milestone:first_meditation' });
     return { ok: true, week: weekProgress(scope, studio, user.id) };
+  });
+
+  // Codzienny rytuał oddechu w „Dla mnie”: seria dni, bieżący tydzień i myśl na dziś.
+  app.get('/api/my/breath-ritual', member, async (req) => {
+    const { scope, studio, user } = ctx(req);
+    const since = new Date(Date.now() - 400 * 86_400_000).toISOString();
+    const rows = scope.all<{ completed_at: string }>("SELECT completed_at FROM mindful_logs WHERE studio_id = $studio AND user_id = $u AND kind IN ('meditation', 'breath') AND completed_at >= $s", { u: user.id, s: since });
+    const today = localParts(new Date(), studio.timezone).date;
+    const days = rows.map((r) => localParts(new Date(r.completed_at), studio.timezone).date);
+    return { ...breathRitual(days, today), affirmation: affirmationFor(today) };
   });
 
   // ——— Lojalność, odznaki, „Moja szafka”, ramki ———

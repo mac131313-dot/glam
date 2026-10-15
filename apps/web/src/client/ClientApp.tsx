@@ -64,6 +64,8 @@ type ClientCtx = {
   go: (t: Tab) => void;
   openShop: (reason?: string, highlight?: string[]) => void;
   openBreath: (req: BreathRequest) => void;
+  /** Sesja oddechu jest otwarta – animacje pod nią mogą stanąć. */
+  breathOpen: boolean;
   /** Podstrona (karnety, kurs, sklep…) – stos nad zakładkami. */
   open: (route: string) => void;
   /** Akcja z powiadomienia (np. „profile/passes”) – zakładka albo podstrona. */
@@ -136,6 +138,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
     go: setTab,
     openShop: (reason, highlight) => setShop({ reason, highlight }),
     openBreath: setBreath,
+    breathOpen: !!breath,
     open: (route) => setStack((st) => [...st, route]),
     follow,
     onSwitchStudio: props.onSwitchStudio,
@@ -144,7 +147,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
 
   return (
     <Ctx.Provider value={ctx}>
-      <div className="phone">
+      <div className="phone" data-tab={tab}>
         {studio.theme?.effect === 'snow' && shouldSnow() && <Snowfall />}
         <header className="topbar">
           <button className="studio-chip" onClick={props.onSwitchStudio} aria-label={`Studio ${studio.name}. Zmień studio`}>
