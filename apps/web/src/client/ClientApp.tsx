@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { Look, Palette, SeasonalEffect, SupportHours } from '@glam/core';
-import { useApi } from '../api.ts';
+import { setStudioTimezone, useApi } from '../api.ts';
 import { useLayer } from '../back.ts';
 import type { Me } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
@@ -22,6 +22,7 @@ export type Studio = {
   id: string;
   name: string;
   city: string;
+  timezone: string;
   tagline: string;
   logo: string;
   logoUrl: string | null;
@@ -117,6 +118,8 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
   }
 
   if (!studio) return <Spinner />;
+  // Przed renderem zakładek: grafik i karnety formatują godziny w strefie studia.
+  setStudioTimezone(studio.timezone);
   if (!props.me.user.onboarded) return <Onboarding studio={studio} me={props.me} onDone={props.reloadMe} />;
 
   const ctx: ClientCtx = {

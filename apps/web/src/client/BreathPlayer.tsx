@@ -6,7 +6,7 @@ import { Icon } from '../icons.tsx';
 import { api } from '../api.ts';
 import { useLayer } from '../back.ts';
 import { MeadowScene } from './MeadowScene.tsx';
-import { CalmNoise, hapticPhase, hapticsSupported, loadSenses, saveSenses, type SenseSettings } from './senses.ts';
+import { CalmNoise, hapticPhase, hapticsSupported, loadSenses, saveSenses, useWakeLock, type SenseSettings } from './senses.ts';
 
 export type BreathRequest = { sessionId?: string; patternId?: string; minutes?: number };
 
@@ -82,6 +82,7 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   }, [pattern, totalSec]);
 
   useLayer(onClose);
+  useWakeLock(!done && !paused);
 
   const togglePause = () => {
     const now = performance.now();

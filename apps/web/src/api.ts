@@ -102,8 +102,18 @@ export function useApi<T = any>(path: string | null, deps: unknown[] = []) {
   return { data, error, loading, reload, setData };
 }
 
-// Formaty dat w strefie studia (sekcja 10: polskie formaty dat i godzin).
-const TZ = 'Europe/Warsaw';
+// Formaty dat w strefie studia (sekcja 10: polskie formaty dat i godzin). Godziny zajęć pokazujemy w czasie studia,
+// także gdy klientka ma telefon ustawiony na inną strefę (wyjazd). Strefę ustawia aplikacja po wczytaniu studia.
+let TZ = 'Europe/Warsaw';
+export function setStudioTimezone(tz: string | null | undefined) {
+  if (!tz || tz === TZ) return;
+  try {
+    new Intl.DateTimeFormat('pl-PL', { timeZone: tz });
+    TZ = tz;
+  } catch {
+    /* nieznana strefa – zostaje domyślna */
+  }
+}
 export const fmtTime = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 export const fmtDay = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'numeric' }).format(new Date(iso));
 export const fmtLongDay = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(iso));

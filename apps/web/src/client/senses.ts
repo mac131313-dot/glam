@@ -1,6 +1,7 @@
 // Zmysły sesji oddechowej: haptyka i spokojny szum. Oba do włączenia i wyłączenia.
 // W natywnej aplikacji (Capacitor/Expo) haptykę przejmie systemowe API (iOS Taptic Engine, Android),
 // w przeglądarce działa Vibration API – dostępne na Androidzie, niedostępne w Safari na iOS.
+import { useEffect } from 'react';
 import type { PhaseKind } from '@glam/core';
 
 export type SenseSettings = { haptics: boolean; noise: boolean; volume: number };
@@ -119,4 +120,34 @@ export class CalmNoise {
     this.gain.gain.setValueAtTime(this.gain.gain.value, now);
     this.gain.gain.linearRampToValueAtTime(value, now + seconds);
   }
+}
+
+/**
+ * Ekran nie gaśnie w trakcie sesji (telefon zwykle blokuje się po 30 s – 2 min, a sesje trwają do 15 min).
+ * System zwalnia blokadę, gdy karta znika z ekranu, więc po powrocie bierzemy ją ponownie.
+ * Bez Screen Wake Lock API (starsze przeglądarki) po prostu nic nie robimy.
+ */
+export function useWakeLock(active: boolean) {
+  useEffect(() => {
+    if (!active || !('wakeLock' in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let alive = true;
+    const acquire = () => {
+      if (document.visibilityState !== 'visible') return;
+      navigator.wakeLock
+        .request('screen')
+        .then((l) => {
+          if (alive) lock = l;
+          else l.release().catch(() => {});
+        })
+        .catch(() => {});
+    };
+    acquire();
+    document.addEventListener('visibilitychange', acquire);
+    return () => {
+      alive = false;
+      document.removeEventListener('visibilitychange', acquire);
+      lock?.release().catch(() => {});
+    };
+  }, [active]);
 }

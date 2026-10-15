@@ -149,6 +149,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       id: studio.id,
       name: studio.name,
       city: studio.city,
+      timezone: studio.timezone,
       tagline: studio.tagline,
       logo: studio.logo,
       accent: studio.accent,
@@ -440,9 +441,14 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
 
   app.patch<{ Params: { id: string }; Body: { autoRenew: boolean } }>('/api/passes/:id', member, async (req) => {
     const { scope, user } = ctx(req);
-    const r = scope.run('UPDATE passes SET auto_renew = $a WHERE studio_id = $studio AND id = $id AND user_id = $u', { a: Number(!!req.body?.autoRenew), id: req.params.id, u: user.id });
-    if (!r.changes) throw notFound('Nie znaleziono karnetu.');
-    return { message: req.body.autoRenew ? 'Karnet będzie się odnawiał automatycznie.' : 'Automatyczne odnawianie wyłączone.' };
+    if (typeof req.body?.autoRenew !== 'boolean') throw badRequest('Wybierz, czy karnet ma się odnawiać.');
+    const autoRenew = req.body.autoRenew;
+    const p = scope.get<{ rules_json: string }>('SELECT rules_json FROM passes WHERE studio_id = $studio AND id = $id AND user_id = $u', { id: req.params.id, u: user.id });
+    if (!p) throw notFound('Nie znaleziono karnetu.');
+    // Włączyć odnawianie można tylko w karnecie, którego produkt je przewiduje; wyłączyć – zawsze.
+    if (autoRenew && !(JSON.parse(p.rules_json) as ProductRules).autoRenew) throw conflict('no_renewal', 'Ten karnet nie odnawia się automatycznie – kup kolejny, gdy się skończy.');
+    scope.run('UPDATE passes SET auto_renew = $a WHERE studio_id = $studio AND id = $id AND user_id = $u', { a: Number(autoRenew), id: req.params.id, u: user.id });
+    return { message: autoRenew ? 'Karnet będzie się odnawiał automatycznie.' : 'Automatyczne odnawianie wyłączone.' };
   });
 
   app.get('/api/products', member, async (req) => {

@@ -342,3 +342,15 @@ test('wiadomości do znajomych: dzienny limit na klientkę i na numer, odpowied�
   const ref = await call(ania, R, 'POST', '/api/referrals', { phone: '600 700 900', channel: 'sms' });
   assert.equal(ref.statusCode, 429);
 });
+
+test('autoodnawianie: tylko w karnecie, którego produkt je przewiduje; studio podaje strefę czasową', async () => {
+  const magda = await login(DEMO.magda);
+  const pass = db.prepare("SELECT p.id FROM passes p JOIN users u ON u.id = p.user_id WHERE p.studio_id = ? AND u.phone = ? AND p.rules_json NOT LIKE '%\"autoRenew\":true%' LIMIT 1").get(R, DEMO.magda) as { id: string } | undefined;
+  assert.ok(pass, 'Magda ma karnet bez odnawiania');
+  const on = await call(magda, R, 'PATCH', `/api/passes/${pass.id}`, { autoRenew: true });
+  assert.equal(on.statusCode, 409, on.body);
+  assert.equal(on.json().error, 'no_renewal');
+  assert.equal((await call(magda, R, 'PATCH', `/api/passes/${pass.id}`)).statusCode, 400);
+  assert.equal((await call(magda, R, 'PATCH', `/api/passes/${pass.id}`, { autoRenew: false })).statusCode, 200);
+  assert.match((await call(magda, R, 'GET', '/api/studio')).json().timezone, /^[A-Za-z]+\/[A-Za-z_]+/);
+});
