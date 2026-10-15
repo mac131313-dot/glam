@@ -386,6 +386,70 @@ test('sklep: rezerwacja do odbioru blokuje sztukę, anulowanie ją zwraca, odbi�
   assert.equal((await call(kasia, R, 'POST', `/api/staff/shop/orders/${o2.json().id}`, { status: 'collected', method: 'terminal' })).statusCode, 200);
 });
 
+test('sklep: menu baru bez limitu sztuk, cena wariantu, makro tylko uzupełnione, miara skarpetek', async () => {
+  const magda = await login(DEMO.magda);
+  const shop = (await call(magda, R, 'GET', '/api/shop')).json();
+  const byId = (pid: string) => shop.products.find((p: { id: string }) => p.id === pid);
+  assert.equal(byId('sp1').sizeName, 'Rozmiar skarpetek');
+  assert.deepEqual(byId('sp1').variants.map((v: { size: string }) => v.size), ['35–38', '39–42', '43–46']);
+  assert.equal(byId('sp8').nutrition, null, 'napój bez makro – nic do pokazania');
+  assert.equal(byId('sp7').nutrition.fat, undefined, 'brak tłuszczu w makro – pole pominięte');
+  assert.equal(byId('sp7').nutrition.protein, 5);
+  assert.equal(byId('sp9').status, 'available');
+  assert.match(byId('sp9').price, /^od /, 'hantelki mają różne ceny wag');
+
+  const o = await call(magda, R, 'POST', '/api/shop/orders', { kind: 'pickup', items: [{ productId: 'sp6', variantId: 'xl', qty: 2 }] });
+  assert.equal(o.statusCode, 200, o.body);
+  const row = db.prepare('SELECT total_grosze, expires_at FROM shop_orders WHERE id = ?').get(o.json().id) as { total_grosze: number; expires_at: string };
+  assert.equal(row.total_grosze, 3800, 'cena wariantu 450 ml');
+  assert.equal(row.expires_at, new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }), 'napój czeka do końca dnia');
+  const matcha = JSON.parse((db.prepare("SELECT variants_json FROM shop_products WHERE id = 'sp6'").get() as { variants_json: string }).variants_json);
+  assert.equal(matcha.find((v: { id: string }) => v.id === 'xl').stock, null, 'napój bez limitu – stan się nie zmienia');
+  assert.equal((await call(magda, R, 'POST', '/api/shop/orders', { kind: 'pickup', items: [{ productId: 'sp9', variantId: 'h15', qty: 1 }] })).statusCode, 409, '1,5 kg wyprzedane');
+  assert.equal((await call(magda, R, 'POST', '/api/shop/orders', { kind: 'online', method: 'blik', items: [{ productId: 'sp5', variantId: 'one', qty: 1 }] })).statusCode, 409, 'napojów się nie wysyła');
+});
+
+test('sklep: galeria produktu z biblioteki studia, usunięte zdjęcie zwalnia miejsce; katalog na stronie WWW', async () => {
+  const owner = await login(DEMO.owner);
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  const a = (await call(owner, R, 'POST', '/api/staff/shop/media', { dataUrl: PNG })).json();
+  const b = (await call(owner, R, 'POST', '/api/staff/shop/media', { dataUrl: PNG })).json();
+  assert.ok(a.id && b.id);
+  const created = await call(owner, R, 'POST', '/api/staff/shop/products', {
+    category: 'drink',
+    name: 'Kakao proteinowe',
+    priceGrosze: 1700,
+    photos: [a.id, b.id],
+    nutrition: { serving: '300 ml', protein: '22,5', kcal: '', fat: null },
+  });
+  assert.equal(created.statusCode, 200, created.body);
+  const pid = created.json().id;
+  const find = async () => ((await call(owner, R, 'GET', '/api/staff/shop')).json().products as { id: string; photos: { id: string }[]; nutrition: object; variants: { stock: number | null }[] }[]).find((p) => p.id === pid)!;
+  let p = await find();
+  assert.deepEqual(p.photos.map((x) => x.id), [a.id, b.id]);
+  assert.deepEqual(p.nutrition, { serving: '300 ml', protein: 22.5 });
+  assert.equal(p.variants[0].stock, null, 'nowy napój domyślnie bez limitu');
+
+  assert.equal((await call(owner, R, 'PUT', `/api/staff/shop/products/${pid}`, { photos: ['obce-zdjecie'] })).statusCode, 400);
+  assert.equal((await call(owner, R, 'PUT', `/api/staff/shop/products/${pid}`, { photos: [b.id] })).statusCode, 200);
+  p = await find();
+  assert.deepEqual(p.photos.map((x) => x.id), [b.id]);
+  assert.equal(db.prepare('SELECT id FROM media WHERE id = ?').get(a.id), undefined, 'zdjęcie usunięte z galerii znika z biblioteki');
+
+  const pub = await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/shop' });
+  assert.equal(pub.statusCode, 200, pub.body);
+  const item = pub.json().products.find((x: { id: string }) => x.id === pid);
+  assert.equal(item.photoUrl, `/api/public-media/${b.id}`);
+  assert.equal('rewardEligible' in item, false);
+  assert.equal((await app.inject({ method: 'GET', url: item.photoUrl })).statusCode, 200);
+  const page = await app.inject({ method: 'GET', url: `/api/public/studios/centrum-ruchu/shop/${pid}` });
+  assert.equal(page.statusCode, 200, page.body);
+  assert.equal(page.json().product.id, pid);
+  assert.deepEqual(page.json().product.photos.map((x: { id: string }) => x.id), [b.id]);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/shop/nie-ma' })).statusCode, 404);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/nie-ma/shop' })).statusCode, 404);
+});
+
 test('wydarzenie prywatne: zapytanie → oferta → akceptacja blokuje salę w grafiku; RSVP gości', async () => {
   const magda = await login(DEMO.magda);
   const opts = (await call(magda, R, 'GET', '/api/events/options')).json();

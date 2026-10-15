@@ -10,6 +10,7 @@ import {
   lessonUnlocked,
   localParts,
   passValidity,
+  returnStock,
   scheduledTheme,
   toMinutes,
   TRIGGERS,
@@ -482,7 +483,7 @@ function shopAndPasses(c: Ctx) {
       for (const it of JSON.parse(o.items_json) as { productId: string; variantId: string; qty: number }[]) {
         const p = c.scope.get<{ variants_json: string }>('SELECT variants_json FROM shop_products WHERE studio_id = $studio AND id = $id', { id: it.productId });
         if (!p) continue;
-        const variants = (JSON.parse(p.variants_json) as { id: string; stock: number }[]).map((v) => (v.id === it.variantId ? { ...v, stock: v.stock + it.qty } : v));
+        const variants = returnStock(JSON.parse(p.variants_json), it.variantId, it.qty);
         c.scope.run("UPDATE shop_products SET variants_json = $v, status = CASE WHEN status = 'sold_out' THEN 'available' ELSE status END WHERE studio_id = $studio AND id = $id", { v: JSON.stringify(variants), id: it.productId });
       }
       c.scope.run("UPDATE shop_orders SET status = 'expired', updated_at = $now WHERE studio_id = $studio AND id = $id", { id: o.id, now: c.now.toISOString() });

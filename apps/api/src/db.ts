@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS memberships (
   user_id TEXT NOT NULL REFERENCES users(id),
   role TEXT NOT NULL CHECK (role IN ('client', 'trainer', 'reception', 'owner', 'coordinator')),
   bio TEXT,
+  about TEXT,               -- opis własny trenerki (dłuższy niż bio; strona WWW i profil w aplikacji)
+  intro_video_id TEXT,      -- film „poznajmy się” z profilu trenerki (media, rodzaj 'intro')
   goal TEXT,
   trainer_id TEXT,
   prefs_json TEXT,
@@ -368,6 +370,17 @@ CREATE TABLE IF NOT EXISTS session_invites (
   status TEXT NOT NULL CHECK (status IN ('sent', 'accepted', 'declined')),
   created_at TEXT NOT NULL
 );
+
+-- Zaproszenia trenerki na jej własne zajęcia: krótka notka przy terminie, widoczna w aplikacji (Start, profil trenerki).
+CREATE TABLE IF NOT EXISTS trainer_invites (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  trainer_id TEXT NOT NULL REFERENCES users(id),
+  session_id TEXT NOT NULL REFERENCES class_sessions(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_trainer_invites_session ON trainer_invites (studio_id, session_id);
 
 CREATE TABLE IF NOT EXISTS coupons (
   id TEXT PRIMARY KEY,
@@ -847,15 +860,22 @@ CREATE TABLE IF NOT EXISTS card_tasks (
 );
 
 -- ——— Sklep i partnerzy (4.8) ———
+-- media_id = okładka (pierwsze zdjęcie galerii); gallery_json = wszystkie zdjęcia w kolejności.
+-- variants_json: stock NULL = bez limitu (napoje); nutrition_json: tylko uzupełnione wartości (core/shop.ts).
 CREATE TABLE IF NOT EXISTS shop_products (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
+  category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('drink', 'accessory', 'apparel', 'other')),
   name TEXT NOT NULL,
   description TEXT,
   price_grosze INTEGER NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('available', 'sold_out', 'hidden')),
+  size_scale TEXT NOT NULL DEFAULT 'none',
   variants_json TEXT NOT NULL,
   media_id TEXT,
+  gallery_json TEXT NOT NULL DEFAULT '[]',
+  nutrition_json TEXT,
+  featured INTEGER NOT NULL DEFAULT 0,
   reward_eligible INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );

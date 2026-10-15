@@ -19,6 +19,7 @@ import { platformRoutes } from './routes/platform.ts';
 import { publicRoutes } from './routes/public.ts';
 import { shopRoutes } from './routes/shop.ts';
 import { staffRoutes } from './routes/staff.ts';
+import { trainerRoutes } from './routes/trainers.ts';
 import { uploadRoutes } from './routes/uploads.ts';
 
 export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
@@ -69,6 +70,7 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   logoRoutes(app, deps);
   photoRoutes(app, deps);
   publicRoutes(app, deps);
+  trainerRoutes(app, deps);
   coursePageRoutes(app, deps);
   return app;
 }

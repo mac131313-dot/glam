@@ -12,6 +12,7 @@ const CoursePages = lazy(() => import('./CoursePages.tsx'));
 const ShopPages = lazy(() => import('./ShopPages.tsx'));
 const EventPages = lazy(() => import('./EventPages.tsx'));
 const FeedbackPages = lazy(() => import('./Feedback.tsx'));
+const TrainerPages = lazy(() => import('./TrainerPages.tsx'));
 
 export type RouteProps = { route: string; arg: string | null; close: () => void };
 
@@ -44,7 +45,7 @@ const TITLES: Record<string, string> = {
   invites: 'Zaproś znajomą',
   courses: 'Kursy',
   course: 'Kurs',
-  shop: 'Sklep studia',
+  shop: 'Sklep',
   orders: 'Moje zamówienia',
   partners: 'Partnerzy',
   events: 'Wydarzenia',
@@ -53,6 +54,7 @@ const TITLES: Record<string, string> = {
   nps: 'Twoja opinia',
   survey: 'Co się stało?',
   wellbeing: 'Dla mnie',
+  trainer: 'Trenerka',
 };
 
 const GROUP: Record<string, ComponentType<RouteProps>> = {
@@ -92,6 +94,7 @@ const GROUP: Record<string, ComponentType<RouteProps>> = {
   event: EventPages,
   nps: FeedbackPages,
   survey: FeedbackPages,
+  trainer: TrainerPages,
 };
 
 /** Akcje z powiadomień → trasy (np. „profile/passes” → „passes”). Zakładki obsługuje ClientApp. */

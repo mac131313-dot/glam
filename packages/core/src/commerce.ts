@@ -1,6 +1,5 @@
 // Pieniądze i karnety poza samym dostępem (4.2, 4.8): kody rabatowe, zawieszenie karnetu,
-// faktury (kwoty netto/VAT), sklep (stany i rezerwacje), polecenia (decyzja 8).
-import { addDays } from './time.ts';
+// faktury (kwoty netto/VAT), polecenia (decyzja 8). Sklep – shop.ts.
 import { plural } from './copy.ts';
 
 // ——— Kody rabatowe i kupony ———
@@ -90,32 +89,6 @@ export function vatSplit(grossGrosze: number, ratePct: number) {
 export function invoiceNumber(prefix: string, localDate: string, seq: number): string {
   const [y, m] = localDate.split('-');
   return `${prefix || 'FV'}/${y}/${m}/${String(seq).padStart(4, '0')}`;
-}
-
-// ——— Sklep (4.8.1): warianty (rozmiar / kolor) ze stanem magazynowym ———
-
-export type Variant = { id: string; size?: string | null; color?: string | null; stock: number };
-
-export function variantLabel(v: Variant): string {
-  return [v.size, v.color].filter(Boolean).join(' · ') || 'standard';
-}
-
-export function takeStock(variants: Variant[], variantId: string, qty: number): Variant[] {
-  const v = variants.find((x) => x.id === variantId);
-  if (!v) throw new Error('Nie ma takiego wariantu.');
-  if (v.stock < qty) throw new Error(v.stock === 0 ? 'Ten rozmiar jest wyprzedany.' : `Zostało tylko ${v.stock} szt.`);
-  return variants.map((x) => (x.id === variantId ? { ...x, stock: x.stock - qty } : x));
-}
-
-export function returnStock(variants: Variant[], variantId: string, qty: number): Variant[] {
-  return variants.map((x) => (x.id === variantId ? { ...x, stock: x.stock + qty } : x));
-}
-
-export const totalStock = (variants: Variant[]) => variants.reduce((n, v) => n + v.stock, 0);
-
-/** Rezerwacja do odbioru (S3): sztuka blokowana na X dni, potem wraca na stan. */
-export function reservationExpiry(localToday: string, days: number): string {
-  return addDays(localToday, days);
 }
 
 // ——— Polecenia (decyzja 8) ———

@@ -1,10 +1,11 @@
 // „Dziś” trenerki / recepcji (3, 4.11): sesje dnia, uczestniczki z celem i uwagami zdrowotnymi (za zgodą),
 // check-in z listy, QR albo po telefonie (także wejście do strefy z wolnym wstępem – C3), lista oczekujących,
 // ręczne dodanie (płatność na miejscu), nieobecność, zmiana prowadzącej, odwołanie zajęć, wydarzenia dnia.
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { addDaysStr, api, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
 import { Avatar, Empty, Select, Sheet, Spinner, Toggle, useAction } from '../ui.tsx';
+import { CheckinPanel } from './Entrance.tsx';
 
 type Participant = { booking_id: string; status: string; user_id: string; name: string; phone?: string; goal: string | null; visits: number; guest_name: string | null; confirmed_at: string | null; rating: number | null; health: { limitations?: string; injuries?: string; pregnancy?: boolean } | null };
 type Session = { id: string; starts_at: string; class_name: string; trainer_name: string; trainer_id: string; zone_name: string; capacity: number; status: string; kind: string; playlist_name: string | null; rating: { avg: number | null; n: number }; participants: Participant[] };
@@ -39,7 +40,7 @@ export function Today({ roles }: { roles: Role[] }) {
         </div>
       </div>
 
-      <CheckinBox onDone={reload} />
+      {date === localDate() && <CheckinPanel onDone={reload} />}
 
       {data?.events.map((e) => (
         <section key={e.id} className="card soft stack" style={{ gap: 4 }}>
@@ -140,72 +141,6 @@ export function Today({ roles }: { roles: Role[] }) {
       {add && <AddParticipant session={add} onClose={() => setAdd(null)} onDone={reload} />}
       {manage && <ManageSession session={manage} trainers={cfg.data?.trainers ?? []} onClose={() => setManage(null)} onDone={reload} />}
     </div>
-  );
-}
-
-/** Check-in QR (kamera z BarcodeDetector) albo po numerze telefonu. */
-function CheckinBox({ onDone }: { onDone: () => void }) {
-  const [value, setValue] = useState('');
-  const [scanning, setScanning] = useState(false);
-  const [last, setLast] = useState<string | null>(null);
-  const video = useRef<HTMLVideoElement>(null);
-  const { run } = useAction();
-  const submit = (input: string) =>
-    run(async () => {
-      const body = input.startsWith('GLAM1.') ? { code: input } : { phone: input };
-      const r = await api<{ message: string }>('/staff/checkin', { method: 'POST', body });
-      setLast(r.message);
-      setValue('');
-      onDone();
-      return r;
-    });
-  useEffect(() => {
-    if (!scanning) return;
-    let stream: MediaStream | null = null;
-    let timer = 0;
-    const Detector = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => { detect: (v: HTMLVideoElement) => Promise<{ rawValue: string }[]> } }).BarcodeDetector;
-    (async () => {
-      if (!Detector) {
-        setScanning(false);
-        alert('Ta przeglądarka nie czyta kodów QR. Wpisz numer telefonu albo użyj czytnika.');
-        return;
-      }
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (video.current) {
-        video.current.srcObject = stream;
-        await video.current.play();
-      }
-      const det = new Detector({ formats: ['qr_code'] });
-      timer = window.setInterval(async () => {
-        if (!video.current) return;
-        const codes = await det.detect(video.current).catch(() => []);
-        if (codes[0]?.rawValue) {
-          setScanning(false);
-          submit(codes[0].rawValue);
-        }
-      }, 400);
-    })().catch(() => setScanning(false));
-    return () => {
-      clearInterval(timer);
-      stream?.getTracks().forEach((t) => t.stop());
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scanning]);
-  return (
-    <section className="card soft stack" style={{ gap: 10 }}>
-      <div className="eyebrow">Check-in</div>
-      <div className="row">
-        <input className="input" placeholder="Numer telefonu albo kod z aplikacji" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && value && submit(value)} />
-        <button className="btn sm" disabled={!value} onClick={() => submit(value)}>
-          Wejście
-        </button>
-        <button className="btn ghost sm" onClick={() => setScanning(!scanning)}>
-          {scanning ? 'Zamknij kamerę' : 'Skanuj QR'}
-        </button>
-      </div>
-      {scanning && <video ref={video} style={{ width: '100%', maxWidth: 360, borderRadius: 16 }} muted playsInline />}
-      {last && <div className="small">{last}</div>}
-    </section>
   );
 }
 

@@ -3,16 +3,31 @@ import { useEffect, useState } from 'react';
 import { rewardCounterCopy } from '@glam/core';
 import { api, fmtDay, fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
-import { Empty, Progress, Spinner, useAction } from '../ui.tsx';
+import { Empty, Progress, QrCode, Sheet, Spinner, useAction } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
+import { InviteCard, type TrainerInvite } from './TrainerInvite.tsx';
 import { WelcomePopup } from './WelcomePopup.tsx';
+
+type Upcoming = {
+  booking_id: string;
+  status: string;
+  starts_at: string;
+  ends_at: string;
+  class_name: string;
+  description: string | null;
+  trainer_name: string;
+  zone_name: string;
+  photo_url: string | null;
+  photo_ratio: number | null;
+  checkin_code: string | null;
+};
 
 type Home = {
   greeting: string;
   dayPart: 'morning' | 'afternoon' | 'evening';
   theme: { name: string; tagline: string } | null;
-  upcoming: { booking_id: string; status: string; starts_at: string; class_name: string; trainer_name: string; zone_name: string; photo_url: string | null; photo_ratio: number | null }[];
+  upcoming: Upcoming[];
   passes: { id: string; summary: string; expiringSoon: boolean; unlimited: boolean }[];
   week: { goal: { trainings: number; mindful: number }; done: { trainings: number; mindful: number }; achieved: boolean; message: string; restDay: boolean };
   welcome: { id: string; body: string; trainer_name: string; kind?: string; video_id?: string | null } | null;
@@ -28,6 +43,7 @@ type Home = {
   survey: { id: string } | null;
   locker: number;
   invites: number;
+  trainerInvites: TrainerInvite[];
   challenge: { id: string; title: string } | null;
   quizDue: boolean;
   firstClass: boolean;
@@ -47,6 +63,7 @@ export function Start() {
   const { run } = useAction();
   const { data: home, reload } = useApi<Home>('/home');
   const [popupDismissed, setPopupDismissed] = useState(false);
+  const [ticket, setTicket] = useState<Upcoming | null>(null);
 
   useEffect(() => {
     window.addEventListener('glam:passes-changed', reload);
@@ -111,7 +128,7 @@ export function Start() {
             bleed
             photoUrl={next.photo_url}
             photoRatio={next.photo_ratio}
-            onClick={() => go('schedule')}
+            onClick={() => setTicket(next)}
             eyebrow={`${fmtDay(next.starts_at)} · ${fmtTime(next.starts_at)}`}
             title={next.class_name}
             meta={`prowadzi ${next.trainer_name} · ${next.zone_name}`}
@@ -128,6 +145,7 @@ export function Start() {
             {next ? 'Zobacz grafik' : 'Zarezerwuj zajęcia'}
           </button>
         </div>
+        {ticket && <ClassTicket item={ticket} onClose={() => setTicket(null)} />}
       </section>
 
       <section className="card soft stack">
@@ -179,6 +197,27 @@ export function Start() {
           </span>
           <Icon name="chevron" size={18} />
         </button>
+      )}
+
+      {hasFeature(studio, 'shop') && (
+        <button className="card flat row between" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => open('shop')}>
+          <span>
+            <span className="card-title" style={{ display: 'block' }}>
+              Sklep studia
+            </span>
+            <span className="small muted">Bar po treningu, maty i stroje</span>
+          </span>
+          <Icon name="bag" size={18} />
+        </button>
+      )}
+
+      {home.trainerInvites.length > 0 && (
+        <section className="stack" style={{ gap: 8 }}>
+          <div className="eyebrow">Zaproszenia od trenerek</div>
+          {home.trainerInvites.map((i) => (
+            <InviteCard key={i.id} invite={i} onChange={reload} onTrainer={() => open(`trainer/${i.trainerId}`)} />
+          ))}
+        </section>
       )}
 
       {(home.nps || home.survey || home.locker > 0 || home.invites > 0 || home.quizDue || home.challenge) && (
@@ -272,5 +311,37 @@ export function Start() {
         />
       )}
     </div>
+  );
+}
+
+// Okno po kliknięciu najbliższych zajęć: kod QR do zeskanowania w recepcji i krótki opis spotkania.
+function ClassTicket({ item, onClose }: { item: Upcoming; onClose: () => void }) {
+  const minutes = Math.round((Date.parse(item.ends_at) - Date.parse(item.starts_at)) / 60_000);
+  return (
+    <Sheet onClose={onClose} label={`Wejście na ${item.class_name}`}>
+      <div className="stack center" style={{ gap: 14, textAlign: 'center' }}>
+        <p className="eyebrow" style={{ margin: 0 }}>
+          {fmtDay(item.starts_at)} · {fmtTime(item.starts_at)} · {minutes} min
+        </p>
+        <h2 className="serif" style={{ margin: 0 }}>{item.class_name}</h2>
+        <p className="small muted" style={{ margin: 0 }}>
+          prowadzi {item.trainer_name} · {item.zone_name}
+        </p>
+        {item.description && <p className="small" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{item.description}</p>}
+        {item.checkin_code ? (
+          <>
+            <QrCode text={item.checkin_code} size={220} label={`Kod wejścia na ${item.class_name}`} />
+            <p className="tiny muted" style={{ margin: 0 }}>Pokaż ten kod w recepcji – zeskanujemy go przy wejściu. Działa w dniu zajęć.</p>
+          </>
+        ) : item.status === 'waitlist' ? (
+          <p className="small muted">Jesteś na liście oczekujących. Kod wejścia pojawi się tutaj, gdy zwolni się miejsce.</p>
+        ) : (
+          <p className="small muted">Kod wejścia pojawi się tutaj w dniu zajęć ({fmtDay(item.starts_at)}).</p>
+        )}
+        <button className="btn ghost sm" onClick={onClose}>
+          Zamknij
+        </button>
+      </div>
+    </Sheet>
   );
 }

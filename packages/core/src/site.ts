@@ -140,7 +140,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
       heading('Więcej'),
       { label: 'Wydarzenia', fields: [toggle('eventsVisible', 'Pokazuj', true), text('eventsTitle', 'Tytuł', 'Wydarzenia', 40), text('eventsText', 'Opis', 'Warsztaty i wieczory w studiu.', 140)] },
       { label: 'Kursy online', fields: [toggle('coursesVisible', 'Pokazuj', true), text('coursesTitle', 'Tytuł', 'Kursy online', 40), text('coursesText', 'Opis', 'Trenuj z nami w domu.', 140)] },
-      { label: 'Sklep', fields: [toggle('shopVisible', 'Pokazuj', true), text('shopTitle', 'Tytuł', 'Sklep', 40), text('shopText', 'Opis', 'Akcesoria i vouchery.', 140)] },
+      { label: 'Sklep', fields: [toggle('shopVisible', 'Pokazuj', true), text('shopTitle', 'Tytuł', 'Sklep', 40), text('shopText', 'Opis', 'Bar po treningu, akcesoria z logo i stroje.', 140)] },
       { label: 'Etykieta', fields: [text('soonLabel', 'Gdy podstrona jeszcze nie działa', 'wkrótce', 20)] },
     ],
   },

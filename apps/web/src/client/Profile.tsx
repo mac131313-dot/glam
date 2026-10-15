@@ -94,7 +94,7 @@ export function Profile() {
         <ListRow title="Moja szafka" hint="Nagrody i prezenty do odbioru" onClick={() => open('locker')} />
         {hasFeature(studio, 'courses') && <ListRow title="Moje kursy" hint="Kursy online od instruktorek" onClick={() => open('courses')} />}
         {hasFeature(studio, 'events') && <ListRow title="Wydarzenia" hint="Urodziny, babski wieczór w studiu" onClick={() => open('events')} />}
-        {hasFeature(studio, 'shop') && <ListRow title="Sklep i zamówienia" hint="Merch studia, partnerzy" onClick={() => open('shop')} />}
+        {hasFeature(studio, 'shop') && <ListRow title="Sklep i zamówienia" hint="Bar, merch i stroje" onClick={() => open('shop')} />}
         {hasFeature(studio, 'health') && <ListRow title="Zdrowie i postępy" hint="Ankieta, pomiary, zdjęcia, plan od trenerki" onClick={() => open('health')} />}
         <ListRow title="Mój plan" hint="Od Twojej trenerki" onClick={() => open('plan')} />
         <ListRow title="Mój kod wejścia" hint="QR do recepcji i bramki" onClick={() => open('checkin')} />

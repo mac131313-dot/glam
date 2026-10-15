@@ -153,7 +153,7 @@ type Card = {
   goal: string | null;
   trainerId: string | null;
   segments: string[];
-  passes?: { id: string; productName: string; status: string; summary: string }[];
+  passes?: { id: string; productName: string; status: string; summary: string; canUndo: boolean }[];
   bookings: { id: string; status: string; rating: number | null; rating_comment: string | null; starts_at: string; class_name: string; trainer_name: string }[];
   notes: { id: string; body: string; created_at: string; trainer_name: string; trainer_id: string }[];
   health: { goals?: string; limitations?: string; injuries?: string; pregnancy?: boolean; postpartum?: boolean } | null;
@@ -167,6 +167,7 @@ type Card = {
 
 const ACTION: Record<string, string> = {
   'pass.sold_at_desk': 'Karnet sprzedany w recepcji',
+  'pass.sale_undone': 'Cofnięta sprzedaż karnetu',
   'booking.added_by_staff': 'Dodana do zajęć przez recepcję',
   'booking.removed_by_staff': 'Wypisana z zajęć przez recepcję',
   'client.trainer_assigned': 'Przypisana trenerka',
@@ -221,6 +222,21 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
               {data.passes.map((p) => (
                 <div key={p.id} className="small">
                   <b>{p.productName}</b> · {p.summary} <span className="badge">{p.status}</span>
+                  {p.canUndo && (
+                    <>
+                      {' '}
+                      <button
+                        className="link tiny"
+                        disabled={busy}
+                        onClick={() =>
+                          window.confirm(`Cofnąć sprzedaż „${p.productName}”? Karnet zniknie z konta klientki, a sprzedaż z raportu.`) &&
+                          run(() => api(`/staff/clients/${id}/passes/${p.id}`, { method: 'DELETE' }).then(reload), 'Sprzedaż cofnięta')
+                        }
+                      >
+                        Cofnij sprzedaż
+                      </button>
+                    </>
+                  )}
                 </div>
               ))}
             </section>
@@ -241,7 +257,7 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
                   </button>
                 ))}
               </div>
-              <button className="btn sm" disabled={!sell.productId || busy} onClick={() => run(() => api(`/staff/clients/${id}/passes`, { method: 'POST', body: sell }).then((r) => (reload(), r)))}>
+              <button className="btn sm" disabled={!sell.productId || busy} onClick={() => run(() => api(`/staff/clients/${id}/passes`, { method: 'POST', body: sell }).then((r) => (setSell({ ...sell, productId: '' }), reload(), r)))}>
                 Sprzedaj
               </button>
               <p className="tiny muted" style={{ margin: 0 }}>Aplikacja zapisuje sprzedaż do raportu – paragon wystawia studio.</p>

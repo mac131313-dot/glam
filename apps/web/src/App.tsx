@@ -12,6 +12,7 @@ import { applyLook, applySystemLook } from './look.ts';
 import { DeviceFrame, Landing } from './screens/Landing.tsx';
 import { StudioPicker } from './screens/StudioPicker.tsx';
 import { CourseSite } from './site/CourseSite.tsx';
+import { ShopSite } from './site/ShopSite.tsx';
 import { StudioSite } from './site/StudioSite.tsx';
 import { StaffApp } from './staff/StaffApp.tsx';
 import { SiteEditor } from './staff/site-editor/SiteEditor.tsx';
@@ -60,9 +61,11 @@ export type Me = {
 
 export function App() {
   // Publiczna strona studia: /s/:slug – bez logowania, dane z /api/public.
-  // Strona sprzedażowa kursu: /s/:slug/kurs/:id – też publiczna.
+  // Strona sprzedażowa kursu: /s/:slug/kurs/:id. Sklep: /s/:slug/sklep i /s/:slug/sklep/:id.
   const coursePage = location.pathname.match(/^\/s\/([^/]+)\/kurs\/([^/]+)/);
   if (coursePage) return <CourseSite slug={decodeURIComponent(coursePage[1])} courseId={decodeURIComponent(coursePage[2])} />;
+  const shopPage = location.pathname.match(/^\/s\/([^/]+)\/sklep(?:\/([^/]+))?\/?$/);
+  if (shopPage) return <ShopSite slug={decodeURIComponent(shopPage[1])} productId={shopPage[2] ? decodeURIComponent(shopPage[2]) : null} />;
   const site = location.pathname.match(/^\/s\/([^/]+)/);
   if (site) return <StudioSite slug={decodeURIComponent(site[1])} />;
   if (SURFACE === 'home') return <Landing />;

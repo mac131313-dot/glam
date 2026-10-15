@@ -281,6 +281,25 @@ export function seed(db: Db, now = new Date()) {
     iso(now),
   );
 
+  // Profil trenerki: opis własny i zaproszenie na najbliższe zajęcia (strona WWW, aplikacja).
+  db.prepare("UPDATE memberships SET about = ? WHERE studio_id = ? AND user_id = ? AND role = 'trainer'").run(
+    'Uczę pilatesu od ośmiu lat. Zaczynałam od rehabilitacji po kontuzji kolana – dlatego tak pilnuję techniki i tempa.\n\nNa moich zajęciach nikt się nie ściga. Pracujemy z oddechem, a po godzinie wychodzisz lżejsza i spokojniejsza.',
+    R,
+    marzena,
+  );
+  const marzenaNext = db
+    .prepare("SELECT id FROM class_sessions WHERE studio_id = ? AND trainer_id = ? AND status = 'scheduled' AND public = 1 AND starts_at > ? ORDER BY starts_at LIMIT 2")
+    .all(R, marzena, now.toISOString()) as { id: string }[];
+  for (const [i, s] of marzenaNext.entries())
+    db.prepare('INSERT INTO trainer_invites (id, studio_id, trainer_id, session_id, body, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+      `ti${i}`,
+      R,
+      marzena,
+      s.id,
+      i === 0 ? 'Będzie dużo pracy z oddechem i spokojne tempo – idealne na początek tygodnia 🌿' : 'Zapraszam na reformer flow – zajmiemy się plecami i barkami.',
+      iso(now),
+    );
+
   seedExtras(db, now);
   seedSsg(db, now, { user, member, product, buy });
   return { studios: [R, K, SSG_STUDIO], users: Object.fromEntries(users) };

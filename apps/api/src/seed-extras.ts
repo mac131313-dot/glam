@@ -134,13 +134,24 @@ export function seedExtras(db: Db, now = new Date()) {
     ago(1),
   );
 
-  // ——— Sklep (merch) ———
-  const prod = (id: string, name: string, price: number, variants: unknown[], desc: string, reward = 0) =>
-    run("INSERT INTO shop_products (id, studio_id, name, description, price_grosze, status, variants_json, reward_eligible, created_at) VALUES (?, ?, ?, ?, ?, 'available', ?, ?, ?)", id, R, name, desc, price, JSON.stringify(variants), reward, ago(40));
-  prod('sp1', 'Skarpetki antypoślizgowe', 3900, [{ id: 's', size: 'S', stock: 6 }, { id: 'm', size: 'M', stock: 10 }, { id: 'l', size: 'L', stock: 2 }], 'Bawełna z silikonowymi kropkami. Nagroda za 10 treningów.', 1);
-  prod('sp2', 'Butelka szklana 500 ml', 6900, [{ id: 'b', color: 'mleczna', stock: 8 }], 'Szkło borokrzemowe, pokrowiec z logo studia.');
-  prod('sp3', 'Mata podróżna', 18900, [{ id: 'sand', color: 'piaskowa', stock: 3 }, { id: 'sage', color: 'szałwia', stock: 0 }], 'Lekka, 1,5 mm – do walizki.');
-  prod('sp4', 'Koszulka „Oddychaj”', 9900, [{ id: 'xs', size: 'XS', stock: 2 }, { id: 's', size: 'S', stock: 4 }, { id: 'm', size: 'M', stock: 4 }], 'Organiczna bawełna, krój oversize.');
+  // ——— Sklep: menu baru, akcesoria z logo, stroje ———
+  type Prod = { category: string; scale?: string; desc: string; nutrition?: Record<string, unknown>; featured?: boolean; reward?: boolean; age?: number };
+  const prod = (id: string, name: string, price: number, variants: unknown[], o: Prod) =>
+    run(
+      "INSERT INTO shop_products (id, studio_id, category, name, description, price_grosze, status, size_scale, variants_json, nutrition_json, featured, reward_eligible, created_at) VALUES (?, ?, ?, ?, ?, ?, 'available', ?, ?, ?, ?, ?, ?)",
+      id, R, o.category, name, o.desc, price, o.scale ?? 'none', JSON.stringify(variants), o.nutrition ? JSON.stringify(o.nutrition) : null, Number(!!o.featured), Number(!!o.reward), ago(o.age ?? 40),
+    );
+  prod('sp5', 'Shake białkowy wanilia–banan', 1900, [{ id: 'one', stock: null }], { category: 'drink', desc: 'Białko serwatkowe, banan, mleko owsiane, szczypta cynamonu. Idealny do 30 minut po treningu.', nutrition: { serving: '400 ml', kcal: 260, protein: 30, carbs: 24, sugar: 14, fat: 4 }, featured: true, age: 20 });
+  prod('sp6', 'Matcha latte', 1600, [{ id: 'r', size: '300 ml', stock: null }, { id: 'xl', size: '450 ml', stock: null, priceGrosze: 1900 }], { category: 'drink', scale: 'volume', desc: 'Ceremonialna matcha na mleku owsianym, bez cukru.', nutrition: { serving: '300 ml', kcal: 120, protein: 3, carbs: 18, sugar: 9, fat: 4, caffeine: 70 }, age: 21 });
+  prod('sp7', 'Zielone smoothie', 1800, [{ id: 'one', stock: null }], { category: 'drink', desc: 'Szpinak, ananas, jabłko, imbir, limonka.', nutrition: { serving: '350 ml', kcal: 180, protein: 5, carbs: 34, sugar: 22, fiber: 6 }, age: 22 });
+  prod('sp8', 'Woda z elektrolitami', 800, [{ id: 'one', stock: null }], { category: 'drink', desc: 'Schłodzona, z cytryną i solą himalajską.', age: 23 });
+  prod('sp9', 'Hantelki neoprenowe z logo', 4900, [{ id: 'h05', size: '0,5 kg', stock: 6 }, { id: 'h1', size: '1 kg', stock: 4, priceGrosze: 5900 }, { id: 'h15', size: '1,5 kg', stock: 0, priceGrosze: 6900 }], { category: 'accessory', scale: 'weight', desc: 'Para hantelek z miękkim, antypoślizgowym neoprenem i logo studia. Te same, na których ćwiczysz na sali.', featured: true, age: 30 });
+  prod('sp10', 'Podstawki korkowe z logo (2 szt.)', 2900, [{ id: 'one', stock: 12 }], { category: 'accessory', desc: 'Naturalny korek, grawerowane logo – pod kubek albo butelkę.', age: 31 });
+  prod('sp3', 'Mata z logo studia', 18900, [{ id: 'sand', color: 'piaskowa', stock: 3 }, { id: 'sage', color: 'szałwia', stock: 0 }], { category: 'accessory', desc: 'Lekka, 1,5 mm, z logo studia – do walizki i do domu.' });
+  prod('sp2', 'Butelka szklana 500 ml', 6900, [{ id: 'b', color: 'mleczna', stock: 8 }], { category: 'accessory', desc: 'Szkło borokrzemowe, pokrowiec z logo studia.' });
+  prod('sp1', 'Skarpetki antypoślizgowe', 3900, [{ id: 's', size: '35–38', stock: 6 }, { id: 'm', size: '39–42', stock: 10 }, { id: 'l', size: '43–46', stock: 2 }], { category: 'apparel', scale: 'socks', desc: 'Bawełna z silikonowymi kropkami. Nagroda za 10 treningów.', reward: true });
+  prod('sp11', 'Legginsy z wysokim stanem', 18900, [{ id: 'xs', size: 'XS', color: 'grafit', stock: 2 }, { id: 's', size: 'S', color: 'grafit', stock: 5 }, { id: 'm', size: 'M', color: 'grafit', stock: 3 }, { id: 'l', size: 'L', color: 'grafit', stock: 1 }], { category: 'apparel', scale: 'clothing', desc: 'Matowa, gęsta dzianina, która nie prześwituje przy skłonach. Haftowane logo na pasie.', featured: true, age: 25 });
+  prod('sp4', 'Koszulka „Oddychaj”', 9900, [{ id: 'xs', size: 'XS', stock: 2 }, { id: 's', size: 'S', stock: 4 }, { id: 'm', size: 'M', stock: 4 }], { category: 'apparel', scale: 'clothing', desc: 'Organiczna bawełna, krój oversize.' });
 
   // ——— Wydarzenia prywatne ———
   run("INSERT INTO event_packages (id, studio_id, name, kinds_json, min_guests, max_guests, duration_min, price_grosze, deposit_grosze, addons_json, active) VALUES ('ep1', ?, 'Urodziny do 10 osób', '[\"birthday\",\"anniversary\"]', 4, 10, 90, 89000, 20000, '[\"playlist\",\"decor\"]', 1)", R);

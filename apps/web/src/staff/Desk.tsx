@@ -89,23 +89,25 @@ function GuestPassSale() {
 }
 
 function ShopSale() {
-  const shop = useApi<{ products: { id: string; name: string; price: string; variants: { id: string; label: string; stock: number }[] }[] }>('/staff/shop');
+  const shop = useApi<{ products: { id: string; name: string; price: string; status: string; categoryLabel: string; variants: { id: string; label: string; stock: number | null }[] }[] }>('/staff/shop');
   const [items, setItems] = useState<{ productId: string; variantId: string; qty: number; label: string }[]>([]);
   const [method, setMethod] = useState<'cash' | 'terminal'>('terminal');
   const { run, busy } = useAction();
   if (shop.error) return <p className="muted">Sklep jest wyłączony w tym studiu.</p>;
   if (!shop.data) return <Spinner />;
+  const sale = shop.data.products.filter((p) => p.status === 'available');
   return (
     <div className="stack">
-      {shop.data.products.map((p) => (
+      {sale.map((p) => (
         <div key={p.id} className="row between card flat">
           <span>
             <b>{p.name}</b> · {p.price}
+            <span className="tiny muted" style={{ display: 'block' }}>{p.categoryLabel}</span>
           </span>
           <span className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
             {p.variants.map((v) => (
               <button key={v.id} className="chip" disabled={v.stock === 0} onClick={() => setItems([...items, { productId: p.id, variantId: v.id, qty: 1, label: `${p.name} (${v.label})` }])}>
-                + {v.label} ({v.stock})
+                + {v.label} ({v.stock === null ? '∞' : v.stock})
               </button>
             ))}
           </span>
