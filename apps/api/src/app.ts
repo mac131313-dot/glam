@@ -15,6 +15,7 @@ import { musicRoutes } from './routes/music.ts';
 import { photoRoutes } from './routes/photos.ts';
 import { ownerRoutes } from './routes/owner.ts';
 import { platformRoutes } from './routes/platform.ts';
+import { publicRoutes } from './routes/public.ts';
 import { shopRoutes } from './routes/shop.ts';
 import { staffRoutes } from './routes/staff.ts';
 
@@ -65,5 +66,6 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   platformRoutes(app, deps);
   logoRoutes(app, deps);
   photoRoutes(app, deps);
+  publicRoutes(app, deps);
   return app;
 }

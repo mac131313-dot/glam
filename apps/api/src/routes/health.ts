@@ -139,9 +139,9 @@ export function healthRoutes(app: FastifyInstance, deps: Deps) {
     return sendMedia(req, reply, m, m.private ? 'private, no-store' : 'private, max-age=86400');
   });
 
-  // Okładki kursów i zdjęcia produktów sklepu są publiczne w obrębie studia (bez danych osobowych).
+  // Okładki kursów, zdjęcia produktów sklepu i zdjęcia strony WWW są publiczne (bez danych osobowych).
   app.get<{ Params: { id: string } }>('/api/public-media/:id', async (req, reply) => {
-    const m = db.prepare("SELECT mime, data FROM media WHERE id = ? AND kind IN ('cover', 'shop') AND private = 0").get(req.params.id) as { mime: string; data: Uint8Array } | undefined;
+    const m = db.prepare("SELECT mime, data FROM media WHERE id = ? AND kind IN ('cover', 'shop', 'site') AND private = 0").get(req.params.id) as { mime: string; data: Uint8Array } | undefined;
     if (!m) throw notFound();
     return sendMedia(req, reply, m, 'public, max-age=31536000, immutable');
   });

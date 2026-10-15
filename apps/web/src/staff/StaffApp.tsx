@@ -16,6 +16,7 @@ import { ScheduleAdmin } from './ScheduleAdmin.tsx';
 import { Themes } from './Themes.tsx';
 import { Today } from './Today.tsx';
 import { Welcomes } from './Welcomes.tsx';
+import { SiteOverview } from './site-editor/SiteOverview.tsx';
 
 const Analytics = lazy(() => import('./Analytics.tsx'));
 const Clients = lazy(() => import('./Clients.tsx'));
@@ -56,6 +57,7 @@ const SECTIONS: Section[] = [
   { id: 'finance', label: 'Finanse', icon: 'card', perms: ['finance.view', 'finance.export'], group: 'Sprzedaż' },
   { id: 'settings', label: 'Ustawienia', icon: 'settings', perms: ['config.edit'], group: 'Ustawienia' },
   { id: 'look', label: 'Wygląd', icon: 'type', perms: ['config.edit'], group: 'Ustawienia' },
+  { id: 'site', label: 'Strona WWW', icon: 'grid', perms: ['config.edit'], group: 'Ustawienia' },
 ];
 
 export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; reloadMe: () => Promise<void>; onSwitchStudio: () => void; onPreviewClient: () => void; onLogout: () => void }) {
@@ -164,6 +166,7 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
           {section === 'finance' && <Finance roles={roles} />}
           {section === 'settings' && <Settings studio={props.studio} onSaved={props.reloadMe} />}
           {section === 'look' && <LookEditor studio={props.studio} onSaved={props.reloadMe} />}
+          {section === 'site' && <SiteOverview />}
         </Suspense>
       </main>
     </div>
