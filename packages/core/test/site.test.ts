@@ -69,3 +69,11 @@ test('zdjęcia strony: tylko id z biblioteki studia, galeria z limitem, zdjęcia
   assert.ok(siteMediaIds(d).includes(id(3)) && siteMediaIds(d).includes(id(1)));
   assert.ok(defaultSiteDoc().sections.some((s) => s.type === 'gallery'), 'domyślnie jest miejsce na galerię');
 });
+
+test('filmy na stronie: mapa „który plik to film” tylko z poprawnymi id', () => {
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const d = parseSiteDoc({ hero: { values: { image: id(5) } }, media: { [id(5)]: 'video', [id(6)]: 'audio', 'nie-id': 'video' } });
+  assert.deepEqual(d.media, { [id(5)]: 'video' });
+  assert.equal(d.hero.values.image, id(5), 'film siedzi w tym samym polu co zdjęcie');
+  assert.deepEqual(defaultSiteDoc().media, {});
+});

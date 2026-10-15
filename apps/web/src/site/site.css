@@ -33,7 +33,7 @@
 
 /* ===== Zdjęcia ===== */
 .site-photo { position: relative; overflow: hidden; border-radius: var(--radius); background: var(--soft); }
-.site-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 1.2s var(--ease); }
+.site-photo img, .site-photo video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 1.2s var(--ease); }
 .site-photo.wide { aspect-ratio: 16 / 8; }
 .site-photo.tall { aspect-ratio: 4 / 5; }
 .site-photo.card { aspect-ratio: 4 / 5; margin-bottom: 18px; }
@@ -41,6 +41,7 @@
 .site-photo.empty { display: grid; place-items: center; }
 .site-photo.empty .serif { font-size: clamp(2.4rem, 5vw, 3.6rem); color: color-mix(in srgb, var(--ink) 30%, transparent); }
 .site-item:hover .site-photo img, .site-person:hover .site-photo img { transform: scale(1.025); }
+@media (prefers-reduced-motion: reduce) { .site-photo img, .site-photo video { transition: none; } }
 
 /* ===== Hero ===== */
 .site-hero { padding-top: clamp(32px, 6vw, 72px); }
@@ -51,7 +52,7 @@
 .site-news { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 28px; text-decoration: none; color: var(--muted); font-size: 0.9rem; }
 .site-news .site-new { margin: 0 8px 0 0; }
 .site-hero-cover { position: relative; min-height: min(86vh, 900px); border-radius: var(--radius); overflow: hidden; display: flex; align-items: flex-end; isolation: isolate; }
-.site-hero-cover > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
+.site-hero-cover > img, .site-hero-cover > video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
 .site-hero-cover::after { content: ''; position: absolute; inset: 0; background: rgb(18 16 14 / var(--photo-dim, 0.36)); z-index: -1; }
 .site-hero-cover .site-hero-text { padding: clamp(28px, 5vw, 64px); color: #fbfaf7; }
 .site-hero-cover .site-title .serif, .site-hero-cover .site-lead, .site-hero-cover .site-eyebrow, .site-hero-cover .site-news, .site-hero-cover .site-quiet { color: rgb(251 250 247 / 0.82); }

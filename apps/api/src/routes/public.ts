@@ -44,12 +44,18 @@ export function publicRoutes(app: FastifyInstance, deps: Deps) {
     const { studio, scope, user } = ctx(req);
     if (!req.body || typeof req.body.doc !== 'object' || req.body.doc === null) throw badRequest('Brak dokumentu strony.');
     const doc = parseSiteDoc(req.body.doc);
-    // Zdjęcia tylko z biblioteki tego studia – id cudzego pliku nie trafi na stronę.
+    // Zdjęcia i filmy tylko z biblioteki tego studia – id cudzego pliku nie trafi na stronę.
+    // Który plik jest filmem, ustala serwer (z biblioteki), a nie edytor.
     const ids = siteMediaIds(doc);
-    if (ids.length) {
-      const own = new Set(scope.all<{ id: string }>(`SELECT id FROM media WHERE studio_id = $studio AND kind = 'site' AND id IN (${ids.map((_, i) => `$m${i}`).join(', ')})`, Object.fromEntries(ids.map((m, i) => [`m${i}`, m]))).map((r) => r.id));
-      if (ids.some((m) => !own.has(m))) throw badRequest('Jedno ze zdjęć nie należy do tego studia. Wgraj je ponownie.');
-    }
+    const own = ids.length
+      ? new Map(
+          scope
+            .all<{ id: string; mime: string }>(`SELECT id, mime FROM media WHERE studio_id = $studio AND kind = 'site' AND id IN (${ids.map((_, i) => `$m${i}`).join(', ')})`, Object.fromEntries(ids.map((m, i) => [`m${i}`, m])))
+            .map((r) => [r.id, r.mime]),
+        )
+      : new Map<string, string>();
+    if (ids.some((m) => !own.has(m))) throw badRequest('Jeden z plików nie należy do tego studia. Wgraj go ponownie.');
+    doc.media = Object.fromEntries([...own].filter(([, mime]) => mime.startsWith('video/')).map(([id]) => [id, 'video' as const]));
     const now = nowIso();
     tx(db, () => {
       scope.run('UPDATE studios SET site_draft_json = $doc, site_draft_updated_at = $now WHERE id = $studio', { doc: JSON.stringify(doc), now });
@@ -58,12 +64,14 @@ export function publicRoutes(app: FastifyInstance, deps: Deps) {
     return editorState(db, studio.id);
   });
 
-  // Zdjęcia strony: biblioteka studia (rodzaj „site”), serwowane publicznie przez /api/public-media.
-  app.post<{ Body: { dataUrl: string } }>('/api/site/images', { ...editor, bodyLimit: 6 * 1024 * 1024 }, async (req) => {
+  // Zdjęcia i filmy strony: biblioteka studia (rodzaj „site”), serwowane publicznie przez /api/public-media
+  // (z obsługą Range – film można przewijać). Film do 40 MB jak wideo kursów, liczy się do miejsca w planie.
+  app.post<{ Body: { dataUrl: string; durationSec?: number } }>('/api/site/media', { ...editor, bodyLimit: 60 * 1024 * 1024 }, async (req) => {
     const { studio, scope, user } = ctx(req);
-    const m = storeMedia(scope, studio, { dataUrl: req.body?.dataUrl, kind: 'site', ownerId: user.id, allow: ['image'] });
+    const dur = Number(req.body?.durationSec);
+    const m = storeMedia(scope, studio, { dataUrl: req.body?.dataUrl, kind: 'site', ownerId: user.id, allow: ['image', 'video'], durationSec: Number.isFinite(dur) && dur > 0 ? dur : null });
     const ratio = scope.get<{ ratio: number | null }>('SELECT ratio FROM media WHERE studio_id = $studio AND id = $id', { id: m.id })?.ratio ?? null;
-    return { id: m.id, url: siteImageUrl(m.id), ratio };
+    return { id: m.id, url: siteImageUrl(m.id), type: m.type, ratio };
   });
 
   // Publikacja w jednej transakcji: czytelnik nigdy nie zobaczy nowego motywu ze starą treścią.

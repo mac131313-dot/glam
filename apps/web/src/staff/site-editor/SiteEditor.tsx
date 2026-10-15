@@ -20,7 +20,7 @@ import {
 import { api, ApiError } from '../../api.ts';
 import { Spinner, useToast } from '../../ui.tsx';
 import { FOOTER_ID, HERO_ID, type FromSite } from '../../site/protocol.ts';
-import { ImageField, ImagesField, PhotoList } from './images.tsx';
+import { ImageField, ImagesField, MediaKinds, PhotoList } from './images.tsx';
 import { EditorShell, FieldRow, Glyph, Group, PanelHeader, useAutosave, useHistory, usePreviewBridge } from './shell.tsx';
 
 type CatalogItem = { id: string; name: string; photoUrl: string | null };
@@ -428,7 +428,14 @@ function Editor({ initial }: { initial: EditorState }) {
 
   const pill = !meta.publishedAt ? { label: 'Nieopublikowana', on: false } : meta.unpublished || autosave.dirty ? { label: 'Zmiany czekają', on: false } : { label: 'Opublikowana', on: true };
 
+  // Rodzaj pliku (film / zdjęcie) dla miniatur i podglądu na żywo; przy zapisie serwer i tak ustala go z biblioteki.
+  const mediaKinds = {
+    isVideo: (id: string) => doc.media[id] === 'video',
+    markVideo: (id: string) => change((d) => ({ ...d, media: { ...d.media, [id]: 'video' } })),
+  };
+
   return (
+    <MediaKinds.Provider value={mediaKinds}>
     <EditorShell
       title={meta.studioName}
       pill={pill}
@@ -448,6 +455,7 @@ function Editor({ initial }: { initial: EditorState }) {
         </a>
       }
     />
+    </MediaKinds.Provider>
   );
 }
 

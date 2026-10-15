@@ -542,7 +542,7 @@ test('zdjęcia strony: wgranie, użycie w szkicu, publiczny adres; cudze zdjęci
   const beata = await login(DEMO.krakowOwner);
   const joanna = await login(DEMO.owner);
   const dataUrl = 'data:image/jpeg;base64,' + jpegHeader(1600, 1000).toString('base64');
-  const up = await call(beata, K, 'POST', '/api/site/images', { dataUrl });
+  const up = await call(beata, K, 'POST', '/api/site/media', { dataUrl });
   assert.equal(up.statusCode, 200, up.body);
   const { id, url, ratio } = up.json();
   assert.equal(url, `/api/public-media/${id}`);
@@ -561,4 +561,28 @@ test('zdjęcia strony: wgranie, użycie w szkicu, publiczny adres; cudze zdjęci
   const other = (await call(joanna, R, 'GET', '/api/site/editor')).json().doc;
   other.hero.values.image = id;
   assert.equal((await call(joanna, R, 'PUT', '/api/site/draft', { doc: other })).statusCode, 400);
+});
+
+test('filmy na stronie: wgranie mp4, serwer sam oznacza film w dokumencie, przewijanie (Range)', async () => {
+  const beata = await login(DEMO.krakowOwner);
+  // Minimalny nagłówek MP4 (ftyp) – wystarczy do rozpoznania formatu.
+  const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(64, 1)]);
+  const up = await call(beata, K, 'POST', '/api/site/media', { dataUrl: 'data:video/mp4;base64,' + mp4.toString('base64'), durationSec: 12 });
+  assert.equal(up.statusCode, 200, up.body);
+  assert.equal(up.json().type, 'video');
+  const { id, url } = up.json();
+  const part = await app.inject({ method: 'GET', url, headers: { range: 'bytes=0-15' } });
+  assert.equal(part.statusCode, 206);
+  assert.equal(part.headers['content-type'], 'video/mp4');
+
+  const doc = (await call(beata, K, 'GET', '/api/site/editor')).json().doc;
+  doc.hero.values.image = id;
+  doc.media = {}; // edytor „zapomniał” – serwer i tak wie, że to film
+  const saved = (await call(beata, K, 'PUT', '/api/site/draft', { doc, auto: true })).json();
+  assert.deepEqual(saved.doc.media, { [id]: 'video' });
+  // Zdjęcie udające film nie zostaje oznaczone jako film.
+  const jpg = (await call(beata, K, 'POST', '/api/site/media', { dataUrl: 'data:image/jpeg;base64,' + jpegHeader(800, 600).toString('base64') })).json();
+  doc.hero.values.image = jpg.id;
+  doc.media = { [jpg.id]: 'video' };
+  assert.deepEqual((await call(beata, K, 'PUT', '/api/site/draft', { doc, auto: true })).json().doc.media, {});
 });

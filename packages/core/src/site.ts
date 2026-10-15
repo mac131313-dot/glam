@@ -13,7 +13,7 @@ export type FixedSectionType = 'hero' | 'footer';
 export type CustomSectionType = 'article' | 'gallery';
 export type SectionType = SystemSectionType | FixedSectionType | CustomSectionType;
 
-/** Zdjęcie = id pliku w bibliotece studia (media, rodzaj „site”); pusty tekst = brak zdjęcia. */
+/** Zdjęcie lub film = id pliku w bibliotece studia (media, rodzaj „site”); pusty tekst = brak. Rodzaj pliku – w SiteDoc.media. */
 export type FieldValue = string | number | boolean | string[];
 export type FieldSpec =
   | { key: string; label: string; kind: 'text'; default: string; max?: number; hint?: string; placeholder?: string }
@@ -31,6 +31,7 @@ export type SectionSpec = { label: string; nav: string; groups: FieldGroup[] };
 const text = (key: string, label: string, def: string, max = 120, extra: { hint?: string; placeholder?: string } = {}): FieldSpec => ({ key, label, kind: 'text', default: def, max, ...extra });
 const area = (key: string, label: string, def: string, max = 1200, extra: { hint?: string; placeholder?: string } = {}): FieldSpec => ({ key, label, kind: 'textarea', default: def, max, ...extra });
 const toggle = (key: string, label: string, def: boolean, hint?: string): FieldSpec => ({ key, label, kind: 'toggle', default: def, hint });
+/** Pole „zdjęcie lub film” – film gra w pętli bez dźwięku, jak ruchome zdjęcie. */
 const image = (key: string, label: string, hint?: string): FieldSpec => ({ key, label, kind: 'image', default: '', hint });
 
 /** Nagłówek sekcji: tytuł i część w kursywie (jedyny ozdobnik); mała etykieta nad nim – opcjonalnie. */
@@ -41,7 +42,7 @@ const heading = (title: string, serif = '', eyebrow = ''): FieldGroup => ({
 
 const photoPosition: FieldSpec = {
   key: 'imagePosition',
-  label: 'Zdjęcie',
+  label: 'Położenie',
   kind: 'choice',
   default: 'right',
   options: [
@@ -57,9 +58,9 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
     nav: '',
     groups: [
       {
-        label: 'Zdjęcie',
+        label: 'Zdjęcie lub film',
         fields: [
-          image('image', 'Zdjęcie główne', 'Najlepiej poziome, jasne, z dużą ilością powietrza.'),
+          image('image', 'Zdjęcie lub film', 'Najlepiej poziome i jasne. Film gra w pętli, bez dźwięku.'),
           {
             key: 'imageLayout',
             label: 'Układ',
@@ -94,7 +95,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
     nav: 'Studio',
     groups: [
       heading('Ruch, który', 'jest dla Ciebie'),
-      { label: 'Zdjęcie', fields: [image('image', 'Zdjęcie studia'), photoPosition] },
+      { label: 'Zdjęcie lub film', fields: [image('image', 'Zdjęcie lub film studia'), photoPosition] },
       { label: 'Treść', fields: [area('text', 'Opis studia', '', 800, { hint: 'Puste = hasło studia. Dwa–trzy zdania wystarczą.' })] },
       {
         label: 'Elementy',
@@ -147,7 +148,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
     label: 'Stopka',
     nav: '',
     groups: [
-      { label: 'Zdjęcie', fields: [image('image', 'Zdjęcie nad stopką', 'Opcjonalne – szeroki kadr na pożegnanie.')] },
+      { label: 'Zdjęcie lub film', fields: [image('image', 'Kadr nad stopką', 'Opcjonalny – szerokie zdjęcie albo film na pożegnanie.')] },
       { label: 'Zaproszenie', fields: [text('title', 'Tytuł', 'Do zobaczenia', 60), text('serif', 'Dopisek w kursywie', 'na macie', 60), area('text', 'Tekst', '', 300, { hint: '{kod} zamienia się w kod studia, np. „Dołącz kodem {kod}”.' }), text('button', 'Przycisk', 'Otwórz aplikację', 40)] },
       { label: 'Dół strony', fields: [toggle('showAddress', 'Adres w stopce', true), toggle('showGlam', 'Dopisek „działa na glam”', false)] },
     ],
@@ -161,7 +162,7 @@ export const ARTICLE_SPEC: SectionSpec = {
   groups: [
     heading('Nowa sekcja'),
     { label: 'Treść', fields: [area('text', 'Tekst', 'Kilka zdań. Pusta linia zaczyna nowy akapit.', 4000)] },
-    { label: 'Zdjęcie', fields: [image('image', 'Zdjęcie'), photoPosition] },
+    { label: 'Zdjęcie lub film', fields: [image('image', 'Zdjęcie lub film'), photoPosition] },
     {
       label: 'Układ',
       fields: [
@@ -178,7 +179,7 @@ export const GALLERY_SPEC: SectionSpec = {
   label: 'Galeria',
   nav: '',
   groups: [
-    { label: 'Zdjęcia', fields: [{ key: 'images', label: 'Zdjęcia', kind: 'images', default: [], max: GALLERY_MAX, hint: `Do ${GALLERY_MAX} zdjęć. Przeciągnij, żeby zmienić kolejność.` }] },
+    { label: 'Zdjęcia i filmy', fields: [{ key: 'images', label: 'Zdjęcia i filmy', kind: 'images', default: [], max: GALLERY_MAX, hint: `Do ${GALLERY_MAX} plików. Przeciągnij, żeby zmienić kolejność.` }] },
     {
       label: 'Układ',
       fields: [
@@ -225,6 +226,8 @@ export type SiteDoc = {
   theme: SiteTheme;
   /** zdjęcia zajęć i trenerek tylko na stronie (id zajęć / trenerki → zdjęcie); brak = zdjęcie z panelu */
   photos: { classes: Record<string, string>; trainers: Record<string, string> };
+  /** które pliki są filmami (reszta to zdjęcia); przy zapisie serwer ustala to z biblioteki studia */
+  media: Record<string, 'video'>;
 };
 
 export const SYSTEM_SECTIONS: SystemSectionType[] = ['about', 'schedule', 'classes', 'trainers', 'more'];
@@ -275,6 +278,7 @@ export function defaultSiteDoc(): SiteDoc {
     seo: { title: '', description: '' },
     theme: { palette: null, softness: null, fonts: {} },
     photos: { classes: {}, trainers: {} },
+    media: {},
   };
 }
 
@@ -347,6 +351,11 @@ export function parseSiteDoc(raw: unknown): SiteDoc {
       fonts,
     },
     photos: { classes: photoMap(r.photos?.classes), trainers: photoMap(r.photos?.trainers) },
+    media: Object.fromEntries(
+      Object.entries(r.media && typeof r.media === 'object' ? r.media : {})
+        .filter(([k, v]) => isMediaId(k) && v === 'video')
+        .slice(0, MAX_PHOTOS),
+    ) as Record<string, 'video'>,
   };
 }
 

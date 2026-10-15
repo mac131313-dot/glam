@@ -321,7 +321,7 @@ export function FieldRow({ label, hint, children, inline }: { label: string; hin
 }
 
 /** Ikony edytora (linie 1.6 px, jak reszta panelu). */
-export function Glyph({ name }: { name: 'back' | 'desktop' | 'tablet' | 'phone' | 'undo' | 'redo' | 'close' | 'eye' | 'eyeOff' | 'trash' | 'copy' | 'drag' | 'plus' | 'section' | 'top' | 'bottom' | 'text' | 'external' | 'image' }) {
+export function Glyph({ name }: { name: 'back' | 'desktop' | 'tablet' | 'phone' | 'undo' | 'redo' | 'close' | 'eye' | 'eyeOff' | 'trash' | 'copy' | 'drag' | 'plus' | 'section' | 'top' | 'bottom' | 'text' | 'external' | 'image' | 'play' }) {
   const d: Record<typeof name, ReactNode> = {
     back: <path d="M15 18l-6-6 6-6" />,
     desktop: (
@@ -381,6 +381,7 @@ export function Glyph({ name }: { name: 'back' | 'desktop' | 'tablet' | 'phone' 
     ),
     text: <path d="M5 7h14M5 12h14M5 17h9" />,
     external: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5" />,
+    play: <path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none" />,
     image: (
       <>
         <rect x="3" y="5" width="18" height="14" rx="2" />

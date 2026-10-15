@@ -3,7 +3,7 @@
 // Kierunek: minimalizm na maksa (Isola / Unbound) – dużo powietrza, zdjęcia, jedno kursywne słowo, cienkie linie, bez cieni.
 // Kontrakt z edytorem: każda sekcja to bezpośrednie dziecko <main> z id i data-section-name (most szuka `main > section[id]`).
 //   ?podglad=1 – szkic zamiast wersji publicznej (wymaga sesji panelu), ?edytor=1 – most do edytora w ramce.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { isNewClass, siteImageUrl, siteLook, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
@@ -124,6 +124,7 @@ export function StudioSite({ slug }: { slug: string }) {
 
   const news = newClasses(studio);
   return (
+    <VideoIds.Provider value={doc.media}>
     <div className="site">
       <SiteNav studio={studio} />
       <main>
@@ -137,6 +138,7 @@ export function StudioSite({ slug }: { slug: string }) {
       </main>
       {IN_EDITOR && <EditorBridge onDoc={onDoc} onRefresh={reload} />}
     </div>
+    </VideoIds.Provider>
   );
 }
 
@@ -182,11 +184,45 @@ function Head({ v, children }: { v: Values; children?: ReactNode }) {
   );
 }
 
-/** Zdjęcie strony: leniwe, z kadrem w proporcjach z CSS. */
+/** Które pliki strony są filmami (SiteDoc.media). Pole zdjęcia przyjmuje też film – rozpoznajemy go po id. */
+const VideoIds = createContext<Record<string, 'video'>>({});
+
+function useIsVideo(src: string) {
+  const videos = useContext(VideoIds);
+  const id = /\/api\/public-media\/([0-9a-f-]{36})/.exec(src)?.[1];
+  return !!id && videos[id] === 'video';
+}
+
+const prefersReducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Film jak ruchome zdjęcie: bez dźwięku, w pętli, bez paska sterowania. Gra tylko na ekranie (oszczędza baterię),
+ * a przy „ograniczeniu ruchu” w systemie nie startuje sam – wtedy z przyciskami, żeby można go było puścić.
+ */
+function LoopVideo({ src }: { src: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [still] = useState(prefersReducedMotion);
+  useEffect(() => {
+    const v = ref.current;
+    if (!v || still) return;
+    const io = new IntersectionObserver(([e]) => (e.isIntersecting ? void v.play().catch(() => {}) : v.pause()), { threshold: 0.15 });
+    io.observe(v);
+    return () => io.disconnect();
+  }, [still]);
+  // autoPlay: przeglądarki pozwalają same uruchamiać tylko wyciszone filmy z tym atrybutem (np. na telefonie bez dotknięcia).
+  return <video ref={ref} src={still ? `${src}#t=0.1` : src} autoPlay={!still} muted loop playsInline preload={still ? 'metadata' : 'auto'} controls={still} aria-hidden={still ? undefined : 'true'} />;
+}
+
+/** Zdjęcie albo film w kadrze (wypełnia rodzica jak object-fit: cover). */
+function MediaEl({ src, alt = '' }: { src: string; alt?: string }) {
+  return useIsVideo(src) ? <LoopVideo src={src} /> : <img src={src} alt={alt} loading="lazy" decoding="async" />;
+}
+
+/** Zdjęcie (lub film) strony: leniwe, z kadrem w proporcjach z CSS. */
 function Photo({ src, className, alt = '' }: { src: string; className?: string; alt?: string }) {
   return (
     <div className={`site-photo${className ? ` ${className}` : ''}`}>
-      <img src={src} alt={alt} loading="lazy" decoding="async" />
+      <MediaEl src={src} alt={alt} />
     </div>
   );
 }
@@ -289,7 +325,7 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
     <section id={HERO_ID} data-section-name="Nagłówek strony" className={`site-hero layout-${layout}`}>
       {layout === 'cover' && photo ? (
         <div className="site-hero-cover">
-          <img src={photo} alt="" />
+          <MediaEl src={photo} />
           {text}
         </div>
       ) : layout === 'side' && photo ? (
