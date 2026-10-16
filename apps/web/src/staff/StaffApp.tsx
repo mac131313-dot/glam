@@ -1,5 +1,5 @@
 // Panele ról (3, 2.1): menu budowane z siatki uprawnień (core/roles.ts) – to samo, co sprawdza serwer.
-// Trenerka: Dziś · Klientki · Wiadomości · Powitania · Mój profil · Kursy · Kartki · Mój grafik.
+// Trenerka: Dziś · Grupy (czat jak w komunikatorze) · Klientki · Wiadomości · Powitania · Mój profil · Kursy · Kartki · Mój grafik.
 // Recepcja: Wejście · Dziś · Klientki · Grafik · Wiadomości · Kasa · Sklep · Wydarzenia.
 // Koordynatorka: Społeczność · Edycje sezonowe · Muzyka. Właścicielka: wszystko (panel w stylu Shopify).
 import { lazy, Suspense, useEffect, useState } from 'react';
@@ -22,6 +22,7 @@ import { SiteOverview } from './site-editor/SiteOverview.tsx';
 const Analytics = lazy(() => import('./Analytics.tsx'));
 const Clients = lazy(() => import('./Clients.tsx'));
 const Messages = lazy(() => import('./Messages.tsx'));
+const GroupChats = lazy(() => import('./GroupChats.tsx'));
 const ScheduleExtras = lazy(() => import('./ScheduleExtras.tsx'));
 const Gifts = lazy(() => import('./Gifts.tsx'));
 const ShopAdmin = lazy(() => import('./ShopAdmin.tsx'));
@@ -42,6 +43,7 @@ const SECTIONS: Section[] = [
   { id: 'analytics', label: 'Analityka i KPI', icon: 'chart', perms: ['finance.view'], group: 'Studio' },
   { id: 'entrance', label: 'Wejście', icon: 'ticket', perms: ['participants.manage'], group: 'Codziennie' },
   { id: 'today', label: 'Dziś', icon: 'sun', perms: ['day.own', 'day.all'], group: 'Codziennie' },
+  { id: 'groups', label: 'Grupy', icon: 'people', perms: ['messages.group.own', 'community.moderate'], group: 'Codziennie' },
   { id: 'clients', label: 'Klientki', icon: 'people', perms: ['clients.view', 'notes.write'], group: 'Codziennie' },
   { id: 'messages', label: 'Wiadomości', icon: 'chat', perms: ['messages.group.own', 'messages.group.all', 'chat.answer'], group: 'Codziennie' },
   { id: 'desk', label: 'Kasa i wejściówki', icon: 'gift', perms: ['desk.sell'], group: 'Codziennie' },
@@ -163,6 +165,7 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
           {section === 'entrance' && <Entrance />}
           {section === 'today' && <Today roles={roles} />}
           {section === 'clients' && <Clients roles={roles} />}
+          {section === 'groups' && <GroupChats roles={roles} />}
           {section === 'messages' && <Messages roles={roles} />}
           {section === 'welcomes' && <Welcomes me={props.me} isOwner={roles.includes('owner')} />}
           {section === 'profile' && <TrainerProfile me={props.me} reloadMe={props.reloadMe} />}

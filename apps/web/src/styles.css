@@ -466,6 +466,49 @@ label.btn { cursor: pointer; }
 .chat-pending { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--soft); width: fit-content; max-width: 100%; }
 .chat-pending .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-attach { flex: none; padding-inline: 10px; }
+/* Pasek wiadomości jak w komunikatorze (czat grupy) */
+.chat-composer.bar .row { gap: 8px; align-items: center; }
+.chat-composer.bar .input { border-radius: 999px; padding-block: 10px; background: var(--surface); }
+.chat-composer.bar .chat-attach { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: grid; place-items: center; }
+.chat-send { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--ink); color: var(--bg); cursor: pointer; transition: opacity 0.2s var(--ease), transform 0.2s var(--ease); }
+.chat-send:disabled { opacity: 0.25; cursor: default; }
+.chat-send:not(:disabled):active { transform: scale(0.94); }
+
+/* Czat grupy: pełny ekran, przewijana rozmowa i przypięte pole na dole */
+.page-body.gchat-body { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.gchat-title { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.gchat-title > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gchat-scroll { flex: 1; overflow-y: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; overscroll-behavior: contain; }
+.gchat-scroll > :first-child { margin-top: auto; }
+.gchat-day { text-align: center; margin: 18px 0 8px; text-transform: lowercase; letter-spacing: 0.02em; }
+.gchat-row { display: flex; align-items: flex-end; gap: 8px; margin-top: 2px; }
+.gchat-row.first { margin-top: 12px; }
+.gchat-row.me { justify-content: flex-end; }
+.gchat-avatar { width: 38px; flex: none; }
+.gchat-col { display: flex; flex-direction: column; gap: 3px; max-width: 78%; min-width: 0; }
+.gchat-row.me .gchat-col { align-items: flex-end; }
+.gchat-author { display: inline-flex; align-items: center; gap: 6px; padding-left: 12px; color: var(--muted); }
+.gchat-author .badge { font-size: 0.68rem; padding: 1px 8px; }
+.gchat-bubble { max-width: 100%; text-align: left; border: 0; font: inherit; color: inherit; cursor: pointer; word-break: break-word; }
+.gchat-bubble.me { color: var(--accent-ink); }
+.gchat-bubble.lead { background: var(--surface); border: 1px solid var(--line); }
+.gchat-bubble.is-hidden { opacity: 0.45; }
+.gchat-row:not(.me) .gchat-bubble { border-bottom-left-radius: 6px; }
+.gchat-row.me .gchat-bubble { border-bottom-right-radius: 6px; }
+.gchat-meta { display: inline-flex; gap: 8px; padding-inline: 12px; }
+.gchat-composer { padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); max-width: 760px; width: 100%; margin: 0 auto; }
+
+/* Lista rozmów (Razem → Grupy, aplikacja trenerki) */
+.thread-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.thread { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 4px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 18px; }
+.thread:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+.thread-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.thread-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.thread-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 0.9rem; }
+.thread.unread .thread-preview { color: var(--ink); font-weight: 600; }
+.thread-dot { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 0.72rem; display: grid; place-items: center; font-weight: 600; }
+.thread-group-head { margin: 18px 4px 4px; }
 html.a11y-contrast { --muted: var(--ink); --line: color-mix(in srgb, var(--ink) 35%, transparent); }
 html.a11y-reduce *, html.a11y-reduce *::before, html.a11y-reduce *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 .cast-btn { gap: 6px; }

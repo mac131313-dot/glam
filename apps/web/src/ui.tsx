@@ -102,7 +102,7 @@ export const PAYMENT_LABELS: Record<string, string> = {
 // ——— Klocki podstron (v2.11) ———
 
 /** Podstrona na pełny ekran z przyciskiem „Wróć” – w aplikacji klientki i w panelu. */
-export function Page({ title, onBack, children, actions }: { title: ReactNode; onBack: () => void; children: ReactNode; actions?: ReactNode }) {
+export function Page({ title, onBack, children, actions, bodyClass }: { title: ReactNode; onBack: () => void; children: ReactNode; actions?: ReactNode; bodyClass?: string }) {
   useLayer(onBack);
   const ref = useDialogFocus();
   const titleId = useId();
@@ -117,7 +117,7 @@ export function Page({ title, onBack, children, actions }: { title: ReactNode; o
         <h2 id={titleId} style={{ margin: 0, flex: 1, fontSize: '1.15rem' }}>{title}</h2>
         {actions}
       </header>
-      <div className="page-body">{children}</div>
+      <div className={`page-body ${bodyClass ?? ''}`}>{children}</div>
     </div>
   );
 }

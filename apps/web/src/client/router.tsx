@@ -1,6 +1,7 @@
 // Podstrony aplikacji klientki: stos „otwórz → wróć” nad pięcioma zakładkami. Trasa to krótki tekst,
 // np. „passes”, „course/co1”, „survey/abc” – te same, które przychodzą w powiadomieniach (pole action).
 import { lazy, Suspense, type ComponentType } from 'react';
+import { GroupChatPage } from '../groupChat.tsx';
 import { Page, Spinner } from '../ui.tsx';
 
 const AccountPages = lazy(() => import('./AccountPages.tsx'));
@@ -114,6 +115,8 @@ export function RouteView({ route, close }: { route: string; close: () => void }
   const [head, ...rest] = route.split('/');
   const arg = rest.join('/') || null;
   const Group = GROUP[head];
+  // Rozmowa grupy ma własny pełny ekran (nagłówek z grupą, pole wiadomości na dole).
+  if (head === 'groups' && arg) return <GroupChatPage groupId={arg} onBack={close} />;
   return (
     <Page title={TITLES[head] ?? ''} onBack={close}>
       <Suspense fallback={<Spinner />}>{Group ? <Group route={head} arg={arg} close={close} /> : <p className="muted">Nie ma takiej strony.</p>}</Suspense>

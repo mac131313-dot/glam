@@ -1,8 +1,9 @@
 // Społeczność (4.5, 4.3, 4.12.4): feed z kalendarzem wydarzeń, grupy, wyzwania, wspólna playlista, zaproszenia
 // (polecenie z pierwszymi zajęciami gratis, wejściówka-prezent z QR i przepisaniem, zaproszenia na zajęcia).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, fmtDay, fmtLongDay, fmtTime, useApi } from '../api.ts';
 import { AuthImg, Avatar, Empty, Field, PAYMENT_LABELS, Progress, QrCode, readFile, Sheet, Spinner, Tabs, Toggle, useAction, useToast } from '../ui.tsx';
+import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -176,67 +177,69 @@ export function ReportSheet({ target, onClose }: { target: { kind: string; id: s
   );
 }
 
+type GroupItem = ThreadItem & { description: string | null; approval: number; joined: number; requested: number };
+
+// Rozmowę (także z powiadomienia „community/groups/<id>”) otwiera RouteView jako osobny ekran – GroupChatPage.
 function Groups() {
-  const groups = useApi<{ id: string; name: string; description: string | null; approval: number; members: number; joined: number; requested: number }[]>('/groups');
-  const [open, setOpen] = useState<string | null>(null);
+  const groups = useApi<GroupItem[]>('/groups');
+  const { open } = useClient();
   const { run } = useAction();
+  // Po powrocie z rozmowy odświeżamy liczniki.
+  useEffect(() => {
+    const t = setInterval(() => document.visibilityState === 'visible' && groups.reload(), 15_000);
+    return () => clearInterval(t);
+  }, [groups.reload]);
   if (!groups.data) return <Spinner />;
-  if (open) {
-    const g = groups.data.find((x) => x.id === open)!;
-    return (
-      <div className="stack">
-        <button className="ritual-toggle" style={{ alignSelf: 'flex-start', paddingLeft: 0 }} onClick={() => setOpen(null)}>
-          ← Wszystkie grupy
-        </button>
-        <div className="stack" style={{ gap: 4 }}>
-          <h2 className="forme-h serif">{g.name}</h2>
-          {g.description && <p className="small muted" style={{ margin: 0 }}>{g.description}</p>}
-          <button className="ritual-toggle" style={{ alignSelf: 'flex-start', paddingLeft: 0 }} onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(() => (setOpen(null), groups.reload())))}>
-            Opuść grupę
-          </button>
-        </div>
-        <Feed group={g.id} />
-      </div>
-    );
-  }
   if (groups.data.length === 0) return <Empty icon="🌸">Studio nie założyło jeszcze grup.</Empty>;
-  // Lista jak reszta aplikacji: nazwa, jedno zdanie, liczba osób, jedna dyskretna akcja; cienka linia między grupami.
+  const mine = groups.data.filter((g) => g.joined).sort((a, b) => (b.last?.at ?? '').localeCompare(a.last?.at ?? ''));
+  const others = groups.data.filter((g) => !g.joined);
   return (
-    <ul className="session-list">
-      {groups.data.map((g) => (
-        <li key={g.id} className="group-row">
-          <button className="group-main" onClick={() => (g.joined ? setOpen(g.id) : undefined)} disabled={!g.joined} aria-label={g.joined ? `Otwórz grupę ${g.name}` : undefined}>
-            <span className="session-title">{g.name}</span>
-            {g.description && <span className="session-meta">{g.description}</span>}
-            <span className="session-meta">
-              {g.members} {osoby(g.members)}
-              {g.joined ? ' · jesteś w grupie' : g.approval ? ' · dołączanie za zgodą studia' : ''}
-            </span>
-          </button>
-          {g.joined ? (
-            <button className="chip" aria-pressed="true" onClick={() => setOpen(g.id)}>
-              Otwórz
-            </button>
-          ) : g.requested ? (
-            <button className="chip" title="Kliknij, żeby wycofać prośbę" onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(groups.reload), 'Prośba wycofana')}>
-              Prośba wysłana
-            </button>
-          ) : (
-            <button
-              className="chip"
-              onClick={() =>
-                run(
-                  () => api<{ requested?: boolean; message?: string }>(`/groups/${g.id}/join`, { method: 'POST' }).then((r) => (groups.reload(), r)),
-                  (r) => r?.message ?? 'Witaj w grupie 🌸',
-                )
-              }
-            >
-              {g.approval ? 'Poproś o dołączenie' : 'Dołącz'}
-            </button>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className="stack">
+      {mine.length > 0 && (
+        <ul className="thread-list">
+          {mine.map((g) => (
+            <ThreadRow key={g.id} g={g} onOpen={() => open(`groups/${g.id}`)} />
+          ))}
+        </ul>
+      )}
+      {others.length > 0 && (
+        <>
+          <div className="eyebrow thread-group-head">{mine.length ? 'Dołącz do kolejnej' : 'Dołącz do grupy'}</div>
+          <ul className="session-list">
+            {others.map((g) => (
+              <li key={g.id} className="group-row">
+                <span className="group-main">
+                  <span className="session-title">{g.name}</span>
+                  {g.description && <span className="session-meta">{g.description}</span>}
+                  <span className="session-meta">
+                    {g.trainer ? `prowadzi ${g.trainer} · ` : ''}
+                    {g.members} {osoby(g.members)}
+                    {g.approval ? ' · dołączanie za zgodą studia' : ''}
+                  </span>
+                </span>
+                {g.requested ? (
+                  <button className="chip" title="Kliknij, żeby wycofać prośbę" onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(groups.reload), 'Prośba wycofana')}>
+                    Prośba wysłana
+                  </button>
+                ) : (
+                  <button
+                    className="chip"
+                    onClick={() =>
+                      run(
+                        () => api<{ requested?: boolean; message?: string }>(`/groups/${g.id}/join`, { method: 'POST' }).then((r) => (groups.reload(), r)),
+                        (r) => r?.message ?? 'Witaj w grupie 🌸',
+                      )
+                    }
+                  >
+                    {g.approval ? 'Poproś o dołączenie' : 'Dołącz'}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 
