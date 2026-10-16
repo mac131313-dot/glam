@@ -5,6 +5,7 @@ import type { Db } from './db.ts';
 import { HttpError, forbidden } from './errors.ts';
 import { StudioScope } from './scope.ts';
 import type { EmailSender, PaymentProvider, PushSender, SmsGateway } from './sms.ts';
+import type { DnsResolver } from './services/domain.ts';
 import { loadStudio, type Studio } from './services/studio.ts';
 
 export type { Role };
@@ -19,6 +20,8 @@ export type Deps = {
   push?: PushSender;
   /** Publiczny adres aplikacji (linki w SMS, kalendarz, linki płatności). */
   publicUrl?: string;
+  /** Zapytania DNS przy sprawdzaniu własnej domeny studia (domyślnie node:dns; w testach podstawka). */
+  dns?: DnsResolver;
 };
 
 declare module 'fastify' {

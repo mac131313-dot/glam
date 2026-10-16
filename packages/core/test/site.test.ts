@@ -78,10 +78,10 @@ test('filmy na stronie: mapa „który plik to film” tylko z poprawnymi id', (
   assert.deepEqual(defaultSiteDoc().media, {});
 });
 
-test('menu baru: pozycje oczyszczone, zdjęcia w bibliotece, zakładka dopiero z pozycjami', () => {
+test('menu baru: pozycje oczyszczone, zdjęcia w bibliotece, zakładka zawsze', () => {
   const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
   const empty = parseSiteDoc({});
-  assert.ok(!sitePages(empty, { shop: false }).some((p) => p.type === 'menu'), 'pusta lista = bez zakładki');
+  assert.ok(sitePages(empty, { shop: false }).some((p) => p.type === 'menu'), 'pusta lista też ma zakładkę');
   const d = parseSiteDoc({
     sections: [
       {

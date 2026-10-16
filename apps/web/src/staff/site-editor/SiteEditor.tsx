@@ -21,6 +21,7 @@ import {
 import { api, ApiError } from '../../api.ts';
 import { Spinner, useToast } from '../../ui.tsx';
 import { FOOTER_ID, HERO_ID, type FromSite } from '../../site/protocol.ts';
+import { DomainButton, type SiteDns } from './dns.tsx';
 import { ImageField, ImagesField, MediaKinds, PhotoList } from './images.tsx';
 import { MenuField } from './menu.tsx';
 import { EditorShell, FieldRow, Glyph, Group, PanelHeader, useAutosave, useHistory, usePreviewBridge } from './shell.tsx';
@@ -34,6 +35,7 @@ type EditorState = {
   publishedAt: string | null;
   draftUpdatedAt: string | null;
   unpublished: boolean;
+  dns: SiteDns;
   catalog: { classes: CatalogItem[]; trainers: CatalogItem[] };
 };
 
@@ -451,6 +453,7 @@ function Editor({ initial }: { initial: EditorState }) {
       publishLabel={publishing ? 'Publikuję…' : 'Publikuj'}
       publishDisabled={publishing || (!meta.unpublished && !autosave.dirty && !!meta.publishedAt)}
       backHref="/panel#site"
+      titleExtra={<DomainButton dns={meta.dns} slug={meta.slug} />}
       extra={
         <a className="se-ikona" href={`/s/${meta.slug}`} target="_blank" rel="noopener" aria-label="Otwórz opublikowaną stronę" title="Otwórz opublikowaną stronę">
           <Glyph name="external" />

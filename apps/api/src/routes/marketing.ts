@@ -7,6 +7,7 @@ import {
   APP_ICONS,
   BADGES,
   couponLabel,
+  editionLook,
   editionsFor,
   fill,
   HOLIDAYS,
@@ -83,7 +84,7 @@ export function marketingRoutes(app: FastifyInstance, deps: Deps) {
     const { studio } = ctx(req);
     const y = Number(localParts(new Date(), studio.timezone).date.slice(0, 4));
     return {
-      editions: [...editionsFor(y), ...editionsFor(y + 1)].filter((e) => e.to >= localParts(new Date(), studio.timezone).date).slice(0, 20),
+      editions: [...editionsFor(y), ...editionsFor(y + 1)].filter((e) => e.to >= localParts(new Date(), studio.timezone).date).slice(0, 20).map((e) => ({ ...e, ...editionLook(e.id) })),
       palettes: PALETTES.map((p) => ({ id: p.id, label: p.label, palette: p.palette })),
       sounds: THEME_SOUNDS,
       icons: APP_ICONS,

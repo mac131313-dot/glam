@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanNutrition, hasStock, nutritionHighlight, nutritionRows, priceRange, returnStock, sortVariants, takeStock, type Variant } from '../src/index.ts';
+import { cleanNutrition, cleanSetName, shopSuggestions, hasStock, nutritionHighlight, nutritionRows, priceRange, returnStock, sortVariants, takeStock, type Variant } from '../src/index.ts';
 
 test('sklep: wariant bez limitu nie traci sztuk, policzalny – tak', () => {
   const v: Variant[] = [
@@ -31,4 +31,23 @@ test('sklep: makro – zostaje tylko to, co wpisano; przecinek dziesiętny dzia�
   assert.equal(nutritionHighlight({ kcal: 180 }), '180 kcal');
   assert.equal(nutritionHighlight({ kcal: 180, protein: 30 }), '30 g białka');
   assert.equal(nutritionHighlight(null), null);
+});
+
+test('komplety: reszta zestawu osobno, propozycje uzupełniają zakup, wyprzedane pomijane', () => {
+  const p = (id: string, category: string, set: string | null = null, extra: { featured?: boolean; status?: string } = {}) => ({ id, category, set, featured: false, status: 'available', ...extra });
+  const leggins = p('leg', 'apparel', 'Komplet Isola');
+  const all = [
+    leggins,
+    p('top', 'apparel', 'komplet isola'),
+    p('bluza', 'apparel', 'Komplet Isola', { status: 'sold_out' }),
+    p('drugie-legginsy', 'apparel'),
+    p('bidon', 'accessory', null, { featured: true }),
+    p('mata', 'accessory'),
+    p('matcha', 'drink'),
+  ];
+  const { set, more } = shopSuggestions(leggins, all);
+  assert.deepEqual(set.map((x) => x.id), ['top']);
+  assert.deepEqual(more.map((x) => x.id), ['bidon', 'mata', 'drugie-legginsy']);
+  assert.equal(cleanSetName('  Komplet   Isola '), 'Komplet Isola');
+  assert.equal(cleanSetName('   '), null);
 });

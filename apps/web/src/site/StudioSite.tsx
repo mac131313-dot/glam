@@ -11,6 +11,7 @@ import { StudioBrand } from '../StudioBrand.tsx';
 import { Spinner, Watermark } from '../ui.tsx';
 import { Carousel } from './Carousel.tsx';
 import { EditorBridge } from './EditorBridge.tsx';
+import { GradualBlur } from './GradualBlur.tsx';
 import { MOTION, useScrollVar } from './motion.ts';
 import { FOOTER_ID, HERO_ID } from './protocol.ts';
 import { Reveal } from './Reveal.tsx';
@@ -57,9 +58,11 @@ const WEEKDAYS = ['niedziela', 'poniedziałek', 'wtorek', 'środa', 'czwartek', 
  * Napis przy wolnych miejscach w grafiku. To decyzja „sprzedażowa”: ile miejsc to już „ostatnie”,
  * czy pokazywać dokładną liczbę, co z pełnymi zajęciami (lista oczekujących jest w aplikacji).
  */
-export function spotsLabel(spotsLeft: number): { text: string; tone: 'calm' | 'last' | 'full' } {
+export function spotsLabel(spotsLeft: number): { text: string; tone: 'calm' | 'few' | 'last' | 'full' } {
   if (spotsLeft <= 0) return { text: 'Lista oczekujących', tone: 'full' };
-  if (spotsLeft <= 2) return { text: spotsLeft === 1 ? 'Ostatnie miejsce' : 'Ostatnie 2 miejsca', tone: 'last' };
+  // Ostatnie miejsce mocno (wykrzyknik w CSS), dwa–trzy jako odliczanie, dalej spokojna liczba.
+  if (spotsLeft === 1) return { text: 'Ostatnie miejsce', tone: 'last' };
+  if (spotsLeft <= 3) return { text: `Zostały ${spotsLeft} miejsca`, tone: 'few' };
   return { text: `${spotsLeft} wolnych`, tone: 'calm' };
 }
 
@@ -175,9 +178,49 @@ export function StudioSite({ slug }: { slug: string }) {
         )}
         {doc.footer.visible && <Footer studio={studio} />}
       </main>
+      {/* Dół okna: treść miękko rozmywa się i ginie w tle strony; przy końcu strony rozmycie znika, żeby nie zasłaniać stopki. */}
+      <PageBlur />
       {IN_EDITOR && <EditorBridge onDoc={onDoc} onRefresh={reload} />}
     </div>
     </VideoIds.Provider>
+  );
+}
+
+/**
+ * Rozmycie na dole okna. Nad nagłówkiem strony go nie ma (rozmazywałoby przycisk zapisu na zdjęciu):
+ * pojawia się płynnie dopiero, gdy dół nagłówka wyjedzie nad dolną krawędź okna.
+ * Siłę skalujemy zmienną --gradual-blur-hover (GradualBlur mnoży przez nią rozmycie i tint) – nie przez opacity,
+ * bo przezroczysty rodzic odciąłby backdrop-filter od treści strony.
+ */
+function PageBlur() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const hero = document.getElementById(HERO_ID);
+      const reach = el.firstElementChild?.getBoundingClientRect().height || 1;
+      const k = hero ? Math.min(1, Math.max(0, (innerHeight - hero.getBoundingClientRect().bottom) / reach)) : 1;
+      el.style.setProperty('--gradual-blur-hover', k.toFixed(3));
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      cancelAnimationFrame(frame);
+    };
+  });
+  return (
+    <div ref={ref} style={{ display: 'contents' }}>
+      <GradualBlur target="page" position="bottom" height="7rem" strength={2} layers={8} tint="color-mix(in srgb, var(--bg) 55%, transparent)" autoHide zIndex={5} />
+    </div>
   );
 }
 
@@ -368,6 +411,7 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
       {(layout === 'cover' || layout === 'screen') && photo ? (
         <div className="site-hero-cover">
           <MediaEl src={photo} />
+          {s(v, 'imageBlur') && s(v, 'imageBlur') !== 'none' && <div className={`site-hero-blur ${s(v, 'imageBlur')}`} aria-hidden />}
           {/* Na zdjęciu promienie mają być ledwo widoczne: chłodna biel zamiast złota, słabiej i z mniejszą ilością pyłu. */}
           <SideRays className="site-hero-rays" rayColor1="#F3F1EC" rayColor2="#FFFFFF" intensity={0.8} speed={1.2} dust={0.12} opacity={0.55} />
           {text}
@@ -453,7 +497,7 @@ function SectionView({ studio, section, news, subpage = false }: { studio: Publi
     case 'shop':
       return <ShopSection studio={studio} v={section.values} attrs={attrs} />;
     case 'menu':
-      return <MenuSection v={section.values} attrs={attrs} />;
+      return <MenuSection v={section.values} attrs={attrs} subpage={subpage} />;
     case 'more':
       return <MoreSection studio={studio} v={section.values} attrs={attrs} />;
     case 'article':
@@ -587,6 +631,8 @@ function ScheduleSection({ studio, v, attrs, news }: { studio: PublicStudio; v: 
   const nextDay = keys.find((k) => k > day && days.has(k));
   const label = newsLabel(studio);
   const dayIndex = Math.max(0, keys.indexOf(day));
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = studio.schedule.sessions.find((x) => x.id === openId) ?? null;
 
   return (
     <section {...attrs}>
@@ -633,7 +679,8 @@ function ScheduleSection({ studio, v, attrs, news }: { studio: PublicStudio; v: 
             return (
               <li key={x.id} className={past ? 'past' : undefined} style={{ '--i': i } as CSSProperties}>
                 <span className="site-time">{fmt.time(x.startsAt)}</span>
-                <span className="site-row-main">
+                {/* Cały wiersz otwiera okno zajęć (przycisk rozciągnięty na wiersz), „Zapisz się” leży nad nim. */}
+                <button type="button" className="site-row-main" aria-haspopup="dialog" onClick={() => setOpenId(x.id)}>
                   <span className="site-row-name">
                     {x.className}
                     {news.has(x.classTypeId) && <span className="site-new">{label}</span>}
@@ -641,7 +688,7 @@ function ScheduleSection({ studio, v, attrs, news }: { studio: PublicStudio; v: 
                   <span className="site-quiet">
                     {x.trainer} · {minutes(x.startsAt, x.endsAt)} min{x.zone ? ` · ${x.zone}` : ''}
                   </span>
-                </span>
+                </button>
                 {!past && b(v, 'showSpots') && <span className={`site-spots ${spots.tone}`}>{spots.text}</span>}
                 {!past && s(v, 'bookLabel') && (
                   <a className="site-book" href={APP_URL} aria-label={`${s(v, 'bookLabel')}: ${x.className}, ${fmt.time(x.startsAt)}`}>
@@ -653,7 +700,120 @@ function ScheduleSection({ studio, v, attrs, news }: { studio: PublicStudio; v: 
           })}
         </ul>
       )}
+      {open && <SessionDialog key={open.id} studio={studio} v={v} x={open} isNew={news.has(open.classTypeId)} onClose={() => setOpenId(null)} />}
     </section>
+  );
+}
+
+/**
+ * Okno zajęć z grafiku: zdjęcie i opis typu zajęć z GLAM, termin, kto prowadzi, sala, wolne miejsca i zapis.
+ * Ten sam natywny <dialog> co okno trenerki (fokus, Esc, tło), na telefonie wysuwa się od dołu.
+ */
+function SessionDialog({ studio, v, x, isNew, onClose }: { studio: PublicStudio; v: Values; x: PublicSession; isNew: boolean; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  const fmt = useFormatters(studio.timezone);
+  const c = studio.classes.find((k) => k.id === x.classTypeId);
+  const photo = c ? classPhoto(studio, c) : null;
+  const past = new Date(x.startsAt).getTime() < Date.now();
+  const spots = spotsLabel(x.spotsLeft);
+  const book = s(v, 'bookLabel') || 'Zapisz się';
+  const paragraphs = (c?.description ?? '').split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const titleId = `session-${x.id}-name`;
+  // Grafik zna tylko imię prowadzącej – profil szukamy po imieniu (dokładnie, potem po pierwszym słowie).
+  const trainer =
+    studio.trainers.find((t) => t.name === x.trainer) ??
+    studio.trainers.find((t) => t.name.split(' ')[0] === x.trainer.split(' ')[0]) ??
+    null;
+  const [showTrainer, setShowTrainer] = useState(false);
+  const trainerPic = trainer ? trainerPhoto(studio, trainer) : null;
+  const trainerClasses = trainer
+    ? ([...new Set(trainer.classes.map((id) => studio.classes.find((k) => k.id === id)?.name).filter(Boolean))] as string[])
+    : [];
+  return (
+    <dialog
+      ref={ref}
+      className="site-dialog"
+      aria-labelledby={titleId}
+      // React przepuszcza `close` z okna profilu (dziecko w drzewie) – zamykamy tylko na własne zdarzenie.
+      onClose={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && ref.current?.close()}
+    >
+      <button type="button" className="site-dialog-close" onClick={() => ref.current?.close()} aria-label="Zamknij">
+        <Icon name="close" size={18} />
+      </button>
+      <div className="site-trainer">
+        {photo ? (
+          <Photo src={photo} className="tall" alt={x.className} />
+        ) : (
+          <div className="site-photo tall empty" style={{ background: c?.color }} aria-hidden="true">
+            <span className="serif">{x.className.charAt(0)}</span>
+          </div>
+        )}
+        <div className="site-trainer-text">
+          <p className="site-eyebrow">
+            {fmt.dayLong(x.startsAt)}, {fmt.time(x.startsAt)}–{fmt.time(x.endsAt)}
+          </p>
+          <h3 id={titleId} className="site-trainer-name serif">
+            {x.className}
+            {isNew && <span className="site-new">{newsLabel(studio)}</span>}
+          </h3>
+          <p className="site-lead">
+            {minutes(x.startsAt, x.endsAt)} min{x.zone ? ` · ${x.zone}` : ''}
+            {c?.level ? ` · ${c.level}` : ''}
+          </p>
+          {paragraphs.map((p, i) => (
+            <p key={i} className="site-prose">
+              {p}
+            </p>
+          ))}
+          {x.trainer &&
+            (trainer ? (
+              <button type="button" className="site-host" aria-haspopup="dialog" onClick={() => setShowTrainer(true)}>
+                <HostAvatar name={trainer.name} photo={trainerPic} />
+                <span className="site-host-text">
+                  <span className="site-host-label">Prowadzący</span>
+                  <span className="site-host-name">{trainer.name}</span>
+                </span>
+                <span className="site-host-more">zobacz profil</span>
+              </button>
+            ) : (
+              <div className="site-host">
+                <HostAvatar name={x.trainer} photo={null} />
+                <span className="site-host-text">
+                  <span className="site-host-label">Prowadzący</span>
+                  <span className="site-host-name">{x.trainer}</span>
+                </span>
+              </div>
+            ))}
+          {!past && (
+            <div className="site-session-actions">
+              {b(v, 'showSpots') && <span className={`site-spots ${spots.tone}`}>{spots.text}</span>}
+              <a className="btn" href={APP_URL}>
+                {book}
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+      {showTrainer && trainer && <TrainerDialog studio={studio} t={trainer} names={trainerClasses} onClose={() => setShowTrainer(false)} />}
+    </dialog>
+  );
+}
+
+/** Okrągłe zdjęcie prowadzącej w oknie zajęć; bez zdjęcia – pierwsza litera imienia. */
+function HostAvatar({ name, photo }: { name: string; photo: string | null }) {
+  return photo ? (
+    <span className="site-host-avatar">
+      <MediaEl src={photo} alt="" />
+    </span>
+  ) : (
+    <span className="site-host-avatar empty serif" aria-hidden="true">
+      {name.charAt(0)}
+    </span>
   );
 }
 
@@ -980,10 +1140,11 @@ function Lightbox({ ids, start, label, onClose }: { ids: string[]; start: number
  * Menu baru: pozycje z edytora strony, pogrupowane w kategorie. Przy kilku kategoriach – zakładki nad listą.
  * Wiersz jak w karcie kawiarni: nazwa, kropki prowadzące wzrok do ceny, pod spodem opis drobnym drukiem.
  */
-function MenuSection({ v, attrs }: { v: Values; attrs: Attrs }) {
+function MenuSection({ v, attrs, subpage }: { v: Values; attrs: Attrs; subpage: boolean }) {
   const items = menuItems(v);
   const [cat, setCat] = useState<string | null>(null);
-  if (items.length === 0 && !IN_EDITOR) return null;
+  // Na stronie głównej pusta sekcja znika; na własnej zakładce mówi, że menu dopiero się pojawi.
+  if (items.length === 0 && !IN_EDITOR && !subpage) return null;
   const groups = new Map<string, MenuItem[]>();
   for (const x of items) groups.set(x.category.trim(), [...(groups.get(x.category.trim()) ?? []), x]);
   const cats = [...groups.keys()];
@@ -1008,7 +1169,7 @@ function MenuSection({ v, attrs }: { v: Values; attrs: Attrs }) {
         </div>
       )}
       {items.length === 0 ? (
-        <p className="site-empty serif">Dodaj pozycje menu w panelu po prawej</p>
+        <p className="site-empty serif">{IN_EDITOR ? 'Dodaj pozycje menu w panelu po prawej' : 'Menu wkrótce – zajrzyj do baru po zajęciach'}</p>
       ) : (
         <div key={cat ?? 'all'}>
           {shown.map(([c, list]) => (
@@ -1038,6 +1199,8 @@ function MenuSection({ v, attrs }: { v: Values; attrs: Attrs }) {
           ))}
         </div>
       )}
+      {/* Menu baru to oferta na miejscu – w odróżnieniu od sklepu, który wysyła do domu. */}
+      {items.length > 0 && <p className="site-quiet site-bar-onsite">Tylko na miejscu, w barze studia.</p>}
       {s(v, 'note') && <p className="site-bar-note serif">{s(v, 'note')}</p>}
     </div>
   );
@@ -1122,10 +1285,12 @@ function useFormatters(timeZone: string) {
   return useMemo(() => {
     const time = new Intl.DateTimeFormat('pl-PL', { timeZone, hour: '2-digit', minute: '2-digit' });
     const dayShort = new Intl.DateTimeFormat('pl-PL', { timeZone, weekday: 'long' });
+    const dayLong = new Intl.DateTimeFormat('pl-PL', { timeZone, weekday: 'long', day: 'numeric', month: 'long' });
     const key = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
     return {
       time: (iso: string) => time.format(new Date(iso)),
       dayShort: (iso: string) => dayShort.format(new Date(iso)),
+      dayLong: (iso: string) => dayLong.format(new Date(iso)),
       dateKey: (iso: string) => key.format(new Date(iso)),
     };
   }, [timeZone]);

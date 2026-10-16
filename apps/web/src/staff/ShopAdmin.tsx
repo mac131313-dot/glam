@@ -23,6 +23,7 @@ type Product = {
   nutrition: Nutrition | null;
   featured: boolean;
   rewardEligible: boolean;
+  set: string | null;
   variants: Variant[];
 };
 type Order = { id: string; kind: string; status: string; items: { name: string; variant: string; qty: number }[]; total: string; method: string | null; expires_at: string | null; created_at: string; name: string | null; phone: string | null; address: { line: string; city: string; zip: string } | null };
@@ -131,7 +132,7 @@ export default function ShopAdmin() {
             );
           })
         ))}
-      {edit && <ProductEditor product={edit === 'new' ? null : edit} onClose={() => setEdit(null)} onDone={shop.reload} />}
+      {edit && <ProductEditor product={edit === 'new' ? null : edit} sets={[...new Set(shop.data.products.map((p) => p.set).filter((x): x is string => !!x))]} onClose={() => setEdit(null)} onDone={shop.reload} />}
       {collect && (
         <Sheet onClose={() => setCollect(null)} label="Odbiór">
           <div className="stack">
@@ -159,7 +160,7 @@ function blankVariant(category: ShopCategory): DraftVariant {
   return { id: '', size: '', color: '', stock: category === 'drink' ? '' : '0', unlimited: category === 'drink', price: '' };
 }
 
-function ProductEditor({ product, onClose, onDone }: { product: Product | null; onClose: () => void; onDone: () => void }) {
+function ProductEditor({ product, sets, onClose, onDone }: { product: Product | null; sets: string[]; onClose: () => void; onDone: () => void }) {
   const [category, setCategory] = useState<ShopCategory>(product?.category ?? 'accessory');
   const [name, setName] = useState(product?.name ?? '');
   const [desc, setDesc] = useState(product?.description ?? '');
@@ -168,6 +169,7 @@ function ProductEditor({ product, onClose, onDone }: { product: Product | null; 
   const [sizeScale, setSizeScale] = useState<SizeScale>(product?.sizeScale ?? DEFAULT_SCALE[product?.category ?? 'accessory']);
   const [reward, setReward] = useState(product?.rewardEligible ?? false);
   const [featured, setFeatured] = useState(product?.featured ?? false);
+  const [kit, setKit] = useState(product?.set ?? '');
   const [variants, setVariants] = useState<DraftVariant[]>(product?.variants.map(toDraft) ?? [blankVariant(product?.category ?? 'accessory')]);
   const [photos, setPhotos] = useState<Photo[]>(product?.photos ?? []);
   const [nutrition, setNutrition] = useState<Record<string, string>>(() => {
@@ -209,6 +211,7 @@ function ProductEditor({ product, onClose, onDone }: { product: Product | null; 
         sizeScale,
         rewardEligible: reward,
         featured,
+        set: kit,
         photos: photos.map((p) => p.id),
         nutrition: category === 'drink' ? nutrition : null,
         variants: variants.map((v) => ({
@@ -344,6 +347,14 @@ function ProductEditor({ product, onClose, onDone }: { product: Product | null; 
             </button>
           ))}
         </div>
+        <Field label="Komplet" hint="Wpisz tę samą nazwę przy produktach, które pasują do siebie (np. legginsy, top i bluza) – na stronie produktu pojawi się „Skompletuj zestaw”.">
+          <input className="input" list="shop-sets" placeholder="np. Komplet Isola" value={kit} onChange={(e) => setKit(e.target.value)} />
+          <datalist id="shop-sets">
+            {sets.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
+        </Field>
         <Toggle label="Wyróżniony w katalogu" hint="Pojawi się w filtrze „Wyróżnione”." checked={featured} onChange={setFeatured} />
         <Toggle label="Może być nagrodą (np. po 10 zajęciach)" checked={reward} onChange={setReward} />
         <button className="btn" disabled={!name || !price || busy} onClick={save}>

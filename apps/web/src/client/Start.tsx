@@ -205,7 +205,7 @@ export function Start() {
             <span className="card-title" style={{ display: 'block' }}>
               Sklep studia
             </span>
-            <span className="small muted">Bar po treningu, maty i stroje</span>
+            <span className="small muted">Maty, akcesoria i stroje do domu</span>
           </span>
           <Icon name="bag" size={18} />
         </button>

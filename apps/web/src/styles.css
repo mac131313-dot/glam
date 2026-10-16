@@ -695,3 +695,24 @@ html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
 .site > .watermark { -webkit-mask-position: right 36px top 84px; mask-position: right 36px top 84px; }
 @media print { .watermark { display: none; } }
 @media (max-width: 820px) { .staff > .watermark { display: none; } .staff:has(> .watermark) > .main { padding-right: 20px; } }
+
+/* Strona WWW w panelu: duży podgląd strony z paskiem akcji na dole (jak karta motywu w Shopify) */
+.site-ov { position: relative; aspect-ratio: 16 / 9; min-height: 340px; border-radius: var(--radius); overflow: hidden; background: var(--soft); border: 1px solid color-mix(in srgb, var(--line) 75%, transparent); box-shadow: var(--shadow); isolation: isolate; }
+.site-ov-frame { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.site-ov-frame iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; transition: opacity 0.4s var(--ease); background: #fff; }
+.site-ov-hit { position: absolute; inset: 0; z-index: 1; }
+.site-ov::after { content: ''; position: absolute; inset: 40% 0 0; z-index: 1; pointer-events: none; background: linear-gradient(to top, rgb(18 14 12 / 0.78), rgb(18 14 12 / 0.45) 35%, rgb(18 14 12 / 0.12) 70%, transparent); }
+.site-ov-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 28px 32px; color: #fff; pointer-events: none; }
+.site-ov-bar a { pointer-events: auto; }
+.site-ov-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.site-ov-title { font-family: var(--font-head); font-weight: 500; font-size: 1.5rem; letter-spacing: -0.01em; color: #fff; text-decoration: none; overflow-wrap: anywhere; }
+.site-ov-title:hover { text-decoration: underline; text-underline-offset: 4px; }
+.site-ov-sub { font-size: 0.95rem; color: rgb(255 255 255 / 0.82); }
+.site-ov-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.site-ov-actions .btn.site-ov-main { background: #fff; color: #1b1715; }
+.site-ov-actions .btn.site-ov-soft { background: rgb(255 255 255 / 0.16); color: #fff; border-color: rgb(255 255 255 / 0.28); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+@media (max-width: 640px) {
+  .site-ov { aspect-ratio: auto; min-height: 420px; }
+  .site-ov-bar { padding: 20px; }
+  .site-ov-title { font-size: 1.15rem; }
+}

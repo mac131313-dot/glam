@@ -68,7 +68,7 @@ export function App() {
   if (shopPage) return <ShopSite slug={decodeURIComponent(shopPage[1])} productId={shopPage[2] ? decodeURIComponent(shopPage[2]) : null} />;
   const site = location.pathname.match(/^\/s\/([^/]+)/);
   if (site) return <StudioSite slug={decodeURIComponent(site[1])} />;
-  if (SURFACE === 'home') return <Landing />;
+  if (SURFACE === 'home') return <HomeOrDomain />;
   return SURFACE === 'app' ? (
     <DeviceFrame>
       <Surface surface="app" />
@@ -76,6 +76,28 @@ export function App() {
   ) : (
     <Surface surface="panel" />
   );
+}
+
+/**
+ * Własna domena studia (www.studio.pl wskazuje na nasz serwer): API rozpoznaje studio po nagłówku Host,
+ * a front przechodzi na jego stronę – adres staje się /s/:slug/…, więc działają wszystkie odnośniki strony.
+ * Na adresie GLAM (404) zostaje zwykła strona startowa.
+ */
+function HomeOrDomain() {
+  const [state, setState] = useState<'checking' | 'site' | 'home'>('checking');
+  useEffect(() => {
+    fetch('/api/public/domain')
+      .then((r) => (r.ok ? (r.json() as Promise<{ slug: string }>) : null))
+      .then((res) => {
+        if (!res) return setState('home');
+        const rest = location.pathname === '/' ? '' : location.pathname;
+        history.replaceState(null, '', `/s/${encodeURIComponent(res.slug)}${rest}${location.search}${location.hash}`);
+        setState('site');
+      })
+      .catch(() => setState('home'));
+  }, []);
+  if (state === 'checking') return null;
+  return state === 'site' ? <App /> : <Landing />;
 }
 
 function pickPersona(surface: 'panel' | 'app'): string {

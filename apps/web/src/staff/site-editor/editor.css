@@ -153,6 +153,29 @@ textarea.se-input { line-height: 1.5; }
 .se-film-znak { position: absolute; left: 6px; bottom: 6px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: rgb(0 0 0 / 0.55); color: #fff; }
 .se-film-znak svg { width: 12px; height: 12px; }
 
+/* ===== Domena: przycisk w pasku i okno z rekordami DNS ===== */
+.se-domena { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 8px; margin-left: 4px; border: 0; border-radius: 999px; background: var(--se-tlo); color: var(--se-tekst); cursor: pointer; white-space: nowrap; font-weight: 500; }
+.se-domena:hover { background: #e6e6e6; }
+.se-domena svg { width: 16px; height: 16px; }
+.se-okno-tlo { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / 0.32); }
+.se-okno { width: min(640px, 100%); max-height: calc(100dvh - 32px); overflow: auto; background: #fff; border-radius: 14px; box-shadow: 0 20px 60px rgb(0 0 0 / 0.25); }
+.se-okno-naglowek { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--se-linia); font-size: 15px; }
+.se-okno-naglowek > svg { width: 20px; height: 20px; }
+.se-okno-tresc { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.se-okno-tresc p { margin: 0; }
+.se-dns { width: 100%; border-collapse: collapse; border: 1px solid var(--se-linia); border-radius: 10px; overflow: hidden; }
+.se-dns th { text-align: left; font-size: 11px; font-weight: 600; color: var(--se-szary); text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 12px; background: var(--se-tlo); }
+.se-dns td { padding: 10px 12px; border-top: 1px solid var(--se-linia); vertical-align: top; }
+.se-dns td:last-child { width: 40px; padding: 6px; vertical-align: middle; }
+.se-dns code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
+.se-dns-typ { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--se-niebieski-tlo); color: var(--se-niebieski); }
+.se-dns-hint { font-size: 12px; color: var(--se-szary); margin-top: 2px; }
+.se-dns-uwaga { font-size: 12px; color: var(--se-szary); }
+.se-domena-wiersz { display: flex; gap: 8px; }
+.se-domena-wiersz .se-input { flex: 1; min-width: 0; }
+.se-domena-blad { color: #c5221f; }
+.se-domena-stan { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 /* Pozycje menu baru (menu.tsx) */
 .se-menu { display: flex; flex-direction: column; gap: 6px; }
 .se-menu-pozycja { border: 1px solid var(--se-linia); border-radius: 10px; background: #fff; }

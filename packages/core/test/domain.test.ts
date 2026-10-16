@@ -45,6 +45,9 @@ import {
   STRETCH,
   takeStock,
   themeContrastErrors,
+  EDITIONS,
+  EDITION_LOOKS,
+  editionLook,
   toCsv,
   toIcs,
   TRIGGERS,
@@ -241,6 +244,11 @@ test('motywy: harmonogram (krótszy wygrywa), ręczny ma pierwszeństwo, kontras
   assert.equal(scheduledTheme([...themes, { id: 'man', startsOn: null, endsOn: null, auto: false, isActive: true, segment: null }], '2026-10-31'), 'man');
   assert.equal(contrastRatio('#000000', '#ffffff'), 21);
   assert.deepEqual(themeContrastErrors({ ink: '#cccccc', bg: '#ffffff' }), ['Za mały kontrast: tekst na tle (min. 4,5:1).']);
+  // każda edycja z biblioteki ma wygląd, a jej paleta przechodzi WCAG – „Użyj” nie może dać błędu kontrastu
+  for (const e of EDITIONS) {
+    assert.ok(EDITION_LOOKS[e.id], `brak wyglądu edycji ${e.id}`);
+    assert.deepEqual(themeContrastErrors(editionLook(e.id).palette), [], e.id);
+  }
 });
 
 test('role i SaaS: siatka uprawnień, koordynatorka bez finansów, plany i flagi, ustawienia', () => {

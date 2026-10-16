@@ -86,6 +86,18 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
               ['screen', 'Zdjęcie na cały ekran, napis na nim'],
             ],
           },
+          {
+            key: 'imageBlur',
+            label: 'Rozmycie pod napisem',
+            kind: 'choice',
+            default: 'none',
+            options: [
+              ['none', 'Bez rozmycia'],
+              ['soft', 'Delikatne'],
+              ['strong', 'Mocne, jak matowe szkło'],
+            ],
+            hint: 'Dół zdjęcia płynnie się rozmywa, a napis jest czytelniejszy. Działa, gdy napis leży na zdjęciu.',
+          },
         ],
       },
       {
@@ -173,7 +185,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
     nav: 'Menu',
     groups: [
       heading('Menu', 'po treningu'),
-      { label: 'Pozycje', fields: [{ key: 'items', label: 'Pozycje menu', kind: 'menu', default: [], max: MENU_MAX, hint: 'Pusta lista = zakładki nie ma na stronie.' }] },
+      { label: 'Pozycje', fields: [{ key: 'items', label: 'Pozycje menu', kind: 'menu', default: [], max: MENU_MAX, hint: 'Dopóki lista jest pusta, zakładka Menu pokazuje „Menu wkrótce”, a strona główna jej nie pokazuje.' }] },
       {
         label: 'Treść',
         fields: [area('text', 'Krótki wstęp', '', 300, { hint: 'Np. „Smoothie, matcha i coś słodkiego – po zajęciach przy barze.”' }), text('note', 'Dopisek pod menu', '', 160, { placeholder: 'np. Mleko roślinne bez dopłaty' })],
@@ -190,7 +202,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
       heading('Więcej'),
       { label: 'Wydarzenia', fields: [toggle('eventsVisible', 'Pokazuj', true), text('eventsTitle', 'Tytuł', 'Wydarzenia', 40), text('eventsText', 'Opis', 'Warsztaty i wieczory w studiu.', 140)] },
       { label: 'Kursy online', fields: [toggle('coursesVisible', 'Pokazuj', true), text('coursesTitle', 'Tytuł', 'Kursy online', 40), text('coursesText', 'Opis', 'Trenuj z nami w domu.', 140)] },
-      { label: 'Sklep', fields: [toggle('shopVisible', 'Pokazuj', true), text('shopTitle', 'Tytuł', 'Sklep', 40), text('shopText', 'Opis', 'Bar po treningu, akcesoria z logo i stroje.', 140)] },
+      { label: 'Sklep', fields: [toggle('shopVisible', 'Pokazuj', true), text('shopTitle', 'Tytuł', 'Sklep', 40), text('shopText', 'Opis', 'Akcesoria z logo i stroje z dostawą do domu.', 140)] },
       { label: 'Etykieta', fields: [text('soonLabel', 'Gdy podstrona jeszcze nie działa', 'wkrótce', 20)] },
     ],
   },
@@ -306,13 +318,14 @@ export type SitePage = { key: string; type: SystemSectionType | CustomSectionTyp
 /**
  * Zakładki menu strony studia: widoczne sekcje z etykietą w menu, każda z własnym adresem podstrony.
  * Sklep tylko wtedy, gdy studio ma moduł sklepu i produkty (inaczej podstrona byłaby pusta).
+ * Menu baru ma zakładkę zawsze – to osobna oferta na miejscu, więc pusta podstrona mówi „Menu wkrótce”.
  */
 export function sitePages(doc: SiteDoc, opts: { shop: boolean }): SitePage[] {
   const used = new Set<string>();
   const pages: SitePage[] = [];
   for (const s of doc.sections) {
     const label = s.nav.trim();
-    if (!s.visible || !label || (s.type === 'shop' && !opts.shop) || (s.type === 'menu' && menuItems(s.values).length === 0)) continue;
+    if (!s.visible || !label || (s.type === 'shop' && !opts.shop)) continue;
     let path = s.type === 'article' || s.type === 'gallery' ? pathSlug(label) : SYSTEM_PATHS[s.type];
     // Własna sekcja o nazwie jak systemowa („Grafik”) albo dwie o tej samej nazwie – dopisujemy klucz sekcji.
     if (!path || used.has(path) || (RESERVED_PATHS.has(path) && path !== SYSTEM_PATHS[s.type as SystemSectionType])) path = `${path || 'strona'}-${s.key}`;

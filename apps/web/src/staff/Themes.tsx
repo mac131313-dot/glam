@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { themeContrastErrors, type Palette } from '@glam/core';
 import { api, useApi } from '../api.ts';
 import { Field, Select, Sheet, Spinner, Toggle, useAction } from '../ui.tsx';
+import './Themes.css';
 
 type Pack = { badge?: string; challengeTitle?: string; challengeMetric?: string; challengeTarget?: number; couponCode?: string };
 type Theme = {
@@ -24,8 +25,21 @@ type Theme = {
   pack: Pack;
   stats: { challengeJoined: number; challengeDone: number; pushSent: number; pushOpenRate: number; voucherUses: number };
 };
+type Edition = {
+  id: string;
+  name: string;
+  tagline: string;
+  from: string;
+  to: string;
+  ideas: string;
+  classes: string;
+  badge?: string;
+  emoji: string;
+  effect: string | null;
+  palette: Record<string, string>;
+};
 type Library = {
-  editions: { id: string; name: string; tagline: string; from: string; to: string; ideas: string; classes: string; badge?: string }[];
+  editions: Edition[];
   palettes: { id: string; label: string; palette: Palette }[];
   sounds: { id: string; label: string }[];
   icons: { id: string; label: string }[];
@@ -123,28 +137,89 @@ export function Themes() {
         ))}
       </div>
       {lib.data && (
-        <section className="stack">
-          <div className="eyebrow">Biblioteka edycji – pomysły na najbliższe miesiące</div>
-          {lib.data.editions.map((e) => (
-            <div key={`${e.id}${e.from}`} className="card flat row between" style={{ alignItems: 'flex-start' }}>
-              <span>
-                <b>{e.name}</b> <span className="tiny muted">{e.from} – {e.to}</span>
-                <span className="small muted" style={{ display: 'block' }}>
-                  {e.tagline} · {e.classes}
-                </span>
-              </span>
-              <button
-                className="btn ghost sm"
-                onClick={() => setEdit({ name: e.name, tagline: e.tagline, starts_on: e.from, ends_on: e.to, auto: 1, palette: lib.data!.palettes[0].palette as unknown as Record<string, string>, pack: { badge: e.badge } })}
-              >
-                Użyj
-              </button>
-            </div>
-          ))}
-        </section>
+        <EditionLibrary
+          editions={lib.data.editions}
+          themes={data}
+          onUse={(e) => setEdit({ name: e.name, tagline: e.tagline, emoji: e.emoji, effect: e.effect, starts_on: e.from, ends_on: e.to, auto: 1, palette: { ...e.palette }, pack: { badge: e.badge } })}
+          onOpen={setEdit}
+        />
       )}
       {edit && lib.data && <ThemeEditor theme={edit} lib={lib.data} onClose={() => setEdit(null)} onDone={reload} />}
     </div>
+  );
+}
+
+const dayMs = 86_400_000;
+const parse = (iso: string) => new Date(`${iso}T00:00:00`);
+const longDate = (iso: string) => parse(iso).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' });
+
+/** „1–30 października”, „24–27 listopada”, „31 października”, „28 grudnia – 3 stycznia”. */
+function dateRange(from: string, to: string) {
+  if (from === to) return longDate(from);
+  if (from.slice(0, 7) === to.slice(0, 7)) return `${parse(from).getDate()}–${longDate(to)}`;
+  return `${longDate(from)} – ${longDate(to)}`;
+}
+
+function whenLabel(from: string, to: string, today: string) {
+  if (from <= today && today <= to) return { text: 'Trwa teraz', now: true };
+  const days = Math.round((parse(from).getTime() - parse(today).getTime()) / dayMs);
+  return { text: days === 1 ? 'Jutro' : days < 7 ? `Za ${days} dni` : days < 60 ? `Za ${Math.round(days / 7)} tyg.` : `Za ${Math.round(days / 30)} mies.`, now: false };
+}
+
+function EditionLibrary({ editions, themes, onUse, onOpen }: { editions: Edition[]; themes: Theme[]; onUse: (e: Edition) => void; onOpen: (t: Theme) => void }) {
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // Grupujemy po miesiącu początku edycji – łatwiej planować „co w listopadzie”.
+  const months = new Map<string, Edition[]>();
+  for (const e of editions) months.set(e.from.slice(0, 7), [...(months.get(e.from.slice(0, 7)) ?? []), e]);
+  return (
+    <section className="stack">
+      <div>
+        <div className="eyebrow">Biblioteka edycji</div>
+        <p className="small muted" style={{ margin: 0 }}>Gotowe pomysły na najbliższe miesiące – z paletą, emoji i datami. „Użyj” otwiera motyw do dopracowania.</p>
+      </div>
+      {[...months].map(([month, list]) => (
+        <div key={month} className="stack" style={{ gap: 10 }}>
+          <h2 className="edition-month">{parse(`${month}-01`).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })}</h2>
+          <div className="edition-grid">
+            {list.map((e) => {
+              const p = e.palette;
+              const when = whenLabel(e.from, e.to, today);
+              const planned = themes.find((t) => t.name === e.name && t.starts_on === e.from);
+              return (
+                <article key={`${e.id}${e.from}`} className="edition-tile">
+                  <div className={`edition-art${e.effect === 'snow' ? ' snow-preview' : ''}`} style={{ background: p.bg }} aria-hidden>
+                    <span className="blob" style={{ width: 150, height: 150, right: -30, top: -50, background: p.soft }} />
+                    <span className="blob" style={{ width: 90, height: 90, left: 70, bottom: -40, background: p.brand, opacity: 0.35 }} />
+                    {e.effect === 'snow' && SNOW_DOTS.map(([x, y, s], i) => <span key={i} className="snow-dot" style={{ left: `${x}%`, top: `${y}%`, width: s, height: s }} />)}
+                    <span className={`when${when.now ? ' now' : ''}`}>{when.text}</span>
+                    <span className="dots">
+                      {['soft', 'brand', 'accent'].map((k) => <span key={k} style={{ background: p[k] }} />)}
+                    </span>
+                    <span className="emoji">{e.emoji}</span>
+                    <span className="mini-btn" style={{ background: p.accent, color: p.accentInk }}>Zarezerwuj</span>
+                  </div>
+                  <div className="edition-body">
+                    <h3>{e.name}</h3>
+                    <p className="tiny muted">{dateRange(e.from, e.to)}</p>
+                    <p className="small">{e.tagline}</p>
+                    <div className="edition-tags">
+                      {e.classes.split(', ').filter((c) => c !== 'Bez zmian').map((c) => <span key={c}>{c}</span>)}
+                    </div>
+                    <div className="spacer" />
+                    {planned ? (
+                      <button className="btn ghost sm" onClick={() => onOpen(planned)}>✓ W kalendarzu · edytuj</button>
+                    ) : (
+                      <button className="btn sm" onClick={() => onUse(e)}>Użyj</button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 

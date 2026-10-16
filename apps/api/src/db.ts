@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS studios (
   site_draft_updated_at TEXT,
   site_json TEXT,
   site_published_at TEXT,
+  -- Własna domena strony (services/domain.ts): bez www i bez protokołu, np. studio.pl – obsługuje też www.studio.pl
+  custom_domain TEXT UNIQUE,
   created_at TEXT NOT NULL
 );
 
@@ -862,6 +864,7 @@ CREATE TABLE IF NOT EXISTS card_tasks (
 -- ——— Sklep i partnerzy (4.8) ———
 -- media_id = okładka (pierwsze zdjęcie galerii); gallery_json = wszystkie zdjęcia w kolejności.
 -- variants_json: stock NULL = bez limitu (napoje); nutrition_json: tylko uzupełnione wartości (core/shop.ts).
+-- set_name: nazwa kompletu („Komplet Isola”) – produkty o tej samej nazwie strona produktu proponuje razem.
 CREATE TABLE IF NOT EXISTS shop_products (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
@@ -877,6 +880,7 @@ CREATE TABLE IF NOT EXISTS shop_products (
   nutrition_json TEXT,
   featured INTEGER NOT NULL DEFAULT 0,
   reward_eligible INTEGER NOT NULL DEFAULT 0,
+  set_name TEXT,
   created_at TEXT NOT NULL
 );
 

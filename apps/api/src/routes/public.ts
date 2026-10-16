@@ -5,6 +5,7 @@ import { nowIso, tx, type Db } from '../db.ts';
 import { badRequest, notFound } from '../errors.ts';
 import { StudioScope } from '../scope.ts';
 import { audit } from '../services/audit.ts';
+import { checkDomain, setDomain, studioByHost } from '../services/domain.ts';
 import { storeMedia } from '../services/media.ts';
 import { loadStudio, logoInfo } from '../services/studio.ts';
 import { PHOTO_URL } from './client.ts';
@@ -19,6 +20,17 @@ import { PHOTO_URL } from './client.ts';
 export function publicRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
   const editor = requirePerm(db, 'config.edit');
+  const dns = siteDns(deps.publicUrl);
+  const domainOf = (studioId: string) => (db.prepare('SELECT custom_domain FROM studios WHERE id = ?').get(studioId) as { custom_domain: string | null }).custom_domain;
+  const withDns = (studioId: string) => ({ ...editorState(db, studioId), dns: { ...dns, domain: domainOf(studioId) } });
+
+  // Własna domena studia: front na nieznanym adresie pyta, czyje to studio, i pokazuje jego stronę (jak /s/:slug).
+  // ?domain= – dla serwera TLS (np. Caddy on_demand „ask”), który przed wystawieniem certyfikatu pyta, czy domena jest nasza.
+  app.get<{ Querystring: { domain?: string } }>('/api/public/domain', async (req) => {
+    const found = studioByHost(db, req.query.domain || req.hostname);
+    if (!found) throw notFound('Ta domena nie jest podłączona do żadnego studia.');
+    return { slug: found.slug };
+  });
 
   app.get<{ Params: { slug: string } }>('/api/public/studios/:slug', async (req) => {
     const row = db.prepare("SELECT id, site_json FROM studios WHERE slug = ? AND published = 1 AND status != 'suspended'").get(req.params.slug) as
@@ -36,7 +48,7 @@ export function publicRoutes(app: FastifyInstance, deps: Deps) {
 
   app.get('/api/site/editor', editor, async (req) => {
     const { studio } = ctx(req);
-    return editorState(db, studio.id);
+    return withDns(studio.id);
   });
 
   // Autozapis (auto = true) nie trafia do rejestru zmian – inaczej jedna sesja redagowania to setka wpisów.
@@ -61,7 +73,23 @@ export function publicRoutes(app: FastifyInstance, deps: Deps) {
       scope.run('UPDATE studios SET site_draft_json = $doc, site_draft_updated_at = $now WHERE id = $studio', { doc: JSON.stringify(doc), now });
       if (!req.body.auto) audit(scope, { actorId: user.id, action: 'site.save', entity: 'studio', entityId: studio.id });
     });
-    return editorState(db, studio.id);
+    return withDns(studio.id);
+  });
+
+  app.put<{ Body: { domain?: string } }>('/api/site/domain', editor, async (req) => {
+    const { studio, scope, user } = ctx(req);
+    const domain = tx(db, () => {
+      const d = setDomain(db, studio.id, req.body?.domain, dns.host);
+      audit(scope, { actorId: user.id, action: 'site.domain', entity: 'studio', entityId: studio.id, details: { domain: d } });
+      return d;
+    });
+    return { domain, check: domain ? await checkDomain(domain, dns, deps.dns) : null };
+  });
+
+  app.get('/api/site/domain/check', editor, async (req) => {
+    const { studio } = ctx(req);
+    const domain = domainOf(studio.id);
+    return { domain, check: domain ? await checkDomain(domain, dns, deps.dns) : null };
   });
 
   // Zdjęcia i filmy strony: biblioteka studia (rodzaj „site”), serwowane publicznie przez /api/public-media
@@ -82,7 +110,7 @@ export function publicRoutes(app: FastifyInstance, deps: Deps) {
       scope.run('UPDATE studios SET site_json = $doc, site_draft_json = $doc, site_published_at = $now WHERE id = $studio', { doc: JSON.stringify(draft), now: nowIso() });
       audit(scope, { actorId: user.id, action: 'site.publish', entity: 'studio', entityId: studio.id });
     });
-    return editorState(db, studio.id);
+    return withDns(studio.id);
   });
 
   // Odrzucenie szkicu: wraca to, co jest opublikowane (albo dokument domyślny).
@@ -92,7 +120,7 @@ export function publicRoutes(app: FastifyInstance, deps: Deps) {
       scope.run('UPDATE studios SET site_draft_json = site_json, site_draft_updated_at = $now WHERE id = $studio', { now: nowIso() });
       audit(scope, { actorId: user.id, action: 'site.discard', entity: 'studio', entityId: studio.id });
     });
-    return editorState(db, studio.id);
+    return withDns(studio.id);
   });
 }
 
@@ -115,6 +143,16 @@ export function readSite(db: Db, studioId: string) {
   const published = parseSiteDoc(json(row.site_json));
   const draft = row.site_draft_json ? parseSiteDoc(json(row.site_draft_json)) : published;
   return { draft, published, row };
+}
+
+/**
+ * Rekordy do wpisania u rejestratora, żeby kupiona domena wskazywała na stronę studia.
+ * Adres IP serwera z GLAM_SITE_IP (bez niego tylko CNAME dla www), cel CNAME z GLAM_SITE_HOST albo z adresu publicznego.
+ */
+function siteDns(publicUrl?: string) {
+  const host = process.env.GLAM_SITE_HOST || (publicUrl ? new URL(publicUrl).hostname : 'localhost');
+  const ip = process.env.GLAM_SITE_IP || null;
+  return { ip, host };
 }
 
 function editorState(db: Db, studioId: string) {

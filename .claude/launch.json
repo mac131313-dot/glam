@@ -17,7 +17,7 @@
       "name": "web",
       "runtimeExecutable": "env",
       "runtimeArgs": [
-        "API_PORT=3002",
+        "API_PORT=3001",
         "npm",
         "run",
         "dev",
@@ -25,6 +25,20 @@
         "@glam/web"
       ],
       "port": 5173,
+      "autoPort": true
+    },
+    {
+      "name": "web-api3002",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "API_PORT=3002",
+        "npm",
+        "run",
+        "dev",
+        "-w",
+        "@glam/web"
+      ],
+      "port": 5176,
       "autoPort": true
     }
   ]

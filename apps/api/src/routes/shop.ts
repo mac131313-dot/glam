@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   categoryLabel,
   cleanNutrition,
+  cleanSetName,
   DEFAULT_SCALE,
   formatPLN,
   hasStock,
@@ -57,6 +58,7 @@ type ProductRow = {
   nutrition_json: string | null;
   featured: number;
   reward_eligible: number;
+  set_name: string | null;
 };
 type Item = { productId: string; variantId: string; qty: number; name?: string; variant?: string; price?: number };
 type ProductInput = {
@@ -71,6 +73,7 @@ type ProductInput = {
   nutrition?: Record<string, unknown> | null;
   featured?: boolean;
   rewardEligible?: boolean;
+  set?: string | null;
 };
 
 const MAX_PHOTOS = 12;
@@ -118,6 +121,7 @@ const view = (p: ProductRow) => {
     photoUrl: photos[0]?.url ?? null,
     nutrition: p.nutrition_json ? (JSON.parse(p.nutrition_json) as Nutrition) : null,
     featured: !!p.featured,
+    set: p.set_name,
     rewardEligible: !!p.reward_eligible,
   };
 };
@@ -379,8 +383,8 @@ export function shopRoutes(app: FastifyInstance, deps: Deps) {
     const nutrition = cleanNutrition(b.nutrition);
     const pid = id();
     scope.run(
-      `INSERT INTO shop_products (id, studio_id, category, name, description, price_grosze, status, size_scale, variants_json, media_id, gallery_json, nutrition_json, featured, reward_eligible, created_at)
-       VALUES ($id, $studio, $c, $n, $d, $p, $s, $sc, $v, $m, $g, $nu, $f, $r, $now)`,
+      `INSERT INTO shop_products (id, studio_id, category, name, description, price_grosze, status, size_scale, variants_json, media_id, gallery_json, nutrition_json, featured, reward_eligible, set_name, created_at)
+       VALUES ($id, $studio, $c, $n, $d, $p, $s, $sc, $v, $m, $g, $nu, $f, $r, $set, $now)`,
       {
         id: pid,
         c: category,
@@ -395,6 +399,7 @@ export function shopRoutes(app: FastifyInstance, deps: Deps) {
         nu: nutrition ? JSON.stringify(nutrition) : null,
         f: Number(!!b.featured),
         r: Number(!!b.rewardEligible),
+        set: cleanSetName(b.set),
         now: nowIso(),
       },
     );
@@ -415,7 +420,7 @@ export function shopRoutes(app: FastifyInstance, deps: Deps) {
     scope.tx(() => {
       scope.run(
         `UPDATE shop_products SET category = $c, name = $n, description = $d, price_grosze = $p, status = $s, size_scale = $sc, variants_json = $v,
-           media_id = $m, gallery_json = $g, nutrition_json = $nu, featured = $f, reward_eligible = $r WHERE studio_id = $studio AND id = $id`,
+           media_id = $m, gallery_json = $g, nutrition_json = $nu, featured = $f, reward_eligible = $r, set_name = $set WHERE studio_id = $studio AND id = $id`,
         {
           c: category,
           n: b.name?.trim().slice(0, 80) || p.name,
@@ -429,6 +434,7 @@ export function shopRoutes(app: FastifyInstance, deps: Deps) {
           nu: nutrition ? JSON.stringify(nutrition) : null,
           f: Number(b.featured ?? !!p.featured),
           r: Number(b.rewardEligible ?? !!p.reward_eligible),
+          set: b.set !== undefined ? cleanSetName(b.set) : p.set_name,
           id: p.id,
         },
       );

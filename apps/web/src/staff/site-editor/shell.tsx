@@ -174,6 +174,7 @@ export function EditorShell(props: {
   publishDisabled?: boolean;
   backHref: string;
   extra?: ReactNode;
+  titleExtra?: ReactNode;
 }) {
   const [device, setDevice] = useState<Device>('desktop');
   const stage = useRef<HTMLDivElement>(null);
@@ -241,6 +242,7 @@ export function EditorShell(props: {
               {props.pill.label}
             </span>
           )}
+          {props.titleExtra}
         </div>
         <div className="se-urzadzenia" role="group" aria-label="Szerokość podglądu">
           {(
@@ -321,7 +323,7 @@ export function FieldRow({ label, hint, children, inline }: { label: string; hin
 }
 
 /** Ikony edytora (linie 1.6 px, jak reszta panelu). */
-export function Glyph({ name }: { name: 'back' | 'desktop' | 'tablet' | 'phone' | 'undo' | 'redo' | 'close' | 'eye' | 'eyeOff' | 'trash' | 'copy' | 'drag' | 'plus' | 'section' | 'top' | 'bottom' | 'text' | 'external' | 'image' | 'play' }) {
+export function Glyph({ name }: { name: 'back' | 'desktop' | 'tablet' | 'phone' | 'undo' | 'redo' | 'close' | 'eye' | 'eyeOff' | 'trash' | 'copy' | 'drag' | 'plus' | 'section' | 'top' | 'bottom' | 'text' | 'external' | 'image' | 'play' | 'globe' }) {
   const d: Record<typeof name, ReactNode> = {
     back: <path d="M15 18l-6-6 6-6" />,
     desktop: (
@@ -380,6 +382,12 @@ export function Glyph({ name }: { name: 'back' | 'desktop' | 'tablet' | 'phone' 
       </>
     ),
     text: <path d="M5 7h14M5 12h14M5 17h9" />,
+    globe: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+      </>
+    ),
     external: <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5" />,
     play: <path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none" />,
     image: (

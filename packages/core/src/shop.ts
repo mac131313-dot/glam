@@ -132,3 +132,46 @@ export function nutritionHighlight(n: Nutrition | null | undefined): string | nu
   if (n?.kcal !== undefined) return `${amount(n.kcal)} kcal`;
   return null;
 }
+
+// ——— Komplety i propozycje na stronie produktu ———
+
+/** Nazwa kompletu wpisana w panelu („Komplet Isola”) – produkty z tą samą nazwą tworzą zestaw. Pusto → null. */
+export function cleanSetName(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const s = input.replace(/\s+/g, ' ').trim().slice(0, 40);
+  return s || null;
+}
+
+const sameSet = (a: string | null, b: string | null) => !!a && !!b && a.toLocaleLowerCase('pl') === b.toLocaleLowerCase('pl');
+
+type Suggestable = { id: string; category: string; set: string | null; featured: boolean; status: string };
+
+/**
+ * Jak bardzo `other` pasuje jako propozycja do oglądanego produktu (większe = wyżej). Wyprzedane nigdy nie trafiają
+ * na listę. Najpierw to, co uzupełnia zakup (inna kategoria – do legginsów bidon, nie kolejne legginsy), potem polecane.
+ */
+export function suggestionScore(current: Suggestable, other: Suggestable): number {
+  let score = 0;
+  if (other.category !== current.category) score += 2;
+  if (other.featured) score += 1;
+  // napój do stroju to słaba para – menu baru zostaje w swojej kategorii
+  if ((current.category === 'drink') !== (other.category === 'drink')) score -= 3;
+  return score;
+}
+
+/**
+ * Propozycje na stronie produktu: `set` – pozostałe części kompletu (w kolejności katalogu), `more` – do `limit`
+ * innych produktów, które warto dobrać. Wyprzedane pomijamy, bo nie da się ich kupić razem.
+ */
+export function shopSuggestions<P extends Suggestable>(current: P, all: P[], limit = 4): { set: P[]; more: P[] } {
+  const others = all.filter((p) => p.id !== current.id && p.status === 'available');
+  const set = others.filter((p) => sameSet(p.set, current.set));
+  const more = others
+    .filter((p) => !set.includes(p))
+    .map((p, i) => ({ p, i, s: suggestionScore(current, p) }))
+    .filter((x) => x.s >= 0)
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .slice(0, limit)
+    .map((x) => x.p);
+  return { set, more };
+}

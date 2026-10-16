@@ -1,0 +1,21 @@
+/* Biblioteka edycji sezonowych – kafelki z podglądem palety każdej edycji. */
+.edition-month { font-family: var(--font-head); font-size: 1rem; font-weight: 600; margin: 8px 0 0; text-transform: capitalize; }
+.edition-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 16px; }
+.edition-tile { display: flex; flex-direction: column; background: var(--surface); border: 1px solid color-mix(in srgb, var(--line) 75%, transparent); border-radius: var(--radius-sm); overflow: hidden; transition: transform 0.25s var(--ease), box-shadow 0.25s var(--ease); }
+.edition-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.edition-art { position: relative; height: 128px; overflow: hidden; isolation: isolate; }
+.edition-art .blob { position: absolute; border-radius: 50%; z-index: -1; filter: blur(2px); }
+.edition-art .emoji { position: absolute; left: 18px; bottom: 12px; font-size: 2.6rem; line-height: 1; filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.12)); }
+.edition-art .mini-btn { position: absolute; right: 14px; bottom: 16px; padding: 5px 12px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+.edition-art .when { position: absolute; left: 12px; top: 12px; padding: 3px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 500; background: color-mix(in srgb, #fff 72%, transparent); color: #1b1715; backdrop-filter: blur(6px); }
+.edition-art .when.now { background: #1b1715; color: #fff; }
+.edition-art .dots { position: absolute; right: 12px; top: 12px; display: flex; gap: 3px; }
+.edition-art .dots span { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(0 0 0 / 0.08); }
+.edition-body { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 16px; flex: 1; }
+.edition-body h3 { margin: 0; font-size: 1rem; }
+.edition-body p { margin: 0; }
+.edition-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.edition-tags span { font-size: 0.72rem; padding: 2px 8px; border-radius: 6px; background: var(--soft); color: var(--muted); }
+.edition-body .btn { margin-top: auto; align-self: flex-start; }
+.edition-body .spacer { flex: 1; min-height: 6px; }
+@media (prefers-reduced-motion: reduce) { .edition-tile, .edition-tile:hover { transition: none; transform: none; } }
