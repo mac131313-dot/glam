@@ -8,6 +8,7 @@ import { isNewClass, siteImageUrl, siteLook, specOf, type FieldValue, type Look,
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { Spinner, Watermark } from '../ui.tsx';
+import { Carousel } from './Carousel.tsx';
 import { EditorBridge } from './EditorBridge.tsx';
 import { MOTION, useScrollVar } from './motion.ts';
 import { FOOTER_ID, HERO_ID } from './protocol.ts';
@@ -528,7 +529,6 @@ function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: V
   const trainersOf = (id: string) => studio.trainers.filter((t) => t.classes.includes(id)).map((t) => t.name);
   const label = newsLabel(studio);
   const photos = b(v, 'showPhotos');
-  const anyPhoto = photos && list.some((c) => classPhoto(studio, c));
   return (
     <section {...attrs}>
       <Head v={v} />
@@ -544,13 +544,21 @@ function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: V
           ))}
         </div>
       )}
-      <div className={anyPhoto ? 'site-cards' : 'site-list'}>
+      {/* Nowa sala = karuzela od początku (key). Karta bez zdjęcia dostaje kolor zajęć z GLAM i inicjał w kursywie. */}
+      <Reveal>
+      <Carousel key={zone ?? 'all'} label={s(v, 'title') || 'Zajęcia'}>
         {list.map((c) => {
           const who = trainersOf(c.id);
           const photo = photos ? classPhoto(studio, c) : null;
           return (
             <article key={c.id} className="site-item">
-              {anyPhoto && (photo ? <Photo src={photo} className="card" /> : <div className="site-photo card empty" aria-hidden="true" />)}
+              {photo ? (
+                <Photo src={photo} className="card" />
+              ) : (
+                <div className="site-photo card empty" style={{ background: c.color }} aria-hidden="true">
+                  <span className="serif">{c.name.charAt(0)}</span>
+                </div>
+              )}
               <h3>
                 {c.name}
                 {news.has(c.id) && <span className="site-new">{label}</span>}
@@ -561,13 +569,14 @@ function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: V
             </article>
           );
         })}
-      </div>
+      </Carousel>
+      </Reveal>
     </section>
   );
 }
 
 /**
- * Trenerki jako zakładki: karta (zdjęcie + imię) otwiera pod siatką panel z większym zdjęciem, bio, opisem własnym
+ * Trenerki jako zakładki: karta (zdjęcie + imię) otwiera pod karuzelą panel z większym zdjęciem, bio, opisem własnym
  * i zajęciami. Ponowne kliknięcie zamyka. Zdjęcie: z edytora strony, a gdy go nie ma – z profilu w GLAM.
  */
 function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
@@ -586,7 +595,8 @@ function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values
   return (
     <section {...attrs}>
       <Head v={v} />
-      <div className="site-people" role="tablist" aria-label="Trenerki">
+      <Reveal>
+      <Carousel label="Trenerki" className="site-people" trackProps={{ role: 'tablist' }}>
         {studio.trainers.map((t) => {
           const names = [...new Set(t.classes.map(className).filter(Boolean))];
           const photo = trainerPhoto(studio, t);
@@ -615,7 +625,8 @@ function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values
             </button>
           );
         })}
-      </div>
+      </Carousel>
+      </Reveal>
       {open && <TrainerPanel key={open.id} studio={studio} t={open} id={panelId} panelRef={panelRef} names={[...new Set(open.classes.map(className).filter(Boolean))] as string[]} />}
     </section>
   );
