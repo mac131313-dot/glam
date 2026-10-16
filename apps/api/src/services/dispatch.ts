@@ -4,7 +4,7 @@ import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { SERVICE_PRICES } from '@glam/core';
 import type { Deps } from '../context.ts';
-import { id, nowIso, type Db } from '../db.ts';
+import { DATA_DIR, id, nowIso, type Db } from '../db.ts';
 
 export async function dispatch(deps: Deps, now = new Date()) {
   const due = deps.db
@@ -40,7 +40,7 @@ export function logUsage(db: Db, studioId: string | null, kind: string, units: n
 }
 
 /** Kopia zapasowa (4.11) – spójny zrzut przez VACUUM INTO, trzymamy 14 ostatnich. */
-export function backup(db: Db, dir = process.env.GLAM_BACKUP_DIR ?? 'backups', now = new Date()): string {
+export function backup(db: Db, dir = process.env.GLAM_BACKUP_DIR ?? join(DATA_DIR, 'backups'), now = new Date()): string {
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `glam-${now.toISOString().slice(0, 10)}.db`);
   rmSync(file, { force: true });

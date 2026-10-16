@@ -24,6 +24,7 @@ type Session = {
   photo_ratio: number | null;
   zone_name: string;
   trainer_name: string;
+  trainer_id: string;
   playlist_name: string | null;
   playlist_url: string | null;
   taken: number;
@@ -220,7 +221,9 @@ export function Schedule() {
             <p className="muted">{detail.description}</p>
             <div className="row wrap small">
               <span className="badge">{detail.level}</span>
-              <span className="badge">prowadzi {detail.trainer_name}</span>
+              <button className="badge" style={{ border: 0, cursor: 'pointer', font: 'inherit' }} onClick={() => (setDetail(null), open(`trainer/${detail.trainer_id}`))}>
+                prowadzi {detail.trainer_name} ›
+              </button>
               <span className="badge">{detail.zone_name}</span>
             </div>
             {detail.playlist_url && (

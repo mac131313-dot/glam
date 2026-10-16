@@ -4,7 +4,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PLAYBACK_RATES } from '@glam/core';
 import { api, fmtDay, fmtLongDay, fmtTime, useApi } from '../api.ts';
-import { AuthVideo, Empty, PAYMENT_LABELS, Progress, Sheet, Spinner, STARS, Toggle, useAction } from '../ui.tsx';
+import { Empty, PAYMENT_LABELS, Progress, Sheet, Spinner, STARS, Toggle, useAction } from '../ui.tsx';
+import { CastButton } from './CastButton.tsx';
 import { useClient } from './ClientApp.tsx';
 import { openAuthed } from './PassPages.tsx';
 import type { RouteProps } from './router.tsx';
@@ -296,15 +297,17 @@ function LessonView({ lesson, onBack }: { lesson: Lesson; onBack: () => void }) 
   const { run, busy } = useAction();
   const last = useRef(0);
   const captionsUrl = useMemo(() => (lesson.captions ? URL.createObjectURL(new Blob([lesson.captions], { type: 'text/vtt' })) : null), [lesson.captions]);
+  // Podpis w query zmienia się co wydanie linku – offline trzymamy film pod samą ścieżką (tak szuka go sw.js).
+  const offlineKey = (lesson.videoUrl ?? '').split('?')[0];
   const save = (completed = false) => api(`/lessons/${lesson.id}/progress`, { method: 'POST', body: { position: video.current?.currentTime ?? 0, completed } }).catch(() => {});
   useEffect(() => {
     if (video.current && lesson.position) video.current.currentTime = lesson.position;
-    caches.open('glam-offline-media').then((c) => c.match(lesson.videoUrl ?? '')).then((hit) => setOffline(!!hit)).catch(() => {});
+    caches.open('glam-offline-media').then((c) => c.match(offlineKey)).then((hit) => setOffline(!!hit)).catch(() => {});
   }, [lesson]);
   useEffect(() => {
     if (video.current) video.current.playbackRate = rate;
   }, [rate]);
-  const isFile = lesson.videoUrl?.startsWith('/api/media/');
+  const isFile = lesson.videoUrl?.startsWith('/api/stream/');
   return (
     <div className="stack-lg">
       <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => (save(), onBack())}>
@@ -314,12 +317,14 @@ function LessonView({ lesson, onBack }: { lesson: Lesson; onBack: () => void }) 
       {lesson.videoUrl &&
         (isFile ? (
           <>
-            <AuthVideo
-              videoRef={video}
+            <video
+              ref={video}
               className="lesson-video"
               src={lesson.videoUrl}
               controls
               playsInline
+              preload="metadata"
+              x-webkit-airplay="allow"
               onTimeUpdate={() => {
                 const t = video.current?.currentTime ?? 0;
                 if (Math.abs(t - last.current) > 15) {
@@ -330,8 +335,8 @@ function LessonView({ lesson, onBack }: { lesson: Lesson; onBack: () => void }) 
               onEnded={() => save(true)}
             >
               {captionsUrl && <track kind="captions" srcLang="pl" label="Polski" src={captionsUrl} default />}
-            </AuthVideo>
-            <div className="row between">
+            </video>
+            <div className="row between wrap">
               <div className="segmented" role="group" aria-label="Tempo">
                 {PLAYBACK_RATES.map((r) => (
                   <button key={r} aria-pressed={rate === r} onClick={() => setRate(r)}>
@@ -344,18 +349,18 @@ function LessonView({ lesson, onBack }: { lesson: Lesson; onBack: () => void }) 
                 onClick={async () => {
                   const c = await caches.open('glam-offline-media');
                   if (offline) {
-                    await c.delete(lesson.videoUrl!);
+                    await c.delete(offlineKey);
                     setOffline(false);
                   } else {
-                    const { session } = await import('../api.ts');
-                    const res = await fetch(lesson.videoUrl!, { headers: { authorization: `Bearer ${session.token}`, 'x-studio-id': session.studioId ?? '' } });
-                    if (res.ok) await c.put(lesson.videoUrl!, res);
+                    const res = await fetch(lesson.videoUrl!);
+                    if (res.ok) await c.put(offlineKey, res);
                     setOffline(res.ok);
                   }
                 }}
               >
                 {offline ? 'Usuń z urządzenia' : 'Pobierz offline'}
               </button>
+              <CastButton videoRef={video} />
             </div>
           </>
         ) : (

@@ -62,6 +62,16 @@ Format: decyzja → uzasadnienie → konsekwencje dla produktu.
   - Reguły produktu (1.1.3) dostają nowy klocek: dostęp do kursów, np. „karnet daje dostęp do kursów X, Y”.
   - Funkcje K2 (zakup kursu w apce) i K14 (zniżka dla karnetowiczek) przesuwają się z MVP do wersji po weryfikacji.
 
+### Kanał sprzedaży kursów: www + karnet (2026-10-15, zmienia poprzednią decyzję)
+- **Decyzja:** kurs ma dwa kanały naraz. (1) Zakup pakietu na publicznej stronie kursu `/s/:slug/kurs/:id`, płatność w bramce studia. (2) Dostęp w karnecie, jak dotąd (klocek „dostęp do kursów” albo produkt wskazany w kursie).
+- **Dlaczego:** zakup na stronie www nie przechodzi przez App Store / Google Play, więc nie wymaga In-App Purchase i pieniądze idą prosto do studia (zgodnie z 23). Zakup w aplikacji (K2) zostaje za flagą `courses_paid`.
+- **Konsekwencje:**
+  - Model kursu: edycje (`course_editions`: start, koniec sprzedaży, koniec dostępu, temat, „co nowego”), pakiety (`course_tiers`: nazwa, cena, lista różnic, limit miejsc), prowadzące i eksperci (`course_people`, także osoby bez konta; lekcja ma `person_id`), treści strony w `courses.page_json` (obietnica, efekty, dla kogo, sprzęt, FAQ). Kalendarz treningowy liczy się z `unlock_day` / dripu lekcji.
+  - Konto zakładane z numeru telefonu (+ e-mail). Strona **nie wydaje sesji** – nie wie, czy numer należy do kupującej. Wejście do `/app` kodem SMS na ten numer; istniejącemu kontu nie nadpisujemy imienia ani e-maila.
+  - Dostęp po zakupie: do końca edycji albo N dni od zakupu – wcześniejsza z dat. Przy edycji z przyszłym startem kalendarz liczy się od startu edycji.
+  - Zgoda na utratę prawa odstąpienia (5.6) i akceptacja regulaminu są obowiązkowe, jak w aplikacji. Kody rabatowe i zapis płatności – te same co przy karnetach (`priceWithCoupon`, `recordPayment`).
+  - Karnet daje dostęp do kursu bez pakietu (bez `tier_id`). Różnice pakietów (społeczność, konsultacja) są na razie tylko opisem – egzekwowanie ich w aplikacji do zrobienia.
+
 ## Blok C: Relacje (2026-10-13)
 
 ### 3. Powitanie od trenerki: opcjonalne, z przypomnieniem i zapasem

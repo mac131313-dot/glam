@@ -148,8 +148,8 @@ function sitePayload(db: Db, studioId: string, site: SiteDoc) {
   const studio = loadStudio(db, studioId);
   const scope = new StudioScope(db, studio.id);
 
-  const trainers = scope.all<{ id: string; name: string; bio: string | null; avatar_mime: string | null; avatar_version: number }>(
-    "SELECT u.id, u.name, m.bio, u.avatar_mime, u.avatar_version FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.studio_id = $studio AND m.role = 'trainer' ORDER BY u.name",
+  const trainers = scope.all<{ id: string; name: string; bio: string | null; about: string | null; avatar_mime: string | null; avatar_version: number }>(
+    "SELECT u.id, u.name, m.bio, m.about, u.avatar_mime, u.avatar_version FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.studio_id = $studio AND m.role = 'trainer' ORDER BY u.name",
   );
   const classes = scope.all<{ id: string; name: string; level: string | null; color: string; description: string | null; photo_url: string | null; photo_ratio: number | null; zone_name: string; created_at: string | null }>(
     `SELECT ct.id, ct.name, ct.level, ct.color, ct.description, ${PHOTO_URL}, z.name AS zone_name, ct.created_at
@@ -202,6 +202,7 @@ function sitePayload(db: Db, studioId: string, site: SiteDoc) {
       id: t.id,
       name: t.name,
       bio: t.bio,
+      about: t.about,
       avatarUrl: t.avatar_mime ? `/api/users/${t.id}/avatar?v=${t.avatar_version}` : null,
       classes: teaches.filter((x) => x.trainer_id === t.id).map((x) => x.class_type_id),
     })),

@@ -52,6 +52,7 @@ import { claimClientSms } from '../services/sms-quota.ts';
 import { assertAttemptsLeft, recordFailedAttempt } from '../services/attempts.ts';
 import { logoInfo, type Studio } from '../services/studio.ts';
 import { guestRules, prefsOf } from './account.ts';
+import { invitesForHome } from './trainers.ts';
 
 /** Ile nietrafionych kodów rabatowych w kwadransie, zanim sprawdzanie się zatrzyma. */
 export const COUPON_MISSES = 10;
@@ -190,14 +191,18 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const { studio, scope, user } = ctx(req);
     const now = new Date();
     const lp = localParts(now, studio.timezone);
-    const upcoming = scope.all<Record<string, unknown>>(
-      `SELECT b.id AS booking_id, b.status, b.confirmed_at, s.id AS session_id, s.starts_at, COALESCE(s.title, ct.name) AS class_name, u.name AS trainer_name, z.name AS zone_name, ${PHOTO_URL}
+    const upcoming = scope.all<Record<string, unknown> & { status: string; starts_at: string; confirmed_at: string | null }>(
+      `SELECT b.id AS booking_id, b.status, b.confirmed_at, s.id AS session_id, s.starts_at, s.ends_at, COALESCE(s.title, ct.name) AS class_name, ct.description, u.name AS trainer_name, z.name AS zone_name, ${PHOTO_URL}
        FROM bookings b JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id
        JOIN zones z ON z.id = ct.zone_id JOIN users u ON u.id = s.trainer_id
        WHERE b.studio_id = $studio AND b.user_id = $user AND b.guest_name IS NULL AND b.status IN ('booked', 'waitlist') AND s.starts_at > $now
        ORDER BY s.starts_at LIMIT 3`,
       { user: user.id, now: now.toISOString() },
-    );
+    ).map((u) => ({
+      ...u,
+      // Kod wejścia – ten sam, który recepcja skanuje w /staff/checkin. Wydajemy go dopiero w dniu zajęć, bo wcześniej i tak by nie zadziałał.
+      checkin_code: u.status === 'booked' && localParts(new Date(u.starts_at), studio.timezone).date === lp.date ? checkinCode(studio.id, user.id, lp.date) : null,
+    }));
     const welcome = scope.get<Record<string, unknown>>(
       `SELECT w.id, w.body, w.kind, w.video_id, u.name AS trainer_name FROM welcome_messages w LEFT JOIN users u ON u.id = w.trainer_id
        WHERE w.studio_id = $studio AND w.client_id = $user AND w.status = 'published' AND w.seen_at IS NULL ORDER BY w.created_at LIMIT 1`,
@@ -247,6 +252,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       survey,
       locker,
       invites,
+      // zaproszenia od trenerek na ich zajęcia (profil trenerki w aplikacji)
+      trainerInvites: invitesForHome(scope, user.id),
       challenge,
       firstClass,
       quizDue: quizDue(prefs.quiz?.takenAt, now),
@@ -761,7 +768,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       .all<{ options_json: string | null; shop_product_id: string | null }>('SELECT * FROM locker_items WHERE studio_id = $studio AND user_id = $u ORDER BY created_at DESC', { u: user.id })
       .map((l) => {
         const product = l.shop_product_id ? scope.get<{ variants_json: string; name: string }>('SELECT name, variants_json FROM shop_products WHERE studio_id = $studio AND id = $id', { id: l.shop_product_id }) : undefined;
-        const sizes = product ? (JSON.parse(product.variants_json) as { size?: string; stock: number }[]).filter((v) => v.stock > 0 && v.size).map((v) => v.size) : ['S', 'M', 'L'];
+        const sizes = product ? (JSON.parse(product.variants_json) as { size?: string; stock: number | null }[]).filter((v) => (v.stock === null || v.stock > 0) && v.size).map((v) => v.size) : ['S', 'M', 'L'];
         return { ...l, options: l.options_json ? JSON.parse(l.options_json) : {}, sizes };
       });
   });

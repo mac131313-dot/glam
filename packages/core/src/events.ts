@@ -63,6 +63,21 @@ export function validateEventRequest(input: { guests: number; min: number; max: 
   return null;
 }
 
+/** Wydarzenie organizowane przez studio (np. Halloween Flow): dodaje je recepcja albo właścicielka z panelu. */
+export type StudioEventInput = { title: string; startsAt: string; durationMin: number; capacity: number; priceGrosze: number | null; now: Date };
+
+/** Zwraca komunikat dla recepcji (po polsku, jedno zdanie) albo null, gdy wszystko w porządku. */
+export function validateStudioEvent(input: StudioEventInput): string | null {
+  // Te same granice co przy zajęciach specjalnych w grafiku, żeby recepcja nie musiała pamiętać dwóch zestawów zasad.
+  if (input.title.trim().length < 3) return 'Podaj nazwę wydarzenia.';
+  if (Number.isNaN(Date.parse(input.startsAt))) return 'Wybierz dzień i godzinę.';
+  if (Date.parse(input.startsAt) < input.now.getTime()) return 'Ten termin już minął – wybierz przyszły.';
+  if (!Number.isInteger(input.durationMin) || input.durationMin < 15 || input.durationMin > 240) return 'Czas trwania: od 15 do 240 minut.';
+  if (!Number.isInteger(input.capacity) || input.capacity < 1 || input.capacity > 200) return 'Liczba miejsc: od 1 do 200.';
+  if (input.priceGrosze !== null && !(input.priceGrosze >= 0)) return 'Cena nie może być ujemna.';
+  return null;
+}
+
 export function canClientCancel(startsAt: string, now: Date, cancelDays: number): boolean {
   return (Date.parse(startsAt) - now.getTime()) / 86_400_000 >= cancelDays;
 }

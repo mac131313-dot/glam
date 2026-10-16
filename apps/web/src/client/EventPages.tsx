@@ -69,6 +69,23 @@ function Wizard({ onDone }: { onDone: () => void }) {
   if (opts.error?.code === 'feature_off') return <Empty>Studio nie organizuje teraz wydarzeń.</Empty>;
   if (!opts.data) return <Spinner />;
   const o = opts.data;
+  // Kreator sam pilnuje poprawnych wartości – klientka nie dowiaduje się o błędzie dopiero w ostatnim kroku.
+  const range = (id: string | null) => {
+    const x = o.packages.find((q) => q.id === id);
+    return { min: x?.min_guests ?? 2, max: x?.max_guests ?? 20 };
+  };
+  const clampGuests = (n: number, id = pkg) => Math.min(range(id).max, Math.max(range(id).min, Math.round(n) || range(id).min));
+  const pickKind = (id: string) => {
+    setKind(id);
+    // Pakiet z innego rodzaju wydarzenia przestaje pasować – odznaczamy go.
+    if (p && !p.kinds.includes(id)) setPkg(null);
+  };
+  const pickPackage = (id: string) => {
+    const next = pkg === id ? null : id;
+    setPkg(next);
+    setGuests((g) => clampGuests(g, next));
+    setSlot(''); // pakiet zmienia czas trwania, więc wolne godziny trzeba wybrać od nowa
+  };
   const minDate = (() => {
     const d = new Date(Date.now() + o.minNoticeDays * 86_400_000);
     return localDate(d);
@@ -78,7 +95,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
       <h2>Co świętujemy?</h2>
       <div className="pill-row">
         {o.kinds.map((k) => (
-          <button key={k.id} className="chip" aria-pressed={kind === k.id} onClick={() => setKind(k.id)}>
+          <button key={k.id} className="chip" aria-pressed={kind === k.id} onClick={() => pickKind(k.id)}>
             {k.label}
           </button>
         ))}
@@ -89,7 +106,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
           {o.packages
             .filter((x) => !kind || x.kinds.includes(kind))
             .map((x) => (
-              <button key={x.id} className={`card ${pkg === x.id ? 'soft' : 'flat'}`} style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setPkg(pkg === x.id ? null : x.id)}>
+              <button key={x.id} className={`card ${pkg === x.id ? 'soft' : 'flat'}`} style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => pickPackage(x.id)}>
                 <div className="row between">
                   <b>{x.name}</b>
                   <b>{x.price}</b>
@@ -106,7 +123,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
     <div key="who" className="stack">
       <h2>Ile osób i z kim?</h2>
       <Field label={`Liczba osób${p ? ` (${p.min_guests}–${p.max_guests})` : ''}`}>
-        <input className="input" type="number" min={p?.min_guests ?? 2} max={p?.max_guests ?? 20} value={guests} onChange={(e) => setGuests(Number(e.target.value))} />
+        <input className="input" type="number" min={p?.min_guests ?? 2} max={p?.max_guests ?? 20} value={guests} onChange={(e) => setGuests(Number(e.target.value))} onBlur={() => setGuests(clampGuests(guests))} />
       </Field>
       <div className="eyebrow">Trenerka</div>
       {o.trainers.map((t) => (
@@ -175,7 +192,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
       <Toggle label="Akceptuję regulamin wydarzenia" checked={terms} onChange={setTerms} />
     </div>,
   ];
-  const can = [!!kind, !!trainer && guests > 0, !!zone && !!activity && !!slot, true, terms][step];
+  const can = [!!kind, !!trainer && guests === clampGuests(guests), !!zone && !!activity && !!slot, true, terms][step];
   return (
     <div className="stack-lg">
       {steps[step]}

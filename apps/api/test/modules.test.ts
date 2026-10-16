@@ -165,6 +165,212 @@ test('kurs w karnecie: dostęp przez Reformer 9, drip, postęp, pytania; kurs cz
   assert.equal(bad.statusCode, 400);
 });
 
+test('strona sprzedażowa kursu: publiczne dane bez sesji, pakiety, prowadzące, kalendarz; szkic – 404', async () => {
+  const r = await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/courses/co4' });
+  assert.equal(r.statusCode, 200, r.body);
+  const page = r.json();
+  assert.equal(page.salesOpen, true);
+  assert.equal(page.edition.theme, 'fit & healthy routine');
+  assert.deepEqual(page.tiers.map((t: { name: string }) => t.name), ['Standard', 'Full', 'Personal']);
+  assert.equal(page.people.length, 4);
+  assert.equal(page.modules.length, 4);
+  assert.equal(page.modules[0].lessons, 4);
+  assert.ok(page.calendar.length >= 7 && page.calendar[0].day === 1);
+  assert.equal(page.course.averageMinutes, 21);
+  assert.equal(page.trailer.title, 'Pierwszy trening przy krześle');
+  // wspólne cechy na górze tabeli, konsultacja tylko w Personal
+  assert.equal(page.comparison[0].common, true);
+  const consult = page.comparison.find((c: { feature: string }) => c.feature.startsWith('Konsultacja'));
+  assert.deepEqual(consult.tiers, { t4_std: false, t4_full: false, t4_pers: true });
+  assert.ok(page.passProducts.some((p: { id: string }) => p.id === 'pr_r9'), 'kanał „w karnecie”');
+  assert.ok(!('phone' in page.people[0]) && !JSON.stringify(page).includes('+48500000002'), 'bez danych kontaktowych trenerek');
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/courses/co3' })).statusCode, 404);
+});
+
+test('zakup pakietu na www: konto z numeru, płatność, dostęp w aplikacji; drugi raz – 409; po sprzedaży – 409', async () => {
+  const url = '/api/public/studios/centrum-ruchu/courses/co4/purchase';
+  const buyer = { tierId: 't4_full', name: 'Kasia Nowa', phone: '511 222 333', email: 'kasia@example.com', method: 'blik', acceptTerms: true, waiveWithdrawal: true };
+  assert.equal((await app.inject({ method: 'POST', url, payload: { ...buyer, waiveWithdrawal: false } })).statusCode, 400);
+  const r = await app.inject({ method: 'POST', url, payload: buyer });
+  assert.equal(r.statusCode, 200, r.body);
+  const u = db.prepare("SELECT id, name, email FROM users WHERE phone = '+48511222333'").get() as { id: string; name: string; email: string };
+  assert.equal(u.name, 'Kasia Nowa');
+  const e = db.prepare("SELECT source, tier_id, edition_id, expires_at, price_paid_grosze FROM course_enrollments WHERE course_id = 'co4' AND user_id = ?").get(u.id) as Record<string, unknown>;
+  assert.equal(e.source, 'purchase');
+  assert.equal(e.tier_id, 't4_full');
+  assert.equal(e.edition_id, 'ed4');
+  assert.equal(e.price_paid_grosze, 27900);
+  assert.ok(e.expires_at, 'dostęp do końca edycji');
+  assert.ok(db.prepare("SELECT 1 FROM payments WHERE user_id = ? AND kind = 'course' AND reference_id = 'co4' AND amount_grosze = 27900").get(u.id));
+  assert.ok(db.prepare("SELECT 1 FROM memberships WHERE studio_id = ? AND user_id = ? AND role = 'client'").get(R, u.id));
+  const kasia = await login('+48511222333');
+  const course = (await call(kasia, R, 'GET', '/api/courses/co4')).json();
+  assert.equal(course.access, 'purchase');
+  assert.equal((await app.inject({ method: 'POST', url, payload: buyer })).statusCode, 409);
+  // kanał karnetowy: Magda z Reformer 9 ma kurs bez zakupu
+  const magda = await login(DEMO.magda);
+  assert.equal((await call(magda, R, 'GET', '/api/courses/co4')).json().access, 'pass');
+  const until = (db.prepare("SELECT sales_until FROM course_editions WHERE id = 'ed4'").get() as { sales_until: string }).sales_until;
+  db.prepare("UPDATE course_editions SET sales_until = ? WHERE id = 'ed4'").run(new Date(Date.now() - 1000).toISOString());
+  const closed = await app.inject({ method: 'POST', url, payload: { ...buyer, phone: '511 222 444' } });
+  assert.equal(closed.statusCode, 409);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/courses/co4' })).json().salesOpen, false);
+  db.prepare("UPDATE course_editions SET sales_until = ? WHERE id = 'ed4'").run(until);
+});
+
+test('edytor strony kursu w panelu: treści, edycje, pakiety (ze sprzedażą – ukryty), prowadzące, lekcje; obca trenerka – 403', async () => {
+  const owner = await login(DEMO.owner);
+  const ola = await login(DEMO.ola);
+  const pub = async () => (await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/courses/co4' })).json();
+  const editor = (await call(owner, R, 'GET', '/api/creator/courses/co4/page')).json();
+  assert.equal(editor.slug, 'centrum-ruchu');
+  assert.equal(editor.tiers.find((t: { id: string }) => t.id === 't4_full').sold, 1, 'sprzedaż z poprzedniego testu');
+  assert.equal((await call(ola, R, 'GET', '/api/creator/courses/co4/page')).statusCode, 403);
+  assert.equal((await call(ola, R, 'PUT', '/api/creator/courses/co4/page', { promise: 'x' })).statusCode, 403);
+
+  // treści strony: walidacja medicalClaims i normalizacja przez parseCoursePage
+  assert.equal((await call(owner, R, 'PUT', '/api/creator/courses/co4/page', { ...editor.page, faq: [{ q: 'Czy to działa?', a: 'Gwarantuje efekt w tydzień.' }] })).statusCode, 400);
+  const saved = await call(owner, R, 'PUT', '/api/creator/courses/co4/page', { ...editor.page, promise: '  Zdrowa rutyna w 25 minut  ', outcomes: ['Elastyczność', '', 7] });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.equal((await pub()).page.promise, 'Zdrowa rutyna w 25 minut');
+  assert.deepEqual((await pub()).page.outcomes, ['Elastyczność']);
+
+  // edycje: daty w kolejności; edycji z uczestniczkami nie usuwamy
+  assert.equal((await call(owner, R, 'POST', '/api/creator/courses/co4/editions', { name: 'Zima', salesFrom: '2027-02-01', salesUntil: '2027-01-01' })).statusCode, 400);
+  const ed = await call(owner, R, 'POST', '/api/creator/courses/co4/editions', { name: 'Edycja zimowa', salesFrom: '2027-01-01', salesUntil: '2027-02-01', news: [{ title: 'Nowy blok', body: 'Mobilność' }, { title: '' }] });
+  assert.equal(ed.statusCode, 200, ed.body);
+  assert.equal((await pub()).edition.id, 'ed4', 'bieżąca edycja to ta w sprzedaży, nie zapowiedziana');
+  assert.equal((await call(owner, R, 'PUT', `/api/creator/editions/${ed.json().id}`, { name: 'Edycja zimowa', theme: 'schudniesz do świąt' })).statusCode, 400);
+  assert.equal((await call(owner, R, 'DELETE', '/api/creator/editions/ed4')).statusCode, 409);
+  assert.equal((await call(owner, R, 'DELETE', `/api/creator/editions/${ed.json().id}`)).statusCode, 200);
+
+  // pakiety: nowy na końcu listy; pakiet ze sprzedażą tylko się chowa (active = 0), bez sprzedaży – znika
+  const tier = await call(owner, R, 'POST', '/api/creator/courses/co4/tiers', { name: 'Mini', price: 9900, features: ['Wszystkie treningi edycji', 'Wszystkie treningi edycji'], seatLimit: 5 });
+  assert.equal(tier.statusCode, 200, tier.body);
+  assert.equal((await pub()).tiers.at(-1).name, 'Mini');
+  assert.equal((await call(owner, R, 'POST', '/api/creator/courses/co4/tiers', { name: 'Zła', price: -1 })).statusCode, 400);
+  const del = (await call(owner, R, 'DELETE', '/api/creator/tiers/t4_full')).json();
+  assert.equal(del.archived, true);
+  assert.ok(db.prepare("SELECT 1 FROM course_tiers WHERE id = 't4_full' AND active = 0").get());
+  assert.ok(!(await pub()).tiers.some((t: { id: string }) => t.id === 't4_full'));
+  assert.equal((await call(owner, R, 'DELETE', `/api/creator/tiers/${tier.json().id}`)).json().archived, false);
+  assert.ok(!db.prepare('SELECT 1 FROM course_tiers WHERE id = ?').get(tier.json().id));
+  assert.equal((await call(owner, R, 'PUT', '/api/creator/tiers/t4_full', { name: 'Full', price: 27900, features: ['Wszystkie treningi edycji'], highlight: true, active: true })).statusCode, 200);
+  assert.ok((await pub()).tiers.some((t: { id: string }) => t.id === 't4_full'), 'pakiet przywrócony');
+
+  // prowadzące: gość bez konta, podpięcie do lekcji, usunięcie odpina lekcję
+  assert.equal((await call(owner, R, 'POST', '/api/creator/courses/co4/people', { name: 'Ewa', role: 'guru' })).statusCode, 400);
+  assert.equal((await call(owner, R, 'POST', '/api/creator/courses/co4/people', { name: 'Ewa', role: 'expert', bio: 'Leczy kręgosłup.' })).statusCode, 400);
+  const person = await call(owner, R, 'POST', '/api/creator/courses/co4/people', { name: 'Ewa Lis', role: 'expert', title: 'dietetyczka', bio: 'Uczy prostych nawyków.' });
+  assert.equal(person.statusCode, 200, person.body);
+  const linked = await call(owner, R, 'POST', '/api/creator/courses/co4/people', { userId: (db.prepare('SELECT id FROM users WHERE phone = ?').get(DEMO.ola) as { id: string }).id, role: 'trainer' });
+  assert.equal(linked.statusCode, 200, linked.body);
+  assert.equal((db.prepare('SELECT name FROM course_people WHERE id = ?').get(linked.json().id) as { name: string }).name, 'Ola', 'imię z konta');
+  const pid = person.json().id;
+  assert.equal((await call(owner, R, 'PUT', '/api/creator/lessons/l4_8/person', { personId: pid })).statusCode, 200);
+  assert.equal((await call(owner, R, 'PUT', '/api/creator/lessons/l4_8/person', { personId: 'p_obcy' })).statusCode, 400);
+  assert.ok((await pub()).modules.find((m: { name: string }) => m.name === 'Masaż twarzy').people.includes(pid));
+  assert.equal((await call(owner, R, 'DELETE', `/api/creator/people/${pid}`)).statusCode, 200);
+  assert.equal((db.prepare("SELECT person_id FROM course_lessons WHERE id = 'l4_8'").get() as { person_id: string | null }).person_id, null);
+  await call(owner, R, 'DELETE', `/api/creator/people/${linked.json().id}`);
+  await call(owner, R, 'PUT', '/api/creator/lessons/l4_8/person', { personId: 'p4_n' });
+});
+
+test('wideo lekcji: podpisany link działa bez sesji (AirPlay/Chromecast), podróbka i przeterminowany – 404', async () => {
+  const owner = await login(DEMO.owner);
+  const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), Buffer.alloc(64, 7)]);
+  const up = await call(owner, R, 'POST', '/api/creator/courses/co1/lessons', { module: 'TV', title: 'Na telewizorze', kind: 'video', freePreview: true, video: { dataUrl: 'data:video/mp4;base64,' + mp4.toString('base64'), durationSec: 60 } });
+  assert.equal(up.statusCode, 200, up.body);
+  const magda = await login(DEMO.magda);
+  const lesson = (await call(magda, R, 'GET', '/api/courses/co1')).json().lessonsList.find((l: { id: string }) => l.id === up.json().id);
+  assert.match(lesson.videoUrl, /^\/api\/stream\/[\w-]+\?e=\d+&sig=[\w-]+$/);
+  const bare = await app.inject({ method: 'GET', url: lesson.videoUrl, headers: { range: 'bytes=0-9' } });
+  assert.equal(bare.statusCode, 206, bare.body);
+  assert.equal(bare.headers['content-range'], `bytes 0-9/${mp4.length}`);
+  assert.equal((await app.inject({ method: 'GET', url: lesson.videoUrl.replace(/sig=./, 'sig=x') })).statusCode, 404);
+  const { signStreamUrl } = await import('../src/crypto.ts');
+  const mediaId = lesson.videoUrl.split('/')[3].split('?')[0];
+  assert.equal((await app.inject({ method: 'GET', url: signStreamUrl(mediaId, Math.floor(Date.now() / 1000) - 30 * 86400) })).statusCode, 404, 'link sprzed miesiąca wygasł');
+});
+
+test('wideo lekcji: wgrywanie kawałkami z wznawianiem, plik na dysku, Range strumieniem', async () => {
+  const owner = await login(DEMO.owner);
+  const put = (uploadId: string, offset: number, chunk: Buffer) =>
+    app.inject({ method: 'PUT', url: `/api/creator/uploads/${uploadId}`, payload: chunk, headers: { authorization: `Bearer ${owner}`, origin: 'http://localhost', host: 'localhost', 'x-studio-id': R, 'content-type': 'application/octet-stream', 'upload-offset': String(offset) } });
+  const mp4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypisom'), randomBytes(300_000)]);
+  const start = await call(owner, R, 'POST', '/api/creator/uploads', { mime: 'video/mp4', size: mp4.length, durationSec: 2400 });
+  assert.equal(start.statusCode, 200, start.body);
+  const up = start.json().id;
+  assert.equal((await put(up, 0, mp4.subarray(0, 100_000))).json().offset, 100_000);
+  // Zerwane połączenie / zły offset: serwer mówi, skąd wznowić.
+  const stale = await put(up, 0, mp4.subarray(0, 100_000));
+  assert.equal(stale.statusCode, 409);
+  assert.equal(stale.json().details.offset, 100_000);
+  assert.equal((await call(owner, R, 'GET', `/api/creator/uploads/${up}`)).json().offset, 100_000);
+  const done = await put(up, 100_000, mp4.subarray(100_000));
+  assert.equal(done.statusCode, 200, done.body);
+  assert.equal(done.json().done, true);
+  const row = db.prepare('SELECT path, data, size FROM media WHERE id = ?').get(up) as { path: string; data: Uint8Array | null; size: number };
+  assert.ok(row.path && row.data === null, 'film na dysku, nie w bazie');
+  assert.equal(row.size, mp4.length);
+
+  const lesson = await call(owner, R, 'POST', '/api/creator/courses/co1/lessons', { module: 'Pełne treningi', title: 'Trening 40 min', kind: 'video', freePreview: true, videoId: up });
+  assert.equal(lesson.statusCode, 200, lesson.body);
+  assert.equal((await call(owner, R, 'POST', '/api/creator/courses/co1/lessons', { module: 'X', title: 'Drugi raz', kind: 'video', videoId: up })).statusCode, 400, 'film należy do jednej lekcji');
+  const magda = await login(DEMO.magda);
+  const l = (await call(magda, R, 'GET', '/api/courses/co1')).json().lessonsList.find((x: { id: string }) => x.id === lesson.json().id);
+  assert.equal(l.durationSec ?? l.duration_sec ?? 2400, 2400);
+  const part = await app.inject({ method: 'GET', url: l.videoUrl, headers: { range: 'bytes=200000-200099' } });
+  assert.equal(part.statusCode, 206);
+  assert.equal(part.headers['content-range'], `bytes 200000-200099/${mp4.length}`);
+  assert.ok(part.rawPayload.equals(mp4.subarray(200_000, 200_100)));
+  const whole = await app.inject({ method: 'GET', url: l.videoUrl });
+  assert.ok(whole.rawPayload.equals(mp4));
+
+  // Usunięcie lekcji kasuje plik z dysku.
+  const { mediaFile } = await import('../src/services/media-files.ts');
+  const { existsSync } = await import('node:fs');
+  const file = mediaFile(db, row.path);
+  assert.ok(existsSync(file));
+  assert.equal((await call(owner, R, 'DELETE', `/api/creator/lessons/${lesson.json().id}`)).statusCode, 200);
+  assert.ok(!existsSync(file));
+});
+
+test('wgrywanie wideo: zła sygnatura po pierwszych bajtach i limit miejsca z planu', async () => {
+  const owner = await login(DEMO.owner);
+  const s = await call(owner, R, 'POST', '/api/creator/uploads', { mime: 'video/mp4', size: 1000 });
+  const fake = await app.inject({ method: 'PUT', url: `/api/creator/uploads/${s.json().id}`, payload: Buffer.alloc(1000, 0x41), headers: { authorization: `Bearer ${owner}`, origin: 'http://localhost', host: 'localhost', 'x-studio-id': R, 'content-type': 'application/octet-stream', 'upload-offset': '0' } });
+  assert.equal(fake.statusCode, 415);
+  assert.equal((await call(owner, R, 'GET', `/api/creator/uploads/${s.json().id}`)).statusCode, 404, 'nieudane wgrywanie usunięte');
+  assert.equal((await call(owner, R, 'POST', '/api/creator/uploads', { mime: 'application/pdf', size: 1000 })).statusCode, 400);
+
+  const { planById } = await import('@glam/core');
+  const plan = (db.prepare('SELECT plan_id FROM studios WHERE id = ?').get(R) as { plan_id: string }).plan_id;
+  // Trwające wgrywanie rezerwuje miejsce: zapełniamy plan i kolejny film już się nie mieści.
+  db.prepare("INSERT INTO media_uploads (id, studio_id, owner_id, kind, mime, size, created_at) VALUES ('up_full', ?, 'x', 'course', 'video/mp4', ?, ?)").run(R, planById(plan).limits.videoMb * 1_000_000, new Date().toISOString());
+  try {
+    assert.equal((await call(owner, R, 'POST', '/api/creator/uploads', { mime: 'video/mp4', size: 1000 })).statusCode, 413);
+  } finally {
+    db.prepare("DELETE FROM media_uploads WHERE id = 'up_full'").run();
+  }
+});
+
+test('migracja: filmy z BLOB-ów trafiają na dysk przy starcie, obrazy zostają w bazie', async () => {
+  const { moveVideoBlobsToDisk, mediaFile } = await import('../src/services/media-files.ts');
+  const { readFileSync } = await import('node:fs');
+  const video = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), randomBytes(5000)]);
+  const ins = db.prepare("INSERT INTO media (id, studio_id, owner_id, kind, mime, data, size, private, created_at) VALUES (?, ?, 'x', ?, ?, ?, ?, 0, ?)");
+  ins.run('m_old_video', R, 'course', 'video/webm', video, video.length, new Date().toISOString());
+  ins.run('m_old_photo', R, 'post', 'image/png', Buffer.from([0x89, 0x50, 0x4e, 0x47]), 4, new Date().toISOString());
+  assert.ok(moveVideoBlobsToDisk(db) >= 1);
+  const v = db.prepare("SELECT path, data FROM media WHERE id = 'm_old_video'").get() as { path: string; data: Uint8Array | null };
+  assert.equal(v.data, null);
+  assert.ok(readFileSync(mediaFile(db, v.path)).equals(video));
+  assert.equal((db.prepare("SELECT path FROM media WHERE id = 'm_old_photo'").get() as { path: string | null }).path, null);
+  assert.equal(moveVideoBlobsToDisk(db), 0, 'drugi start niczego nie przenosi');
+  db.prepare("DELETE FROM media WHERE id IN ('m_old_video', 'm_old_photo')").run();
+});
+
 test('sklep: rezerwacja do odbioru blokuje sztukę, anulowanie ją zwraca, odbiór w recepcji', async () => {
   const magda = await login(DEMO.magda);
   const stock = () => (JSON.parse((db.prepare("SELECT variants_json FROM shop_products WHERE id = 'sp1'").get() as { variants_json: string }).variants_json) as { id: string; stock: number }[]).find((v) => v.id === 'l')!.stock;
@@ -180,6 +386,70 @@ test('sklep: rezerwacja do odbioru blokuje sztukę, anulowanie ją zwraca, odbi�
   assert.equal((await call(kasia, R, 'POST', `/api/staff/shop/orders/${o2.json().id}`, { status: 'ready' })).statusCode, 200);
   assert.equal((await call(kasia, R, 'POST', `/api/staff/shop/orders/${o2.json().id}`, { status: 'collected' })).statusCode, 400, 'trzeba podać formę płatności na miejscu');
   assert.equal((await call(kasia, R, 'POST', `/api/staff/shop/orders/${o2.json().id}`, { status: 'collected', method: 'terminal' })).statusCode, 200);
+});
+
+test('sklep: menu baru bez limitu sztuk, cena wariantu, makro tylko uzupełnione, miara skarpetek', async () => {
+  const magda = await login(DEMO.magda);
+  const shop = (await call(magda, R, 'GET', '/api/shop')).json();
+  const byId = (pid: string) => shop.products.find((p: { id: string }) => p.id === pid);
+  assert.equal(byId('sp1').sizeName, 'Rozmiar skarpetek');
+  assert.deepEqual(byId('sp1').variants.map((v: { size: string }) => v.size), ['35–38', '39–42', '43–46']);
+  assert.equal(byId('sp8').nutrition, null, 'napój bez makro – nic do pokazania');
+  assert.equal(byId('sp7').nutrition.fat, undefined, 'brak tłuszczu w makro – pole pominięte');
+  assert.equal(byId('sp7').nutrition.protein, 5);
+  assert.equal(byId('sp9').status, 'available');
+  assert.match(byId('sp9').price, /^od /, 'hantelki mają różne ceny wag');
+
+  const o = await call(magda, R, 'POST', '/api/shop/orders', { kind: 'pickup', items: [{ productId: 'sp6', variantId: 'xl', qty: 2 }] });
+  assert.equal(o.statusCode, 200, o.body);
+  const row = db.prepare('SELECT total_grosze, expires_at FROM shop_orders WHERE id = ?').get(o.json().id) as { total_grosze: number; expires_at: string };
+  assert.equal(row.total_grosze, 3800, 'cena wariantu 450 ml');
+  assert.equal(row.expires_at, new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Warsaw' }), 'napój czeka do końca dnia');
+  const matcha = JSON.parse((db.prepare("SELECT variants_json FROM shop_products WHERE id = 'sp6'").get() as { variants_json: string }).variants_json);
+  assert.equal(matcha.find((v: { id: string }) => v.id === 'xl').stock, null, 'napój bez limitu – stan się nie zmienia');
+  assert.equal((await call(magda, R, 'POST', '/api/shop/orders', { kind: 'pickup', items: [{ productId: 'sp9', variantId: 'h15', qty: 1 }] })).statusCode, 409, '1,5 kg wyprzedane');
+  assert.equal((await call(magda, R, 'POST', '/api/shop/orders', { kind: 'online', method: 'blik', items: [{ productId: 'sp5', variantId: 'one', qty: 1 }] })).statusCode, 409, 'napojów się nie wysyła');
+});
+
+test('sklep: galeria produktu z biblioteki studia, usunięte zdjęcie zwalnia miejsce; katalog na stronie WWW', async () => {
+  const owner = await login(DEMO.owner);
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  const a = (await call(owner, R, 'POST', '/api/staff/shop/media', { dataUrl: PNG })).json();
+  const b = (await call(owner, R, 'POST', '/api/staff/shop/media', { dataUrl: PNG })).json();
+  assert.ok(a.id && b.id);
+  const created = await call(owner, R, 'POST', '/api/staff/shop/products', {
+    category: 'drink',
+    name: 'Kakao proteinowe',
+    priceGrosze: 1700,
+    photos: [a.id, b.id],
+    nutrition: { serving: '300 ml', protein: '22,5', kcal: '', fat: null },
+  });
+  assert.equal(created.statusCode, 200, created.body);
+  const pid = created.json().id;
+  const find = async () => ((await call(owner, R, 'GET', '/api/staff/shop')).json().products as { id: string; photos: { id: string }[]; nutrition: object; variants: { stock: number | null }[] }[]).find((p) => p.id === pid)!;
+  let p = await find();
+  assert.deepEqual(p.photos.map((x) => x.id), [a.id, b.id]);
+  assert.deepEqual(p.nutrition, { serving: '300 ml', protein: 22.5 });
+  assert.equal(p.variants[0].stock, null, 'nowy napój domyślnie bez limitu');
+
+  assert.equal((await call(owner, R, 'PUT', `/api/staff/shop/products/${pid}`, { photos: ['obce-zdjecie'] })).statusCode, 400);
+  assert.equal((await call(owner, R, 'PUT', `/api/staff/shop/products/${pid}`, { photos: [b.id] })).statusCode, 200);
+  p = await find();
+  assert.deepEqual(p.photos.map((x) => x.id), [b.id]);
+  assert.equal(db.prepare('SELECT id FROM media WHERE id = ?').get(a.id), undefined, 'zdjęcie usunięte z galerii znika z biblioteki');
+
+  const pub = await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/shop' });
+  assert.equal(pub.statusCode, 200, pub.body);
+  const item = pub.json().products.find((x: { id: string }) => x.id === pid);
+  assert.equal(item.photoUrl, `/api/public-media/${b.id}`);
+  assert.equal('rewardEligible' in item, false);
+  assert.equal((await app.inject({ method: 'GET', url: item.photoUrl })).statusCode, 200);
+  const page = await app.inject({ method: 'GET', url: `/api/public/studios/centrum-ruchu/shop/${pid}` });
+  assert.equal(page.statusCode, 200, page.body);
+  assert.equal(page.json().product.id, pid);
+  assert.deepEqual(page.json().product.photos.map((x: { id: string }) => x.id), [b.id]);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/shop/nie-ma' })).statusCode, 404);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/nie-ma/shop' })).statusCode, 404);
 });
 
 test('wydarzenie prywatne: zapytanie → oferta → akceptacja blokuje salę w grafiku; RSVP gości', async () => {
@@ -321,6 +591,69 @@ test('CAPTCHA przy podejrzanej aktywności: proof-of-work wymagany po kilku wysy
     }
   }
   assert.ok(needed, phone);
+});
+
+test('wydarzenie studia: recepcja dodaje z panelu, termin blokuje salę i trenerkę, trenerka ani klientka nie dodadzą', async () => {
+  const [owner, reception, marzena, magda] = await Promise.all([login(DEMO.owner), login(DEMO.reception), login(DEMO.marzena), login(DEMO.magda)]);
+  const opts = (await call(owner, R, 'GET', '/api/events/options')).json();
+  const zoneId = opts.zones[0].id;
+  const trainerId = opts.trainers[0].id;
+  const date = new Date(Date.now() + 12 * 86_400_000).toISOString().slice(0, 10);
+  const free = (await call(magda, R, 'GET', `/api/events/slots?date=${date}&zoneId=${zoneId}&trainerId=${trainerId}&durationMin=90`)).json();
+  const body = { title: 'Halloween Flow', trainerId, zoneId, activity: 'Mat', startsAt: free[0].startsAt, durationMin: 75, capacity: 12, priceGrosze: 8000 };
+  assert.equal((await call(marzena, R, 'POST', '/api/staff/events', body)).statusCode, 403);
+  assert.equal((await call(magda, R, 'POST', '/api/staff/events', body)).statusCode, 403);
+  const r = await call(reception, R, 'POST', '/api/staff/events', body);
+  assert.equal(r.statusCode, 200, r.body);
+  assert.equal((await call(owner, R, 'POST', '/api/staff/events', body)).statusCode, 409);
+  const ev = (await call(owner, R, 'GET', '/api/staff/events')).json().find((e: { id: string }) => e.id === r.json().id);
+  assert.equal(ev.status, 'confirmed');
+  assert.equal(ev.title, 'Halloween Flow');
+  const after = (await call(magda, R, 'GET', `/api/events/slots?date=${date}&zoneId=${zoneId}&trainerId=${trainerId}&durationMin=90`)).json();
+  assert.ok(!after.some((s: { startsAt: string }) => s.startsAt === free[0].startsAt));
+});
+
+test('właścicielka prowadzi zajęcia: zajęcia specjalne i zastępstwo z nią przechodzą', async () => {
+  const owner = await login(DEMO.owner);
+  const cfg = (await call(owner, R, 'GET', '/api/owner/config')).json();
+  const ownerId = cfg.trainers.find((t: { id: string; name: string }) => !['Marzena', 'Ola'].some((n) => t.name.startsWith(n)))?.id;
+  assert.ok(ownerId, 'właścicielka na liście prowadzących');
+  const date = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+  const r = await call(owner, R, 'POST', '/api/staff/sessions', { classTypeId: cfg.classTypes[0].id, trainerId: ownerId, date, time: '21:00', durationMin: 45, capacity: 6, kind: 'special', public: true });
+  assert.equal(r.statusCode, 200, r.body);
+  const s = futureSession(cfg.classTypes[0].id, 30)[0];
+  const swap = await call(owner, R, 'POST', `/api/staff/sessions/${s.id}/trainer`, { trainerId: ownerId });
+  assert.equal(swap.statusCode, 200, swap.body);
+});
+
+test('wydarzenie: zmiana godziny nie omija innych zajęć, a stare zapytanie wygasa po terminie', async () => {
+  const [owner, magda] = await Promise.all([login(DEMO.owner), login(DEMO.magda)]);
+  const opts = (await call(magda, R, 'GET', '/api/events/options')).json();
+  const zoneId = opts.zones[0].id;
+  const trainerId = opts.trainers[0].id;
+  const date = new Date(Date.now() + 15 * 86_400_000).toISOString().slice(0, 10);
+  const free = (await call(magda, R, 'GET', `/api/events/slots?date=${date}&zoneId=${zoneId}&trainerId=${trainerId}&durationMin=60`)).json();
+  const a = free[0].startsAt;
+  const b = new Date(Date.parse(a) + 2 * 3_600_000).toISOString();
+  // Wydarzenie A potwierdzone, a o godzinie B – inne wydarzenie studia w tej samej sali.
+  const ev = await call(magda, R, 'POST', '/api/events', { kind: 'birthday', trainerId, zoneId, activity: 'Mat', startsAt: a, durationMin: 60, guests: 6, termsAccepted: true });
+  assert.equal(ev.statusCode, 200, ev.body);
+  await call(owner, R, 'POST', `/api/staff/events/${ev.json().id}`, { status: 'confirmed' });
+  const other = await call(owner, R, 'POST', '/api/staff/events', { title: 'Warsztat oddechu', trainerId: opts.trainers[1]?.id ?? trainerId, zoneId, activity: 'Stretch', startsAt: b, durationMin: 60, capacity: 8 });
+  assert.equal(other.statusCode, 200, other.body);
+  // Przeniesienie A na godzinę B koliduje z warsztatem – musi być odrzucone.
+  assert.equal((await call(magda, R, 'POST', `/api/events/${ev.json().id}/client`, { action: 'reschedule', startsAt: b })).statusCode, 409);
+  // Przeniesienie o 30 min nachodzi tylko na samo siebie – przechodzi.
+  const half = new Date(Date.parse(a) + 30 * 60_000).toISOString();
+  assert.equal((await call(magda, R, 'POST', `/api/events/${ev.json().id}/client`, { action: 'reschedule', startsAt: half })).statusCode, 200);
+
+  // Zapytanie bez odpowiedzi wygasa po terminie.
+  const inq = await call(magda, R, 'POST', '/api/events', { kind: 'gift', trainerId, zoneId, activity: 'Mat', startsAt: free.at(-1).startsAt, guests: 4, termsAccepted: true });
+  assert.equal(inq.statusCode, 200, inq.body);
+  await runJobs(deps, new Date(Date.parse(free.at(-1).startsAt) + 86_400_000));
+  const after = (await call(magda, R, 'GET', `/api/events/${inq.json().id}`)).json();
+  assert.equal(after.status, 'cancelled');
+  assert.match(after.history.at(-1).text, /Wygasło/);
 });
 
 test('wiadomości do znajomych: dzienny limit na klientkę i na numer, odpowiedź nie zdradza członkostwa', async () => {

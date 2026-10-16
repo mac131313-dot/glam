@@ -40,5 +40,6 @@ await tick();
 setInterval(tick, 60_000).unref();
 
 const port = Number(process.env.PORT ?? 3001);
-await app.listen({ port, host: '127.0.0.1' });
+// W kontenerze HOST=0.0.0.0 (inaczej nginx z sąsiedniego kontenera się nie dobije).
+await app.listen({ port, host: process.env.HOST ?? '127.0.0.1' });
 console.log(`✿ GLAM API: http://127.0.0.1:${port}`);

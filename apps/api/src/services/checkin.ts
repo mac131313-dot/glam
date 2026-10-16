@@ -13,3 +13,10 @@ export function parseCheckinCode(studioId: string, code: string, today: string):
   if (v !== 'GLAM1' || !userId || date !== today) return null;
   return checkinCode(studioId, userId, date) === code.trim() ? userId : null;
 }
+
+/** Data z prawdziwego kodu wystawionego na inny dzień niż dziś (np. zrzut ekranu z wczoraj); w pozostałych przypadkach null. */
+export function checkinCodeOtherDay(studioId: string, code: string, today: string): string | null {
+  const [v, userId, date] = code.trim().split('.');
+  if (v !== 'GLAM1' || !userId || !date || date === today) return null;
+  return checkinCode(studioId, userId, date) === code.trim() ? date : null;
+}

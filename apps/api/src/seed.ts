@@ -1,8 +1,9 @@
 // Dane demo: dwa studia (izolacja), klientka Magda w obu, produkty z tabeli 1.1.4,
 // historia wizyt (pulpit, segmenty uśpionych), pełne zajęcia (lista oczekujących), motywy.
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { initialBalances, localParts, passValidity, type ProductRules } from '@glam/core';
-import { openDb, type Db } from './db.ts';
+import { DB_FILE, openDb, type Db } from './db.ts';
+import { backup } from './services/dispatch.ts';
 import { seedExtras } from './seed-extras.ts';
 import { SSG, SSG_STUDIO, seedSsg } from './seed-ssg.ts';
 import { StudioScope } from './scope.ts';
@@ -280,13 +281,53 @@ export function seed(db: Db, now = new Date()) {
     iso(now),
   );
 
+  // Profil trenerki: opis własny i zaproszenie na najbliższe zajęcia (strona WWW, aplikacja).
+  db.prepare("UPDATE memberships SET about = ? WHERE studio_id = ? AND user_id = ? AND role = 'trainer'").run(
+    'Uczę pilatesu od ośmiu lat. Zaczynałam od rehabilitacji po kontuzji kolana – dlatego tak pilnuję techniki i tempa.\n\nNa moich zajęciach nikt się nie ściga. Pracujemy z oddechem, a po godzinie wychodzisz lżejsza i spokojniejsza.',
+    R,
+    marzena,
+  );
+  const marzenaNext = db
+    .prepare("SELECT id FROM class_sessions WHERE studio_id = ? AND trainer_id = ? AND status = 'scheduled' AND public = 1 AND starts_at > ? ORDER BY starts_at LIMIT 2")
+    .all(R, marzena, now.toISOString()) as { id: string }[];
+  for (const [i, s] of marzenaNext.entries())
+    db.prepare('INSERT INTO trainer_invites (id, studio_id, trainer_id, session_id, body, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+      `ti${i}`,
+      R,
+      marzena,
+      s.id,
+      i === 0 ? 'Będzie dużo pracy z oddechem i spokojne tempo – idealne na początek tygodnia 🌿' : 'Zapraszam na reformer flow – zajmiemy się plecami i barkami.',
+      iso(now),
+    );
+
   seedExtras(db, now);
   seedSsg(db, now, { user, member, product, buy });
   return { studios: [R, K, SSG_STUDIO], users: Object.fromEntries(users) };
 }
 
+// `npm run seed`  – wgrywa demo tylko do pustej bazy; Twoje zmiany (zdjęcia, teksty, klientki) zostają.
+// `npm run reset` – świadomie zaczyna od zera: najpierw kopia zapasowa, potem świeże demo.
 if (import.meta.main) {
-  const file = process.env.GLAM_DB ?? 'glam.db';
+  const file = DB_FILE;
+  const reset = process.argv.includes('--reset');
+  const hasData = () => {
+    if (!existsSync(file)) return false;
+    const db = openDb(file);
+    try {
+      return (db.prepare('SELECT COUNT(*) AS n FROM studios').get() as { n: number }).n > 0;
+    } finally {
+      db.close();
+    }
+  };
+  if (hasData() && !reset) {
+    console.log(`✿ Baza z danymi już jest (${file}) – zostawiam ją bez zmian. Od zera: npm run reset`);
+    process.exit(0);
+  }
+  if (reset && existsSync(file)) {
+    const db = openDb(file);
+    console.log(`💾 Kopia przed resetem: ${backup(db)}`);
+    db.close();
+  }
   for (const f of [file, `${file}-wal`, `${file}-shm`]) rmSync(f, { force: true });
   const db = openDb(file);
   seed(db);

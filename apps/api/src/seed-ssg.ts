@@ -311,11 +311,11 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
 
   // ——— Sklep (z Instagrama studia, ceny od studia 2026-10-16) ———
   // Rozmiary i stany do uzupełnienia w panelu: Sklep → Produkty i stany.
-  const shopItem = (id: string, name: string, price: number, desc: string, sort: number) =>
-    run("INSERT INTO shop_products (id, studio_id, name, description, price_grosze, status, variants_json, reward_eligible, created_at) VALUES (?, ?, ?, ?, ?, 'available', ?, 0, ?)", id, S, name, desc, price, JSON.stringify([{ id: 'std', stock: 10 }]), iso(new Date(now.getTime() + sort * 1000)));
-  shopItem('ss_sp_socks', 'Skarpety antypoślizgowe', 4900, 'Do pilatesu, reformerów i stretchingu.', 1);
-  shopItem('ss_sp_matcha', 'Glow&Grow Coco Matcha', 3900, 'Nasz limitowany napój z matchą od Moshi Matcha.', 2);
-  shopItem('ss_sp_carpatree', 'Strój Carpatree – zestaw', 13900, 'Komplet do treningu marki Carpatree.', 3);
+  const shopItem = (id: string, category: 'drink' | 'accessory' | 'apparel', name: string, price: number, desc: string, sort: number) =>
+    run("INSERT INTO shop_products (id, studio_id, category, name, description, price_grosze, status, variants_json, reward_eligible, created_at) VALUES (?, ?, ?, ?, ?, ?, 'available', ?, 0, ?)", id, S, category, name, desc, price, JSON.stringify([{ id: 'std', stock: 10 }]), iso(new Date(now.getTime() + sort * 1000)));
+  shopItem('ss_sp_socks', 'accessory', 'Skarpety antypoślizgowe', 4900, 'Do pilatesu, reformerów i stretchingu.', 1);
+  shopItem('ss_sp_matcha', 'drink', 'Glow&Grow Coco Matcha', 3900, 'Nasz limitowany napój z matchą od Moshi Matcha.', 2);
+  shopItem('ss_sp_carpatree', 'apparel', 'Strój Carpatree – zestaw', 13900, 'Komplet do treningu marki Carpatree.', 3);
 
   seedHalloween(db, now, owner, T.weronika);
 }

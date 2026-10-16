@@ -1,0 +1,27 @@
+# Stabilne środowisko GLAM bez node --watch i bez żonglowania portami: http://localhost:8080
+# (też z telefonu w tej samej sieci Wi-Fi: http://<IP-Maca>:8080).
+services:
+  api:
+    build: { context: ., target: api }
+    restart: unless-stopped
+    environment:
+      GLAM_PUBLIC_URL: http://localhost:8080
+      GLAM_WEBPUSH: '0'
+    volumes:
+      # Osobna baza dla Dockera (z mediami w środku). Nie podpinamy apps/api/data – SQLite w trybie WAL
+      # nie lubi dwóch procesów (Mac + kontener) na tym samym pliku przez współdzielony katalog.
+      - glam-data:/data
+      # Filmy lekcji (pełne treningi, 0,5–2 GB każdy) na osobnym wolumenie – łatwo przenieść na większy dysk
+      # i kopiować innym rytmem niż bazę. Ścieżki w tabeli media są względne wobec tego katalogu.
+      - glam-media:/data/media
+
+  web:
+    build: { context: ., target: web }
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - '8080:80'
+
+volumes:
+  glam-data:
+  glam-media:

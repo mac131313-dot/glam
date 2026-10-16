@@ -6,6 +6,7 @@ import { accountRoutes } from './routes/account.ts';
 import { clientRoutes } from './routes/client.ts';
 import { communityRoutes } from './routes/community.ts';
 import { configRoutes } from './routes/config.ts';
+import { coursePageRoutes } from './routes/coursePage.ts';
 import { courseRoutes } from './routes/courses.ts';
 import { eventRoutes } from './routes/events.ts';
 import { healthRoutes } from './routes/health.ts';
@@ -18,6 +19,8 @@ import { platformRoutes } from './routes/platform.ts';
 import { publicRoutes } from './routes/public.ts';
 import { shopRoutes } from './routes/shop.ts';
 import { staffRoutes } from './routes/staff.ts';
+import { trainerRoutes } from './routes/trainers.ts';
+import { uploadRoutes } from './routes/uploads.ts';
 
 export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   const app = Fastify({ logger: opts.logger ?? false, trustProxy: true, bodyLimit: 2 * 1024 * 1024 });
@@ -60,6 +63,7 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   communityRoutes(app, deps);
   healthRoutes(app, deps);
   courseRoutes(app, deps);
+  uploadRoutes(app, deps);
   shopRoutes(app, deps);
   eventRoutes(app, deps);
   musicRoutes(app, deps);
@@ -67,5 +71,7 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   logoRoutes(app, deps);
   photoRoutes(app, deps);
   publicRoutes(app, deps);
+  trainerRoutes(app, deps);
+  coursePageRoutes(app, deps);
   return app;
 }

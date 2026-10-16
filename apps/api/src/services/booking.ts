@@ -4,6 +4,7 @@
 // dodanie przez recepcję, potwierdzenie obecności 2 h przed, nieobecność, ocena zajęć.
 import {
   bookingWindow,
+  canWalkIn,
   cancellationOutcome,
   checkAccess,
   describePass,
@@ -70,6 +71,24 @@ function resolveAccess(scope: StudioScope, studio: Studio, userId: string, s: Se
   );
   const granted = results.filter((r): r is AccessGranted => r.ok);
   return { choice: pickPass(granted), results };
+}
+
+export type WalkInOption = { sessionId: string; className: string; startsAt: string; zoneName: string; free: number; covered: boolean };
+
+/** Zajęcia, na które recepcja może teraz dopisać klientkę bez rezerwacji (i czy jej karnet je obejmuje). */
+export function walkInOptions(scope: StudioScope, studio: Studio, userId: string, now: Date): WalkInOption[] {
+  const ids = scope.all<{ id: string }>(
+    `SELECT s.id FROM class_sessions s WHERE s.studio_id = $studio AND s.status = 'scheduled' AND s.public = 1 AND s.starts_at BETWEEN $a AND $b
+       AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.session_id = s.id AND b.user_id = $u AND b.guest_name IS NULL AND b.status IN ('booked', 'attended', 'waitlist'))
+     ORDER BY s.starts_at`,
+    { u: userId, a: new Date(now.getTime() - 15 * 60_000).toISOString(), b: new Date(now.getTime() + 3 * 3_600_000).toISOString() },
+  );
+  return ids
+    .map(({ id: sid }) => {
+      const s = loadSession(scope, sid);
+      return { sessionId: s.id, className: s.class_name, startsAt: s.starts_at, zoneName: s.zone_name, free: s.capacity - takenSeats(scope, s.id), covered: !!resolveAccess(scope, studio, userId, s, now).choice };
+    })
+    .filter((o) => canWalkIn(new Date(o.startsAt), now, o.free));
 }
 
 function noPassError(scope: StudioScope, userId: string, s: SessionRow, results: ReturnType<typeof resolveAccess>['results']) {
@@ -313,7 +332,7 @@ export function rateSession(scope: StudioScope, userId: string, bookingId: strin
 export function changeTrainer(scope: StudioScope, studio: Studio, sessionId: string, trainerId: string, now = new Date()) {
   return scope.tx(() => {
     const s = loadSession(scope, sessionId);
-    const trainer = scope.get<{ name: string }>("SELECT u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.studio_id = $studio AND m.user_id = $t AND m.role = 'trainer'", { t: trainerId });
+    const trainer = scope.get<{ name: string }>("SELECT u.name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.studio_id = $studio AND m.user_id = $t AND m.role IN ('trainer', 'owner')", { t: trainerId });
     if (!trainer) throw notFound('Nie znaleziono trenerki.');
     scope.run('UPDATE class_sessions SET substitute_for = COALESCE(substitute_for, trainer_id), trainer_id = $t WHERE studio_id = $studio AND id = $id', { t: trainerId, id: sessionId });
     const users = scope.all<{ user_id: string }>("SELECT DISTINCT user_id FROM bookings WHERE studio_id = $studio AND session_id = $sid AND status = 'booked' AND guest_name IS NULL", { sid: sessionId });

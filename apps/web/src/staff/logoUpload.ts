@@ -56,13 +56,13 @@ export async function prepareLogo(file: File): Promise<{ dataUrl: string; ratio:
  * Zdjęcie zajęć (tło karty w grafiku): zmniejszone do 1600 px i zapisane jako JPG – zdjęcia nie potrzebują
  * przezroczystości, a JPG jest kilka razy lżejszy od PNG. Metadane (np. lokalizacja z telefonu) znikają przy przerysowaniu.
  */
-export async function preparePhoto(file: File): Promise<string> {
+export async function preparePhoto(file: File, maxEdge = 1600): Promise<string> {
   if (file.size > 15 * 1024 * 1024) throw new Error('To zdjęcie jest za duże (max 15 MB przed zmniejszeniem).');
   if (!/^image\/(png|jpeg|webp)$/.test(file.type)) throw new Error('Wgraj zdjęcie JPG, PNG albo WebP.');
   const url = URL.createObjectURL(file);
   try {
     const img = await loadImage(url);
-    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));

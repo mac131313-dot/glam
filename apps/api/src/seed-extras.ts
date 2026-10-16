@@ -134,13 +134,24 @@ export function seedExtras(db: Db, now = new Date()) {
     ago(1),
   );
 
-  // ——— Sklep (merch) ———
-  const prod = (id: string, name: string, price: number, variants: unknown[], desc: string, reward = 0) =>
-    run("INSERT INTO shop_products (id, studio_id, name, description, price_grosze, status, variants_json, reward_eligible, created_at) VALUES (?, ?, ?, ?, ?, 'available', ?, ?, ?)", id, R, name, desc, price, JSON.stringify(variants), reward, ago(40));
-  prod('sp1', 'Skarpetki antypoślizgowe', 3900, [{ id: 's', size: 'S', stock: 6 }, { id: 'm', size: 'M', stock: 10 }, { id: 'l', size: 'L', stock: 2 }], 'Bawełna z silikonowymi kropkami. Nagroda za 10 treningów.', 1);
-  prod('sp2', 'Butelka szklana 500 ml', 6900, [{ id: 'b', color: 'mleczna', stock: 8 }], 'Szkło borokrzemowe, pokrowiec z logo studia.');
-  prod('sp3', 'Mata podróżna', 18900, [{ id: 'sand', color: 'piaskowa', stock: 3 }, { id: 'sage', color: 'szałwia', stock: 0 }], 'Lekka, 1,5 mm – do walizki.');
-  prod('sp4', 'Koszulka „Oddychaj”', 9900, [{ id: 'xs', size: 'XS', stock: 2 }, { id: 's', size: 'S', stock: 4 }, { id: 'm', size: 'M', stock: 4 }], 'Organiczna bawełna, krój oversize.');
+  // ——— Sklep: menu baru, akcesoria z logo, stroje ———
+  type Prod = { category: string; scale?: string; desc: string; nutrition?: Record<string, unknown>; featured?: boolean; reward?: boolean; age?: number };
+  const prod = (id: string, name: string, price: number, variants: unknown[], o: Prod) =>
+    run(
+      "INSERT INTO shop_products (id, studio_id, category, name, description, price_grosze, status, size_scale, variants_json, nutrition_json, featured, reward_eligible, created_at) VALUES (?, ?, ?, ?, ?, ?, 'available', ?, ?, ?, ?, ?, ?)",
+      id, R, o.category, name, o.desc, price, o.scale ?? 'none', JSON.stringify(variants), o.nutrition ? JSON.stringify(o.nutrition) : null, Number(!!o.featured), Number(!!o.reward), ago(o.age ?? 40),
+    );
+  prod('sp5', 'Shake białkowy wanilia–banan', 1900, [{ id: 'one', stock: null }], { category: 'drink', desc: 'Białko serwatkowe, banan, mleko owsiane, szczypta cynamonu. Idealny do 30 minut po treningu.', nutrition: { serving: '400 ml', kcal: 260, protein: 30, carbs: 24, sugar: 14, fat: 4 }, featured: true, age: 20 });
+  prod('sp6', 'Matcha latte', 1600, [{ id: 'r', size: '300 ml', stock: null }, { id: 'xl', size: '450 ml', stock: null, priceGrosze: 1900 }], { category: 'drink', scale: 'volume', desc: 'Ceremonialna matcha na mleku owsianym, bez cukru.', nutrition: { serving: '300 ml', kcal: 120, protein: 3, carbs: 18, sugar: 9, fat: 4, caffeine: 70 }, age: 21 });
+  prod('sp7', 'Zielone smoothie', 1800, [{ id: 'one', stock: null }], { category: 'drink', desc: 'Szpinak, ananas, jabłko, imbir, limonka.', nutrition: { serving: '350 ml', kcal: 180, protein: 5, carbs: 34, sugar: 22, fiber: 6 }, age: 22 });
+  prod('sp8', 'Woda z elektrolitami', 800, [{ id: 'one', stock: null }], { category: 'drink', desc: 'Schłodzona, z cytryną i solą himalajską.', age: 23 });
+  prod('sp9', 'Hantelki neoprenowe z logo', 4900, [{ id: 'h05', size: '0,5 kg', stock: 6 }, { id: 'h1', size: '1 kg', stock: 4, priceGrosze: 5900 }, { id: 'h15', size: '1,5 kg', stock: 0, priceGrosze: 6900 }], { category: 'accessory', scale: 'weight', desc: 'Para hantelek z miękkim, antypoślizgowym neoprenem i logo studia. Te same, na których ćwiczysz na sali.', featured: true, age: 30 });
+  prod('sp10', 'Podstawki korkowe z logo (2 szt.)', 2900, [{ id: 'one', stock: 12 }], { category: 'accessory', desc: 'Naturalny korek, grawerowane logo – pod kubek albo butelkę.', age: 31 });
+  prod('sp3', 'Mata z logo studia', 18900, [{ id: 'sand', color: 'piaskowa', stock: 3 }, { id: 'sage', color: 'szałwia', stock: 0 }], { category: 'accessory', desc: 'Lekka, 1,5 mm, z logo studia – do walizki i do domu.' });
+  prod('sp2', 'Butelka szklana 500 ml', 6900, [{ id: 'b', color: 'mleczna', stock: 8 }], { category: 'accessory', desc: 'Szkło borokrzemowe, pokrowiec z logo studia.' });
+  prod('sp1', 'Skarpetki antypoślizgowe', 3900, [{ id: 's', size: '35–38', stock: 6 }, { id: 'm', size: '39–42', stock: 10 }, { id: 'l', size: '43–46', stock: 2 }], { category: 'apparel', scale: 'socks', desc: 'Bawełna z silikonowymi kropkami. Nagroda za 10 treningów.', reward: true });
+  prod('sp11', 'Legginsy z wysokim stanem', 18900, [{ id: 'xs', size: 'XS', color: 'grafit', stock: 2 }, { id: 's', size: 'S', color: 'grafit', stock: 5 }, { id: 'm', size: 'M', color: 'grafit', stock: 3 }, { id: 'l', size: 'L', color: 'grafit', stock: 1 }], { category: 'apparel', scale: 'clothing', desc: 'Matowa, gęsta dzianina, która nie prześwituje przy skłonach. Haftowane logo na pasie.', featured: true, age: 25 });
+  prod('sp4', 'Koszulka „Oddychaj”', 9900, [{ id: 'xs', size: 'XS', stock: 2 }, { id: 's', size: 'S', stock: 4 }, { id: 'm', size: 'M', stock: 4 }], { category: 'apparel', scale: 'clothing', desc: 'Organiczna bawełna, krój oversize.' });
 
   // ——— Wydarzenia prywatne ———
   run("INSERT INTO event_packages (id, studio_id, name, kinds_json, min_guests, max_guests, duration_min, price_grosze, deposit_grosze, addons_json, active) VALUES ('ep1', ?, 'Urodziny do 10 osób', '[\"birthday\",\"anniversary\"]', 4, 10, 90, 89000, 20000, '[\"playlist\",\"decor\"]', 1)", R);
@@ -195,6 +206,71 @@ export function seedExtras(db: Db, now = new Date()) {
     ago(2),
     ago(2),
   );
+
+  // ——— Kurs ze stroną sprzedażową (wzór: audyt STRETCH&GLOW; osoby fikcyjne) ———
+  const later = (days: number) => iso(new Date(now.getTime() + days * DAY));
+  run(
+    `INSERT INTO courses (id, studio_id, author_id, title, subtitle, description, kind, level, goal, day_part, contraindications, access_days, included_product_ids_json, status, page_json, created_at, updated_at)
+     VALUES ('co4', ?, ?, 'Stretch & Shine', 'Barre, stretching i rzeźbienie w 25 minut dziennie', ?, 'program', 'wszystkie poziomy', 'elastyczność', 'rano', 'Ciąża, świeże urazy i operacje – przed startem skonsultuj się z lekarzem.', NULL, '["pr_r9"]', 'published', ?, ?, ?)`,
+    R,
+    marzena,
+    'Autorska metoda Barre & Stretch, treningi rzeźbiące i lekcje zaproszonych ekspertek. Krótko, regularnie, z planem na każdy dzień.',
+    JSON.stringify({
+      promise: 'Wszystko, by zbudować zdrową rutynę i zadbać o swoje ciało',
+      outcomes: ['Dłuższe, elastyczne mięśnie i lżejszy krok', 'Lepsza postawa przy biurku', 'Mocniejszy środek ciała', 'Spokojniejsza, mniej opuchnięta twarz rano', 'Rutyna, która mieści się w 25 minutach'],
+      forWhom: ['Chcesz wysmuklić i wydłużyć mięśnie bez dźwigania ciężarów', 'Masz mało czasu – trening trwa 20–25 minut', 'Lubisz intensywne, ale świadome zajęcia'],
+      equipment: 'mata, mała piłka i krzesło',
+      faq: [
+        { q: 'Kiedy dostanę dostęp?', a: 'Od razu po płatności. Zaloguj się w aplikacji numerem telefonu z zamówienia – wyślemy kod SMS.' },
+        { q: 'Jakiego sprzętu potrzebuję?', a: 'Mata, mała piłka i krzesło. Piłkę możesz zastąpić zwiniętym ręcznikiem.' },
+        { q: 'Czy dam radę bez doświadczenia?', a: 'Tak. Każdy trening ma wersję łatwiejszą, a kalendarz zaczyna się od spokojnych dni.' },
+        { q: 'Na jakich urządzeniach obejrzę kurs?', a: 'Telefon, tablet i komputer. Z telefonu puścisz trening na telewizor przez AirPlay lub Chromecast.' },
+        { q: 'Czy mogę zwrócić kurs?', a: 'Dostęp do treści cyfrowych zaczyna się od razu, dlatego prawo odstąpienia wygasa przy zakupie. Napisz do nas, jeśli coś nie działa – pomożemy.' },
+        { q: 'Mam karnet w studiu. Czy muszę kupować kurs?', a: 'Nie. Karnet Pilates Reformer 9 obejmuje ten kurs – znajdziesz go w aplikacji w zakładce Kursy.' },
+      ],
+    }),
+    ago(20),
+    ago(1),
+  );
+  run(
+    "INSERT INTO course_editions (id, studio_id, course_id, name, theme, sales_from, sales_until, starts_at, access_until, news_json, created_at) VALUES ('ed4', ?, 'co4', 'Edycja jesienna', 'fit & healthy routine', ?, ?, ?, ?, ?, ?)",
+    R,
+    ago(10),
+    later(20),
+    ago(1),
+    later(120),
+    JSON.stringify([
+      { title: 'Kalendarz treningowy', body: 'Gotowy plan rozpisany dzień po dniu – nie musisz nic wybierać.' },
+      { title: 'Treningi rzeźbiące', body: 'Nowy blok z Julią: wzmocnienie i modelowanie sylwetki.' },
+      { title: 'Nowe Barre & Stretch', body: 'Świeże zajęcia autorską metodą Marzeny.' },
+      { title: 'Masaż twarzy', body: 'Krótkie lekcje z Niną na rano i wieczór.' },
+    ]),
+    ago(10),
+  );
+  const tier = (id: string, name: string, price: number, features: string[], sort: number, highlight = 0, seats: number | null = null) =>
+    run('INSERT INTO course_tiers (id, studio_id, course_id, name, price_grosze, features_json, highlight, seat_limit, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', id, R, 'co4', name, price, JSON.stringify(features), highlight, seats, sort);
+  const base = ['Wszystkie treningi edycji', 'Kalendarz treningowy dzień po dniu', 'Dostęp do końca edycji'];
+  tier('t4_std', 'Standard', 19900, base, 1);
+  tier('t4_full', 'Full', 27900, [...base, 'Lekcje zaproszonych ekspertek', 'Społeczność uczestniczek'], 2, 1);
+  tier('t4_pers', 'Personal', 54900, [...base, 'Lekcje zaproszonych ekspertek', 'Społeczność uczestniczek', 'Konsultacja 1:1 online (30 min)'], 3, 0, 10);
+  const person = (id: string, user: string | null, name: string, role: string, title: string, bio: string, sort: number) =>
+    run('INSERT INTO course_people (id, studio_id, course_id, user_id, name, role, title, bio, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', id, R, 'co4', user, name, role, title, bio, sort);
+  person('p4_m', marzena, 'Marzena', 'author', 'autorka metody Barre & Stretch', 'Od 15 lat uczy pilatesu i baletu dla dorosłych. Łączy pracę przy drążku ze stretchingiem, żeby trening był krótki, a efekty – długie.', 1);
+  person('p4_j', null, 'Julia Sadowska', 'trainer', 'trenerka przygotowania motorycznego', 'Pracuje z tancerkami i biegaczkami. Jej treningi rzeźbiące są krótkie i bardzo precyzyjne.', 2);
+  person('p4_n', null, 'Nina Zawadzka', 'expert', 'kosmetolożka', 'Specjalizuje się w masażu twarzy i pracy z napięciem żuchwy.', 3);
+  person('p4_t', null, 'dr Tomasz Weller', 'expert', 'fizjoterapeuta', 'Łączy wiedzę medyczną z uważnym ruchem. Prowadzi trening barre z naciskiem na bezpieczne stawy.', 4);
+  const lesson4 = (id: string, module: string, title: string, dur: number, day: number, who: string, sort: number, free = 0) =>
+    run('INSERT INTO course_lessons (id, studio_id, course_id, module, title, kind, duration_sec, unlock_day, free_preview, person_id, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', id, R, 'co4', module, title, 'text', dur, day, free, who, sort);
+  lesson4('l4_1', 'Barre & Stretch', 'Pierwszy trening przy krześle', 1320, 0, 'p4_m', 1, 1);
+  lesson4('l4_2', 'Barre & Stretch', 'Długie nogi, lekkie biodra', 1500, 1, 'p4_m', 2);
+  lesson4('l4_3', 'Barre & Stretch', 'Plecy i postawa', 1380, 3, 'p4_m', 3);
+  lesson4('l4_4', 'Barre & Stretch', 'Pełny stretch', 1500, 5, 'p4_m', 4);
+  lesson4('l4_5', 'Rzeźbienie', 'Pośladki i uda', 1260, 2, 'p4_j', 5);
+  lesson4('l4_6', 'Rzeźbienie', 'Ramiona bez ciężarów', 1200, 4, 'p4_j', 6);
+  lesson4('l4_7', 'Rzeźbienie', 'Środek ciała', 1320, 6, 'p4_j', 7);
+  lesson4('l4_8', 'Masaż twarzy', 'Poranny drenaż', 600, 1, 'p4_n', 8);
+  lesson4('l4_9', 'Masaż twarzy', 'Wieczorne rozluźnienie żuchwy', 720, 4, 'p4_n', 9);
+  lesson4('l4_10', 'Barre z fizjoterapeutą', 'Bezpieczne kolana i biodra', 1500, 7, 'p4_t', 10);
 
   // ——— Muzyka ———
   run("INSERT INTO playlists (id, studio_id, provider, url, name, purpose, class_type_id, created_by, created_at) VALUES ('pl1', ?, 'spotify', 'https://open.spotify.com/playlist/37i9dQZF1DX9uKNf5jGX6m', 'Reformer – spokojny flow', 'class', 'ct_reformer', ?, ?)", R, marzena, ago(20));

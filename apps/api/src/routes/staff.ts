@@ -25,7 +25,7 @@ import { badRequest, conflict, forbidden, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
 import { DESK_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
-import { bookSession, cancelBooking, changeTrainer, checkIn, loadSession, markNoShow } from '../services/booking.ts';
+import { bookSession, cancelBooking, changeTrainer, checkIn, loadSession, markNoShow, walkInOptions } from '../services/booking.ts';
 import { CHAT_BODY_LIMIT, CHAT_LAST_BODY, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
 import { logUsage } from '../services/dispatch.ts';
 import { storeMedia } from '../services/media.ts';
@@ -34,8 +34,9 @@ import { consumeEntry, loadPasses, refundEntry } from '../services/passes.ts';
 import { purchaseProduct, recordPayment } from '../services/payments.ts';
 import { clientFacts } from '../services/segments.ts';
 import type { Studio } from '../services/studio.ts';
+import { activateGuestPass } from './account.ts';
 import { createGuestPass, deliverGuestPass, guestCode, passesView } from './client.ts';
-import { parseCheckinCode } from '../services/checkin.ts';
+import { checkinCodeOtherDay, parseCheckinCode } from '../services/checkin.ts';
 
 export const WELCOME_MAX = 400;
 
@@ -46,8 +47,40 @@ export const WELCOME_TEMPLATES = [
   { id: 'humor', label: 'Z humorem', body: 'Hej! Jestem {trenerka} i obiecuję, że nie będę się śmiać, jeśli za pierwszym razem coś Ci nie wyjdzie. Każda z nas kiedyś zaczynała od drżących kolan 😄' },
 ];
 
+/** Kod wejściówki od znajomej: sam kod (8 znaków) albo link z QR (…/app?wejsciowka=KOD). Kod klientki (GLAM1.…) to nie wejściówka. */
+export function guestPassCodeOf(raw: string): string | null {
+  const fromUrl = /[?&]wejsciowka=([A-Za-z0-9]+)/.exec(raw)?.[1];
+  if (fromUrl) return fromUrl.toUpperCase();
+  return /^[A-Za-z0-9]{6,12}$/.test(raw) && !/^\d+$/.test(raw) ? raw.toUpperCase() : null;
+}
+
 function clientName(scope: StudioScope, userId: string) {
   return (scope.db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as { name: string | null } | undefined)?.name ?? 'Klientka';
+}
+
+const UNDO_SALE_WINDOW_MS = 24 * 3_600_000;
+
+/** Powód, dla którego sprzedaży z recepcji nie da się cofnąć (null = można). Cofamy tylko nietknięty karnet. */
+function deskSaleUndoBlocker(scope: StudioScope, userId: string, passId: string, now = Date.now()): string | null {
+  const pass = scope.get<{ source: string; created_at: string; activated_at: string | null; freezes_used: number }>(
+    'SELECT source, created_at, activated_at, freezes_used FROM passes WHERE studio_id = $studio AND id = $p AND user_id = $u',
+    { p: passId, u: userId },
+  );
+  if (!pass) return 'Nie znaleziono karnetu.';
+  if (pass.source !== 'desk') return 'Cofnąć można tylko sprzedaż z recepcji.';
+  if (now - Date.parse(pass.created_at) > UNDO_SALE_WINDOW_MS) return 'Sprzedaż można cofnąć do 24 godzin.';
+  if (pass.activated_at || pass.freezes_used) return 'Karnet był już używany.';
+  const used = scope.get(
+    `SELECT 1 FROM bookings WHERE studio_id = $studio AND pass_id = $p
+     UNION ALL SELECT 1 FROM zone_checkins WHERE studio_id = $studio AND pass_id = $p
+     UNION ALL SELECT 1 FROM pass_freezes WHERE studio_id = $studio AND pass_id = $p
+     UNION ALL SELECT 1 FROM guest_passes WHERE studio_id = $studio AND pass_id = $p`,
+    { p: passId },
+  );
+  if (used) return 'Karnet był już używany.';
+  if (scope.get("SELECT 1 FROM payments WHERE studio_id = $studio AND kind = 'pass' AND reference_id = $p AND invoice_id IS NOT NULL", { p: passId }))
+    return 'Do tej sprzedaży wystawiono fakturę – cofnij ją w księgowości.';
+  return null;
 }
 
 /** Ankieta startowa (4.6): cele, ograniczenia, kontuzje – widoczne dla trenerki, tylko za zgodą. */
@@ -128,6 +161,24 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     );
   });
 
+  // Obecne dziś (ekran Wejście): obecności na zajęciach i wejścia do stref, najnowsze na górze.
+  app.get('/api/staff/arrivals', perm('participants.view'), async (req) => {
+    const { studio, scope } = ctx(req);
+    const date = localParts(new Date(), studio.timezone).date;
+    const day = { from: zonedToUtc(date, '00:00', studio.timezone).toISOString(), to: zonedToUtc(addDays(date, 1), '00:00', studio.timezone).toISOString() };
+    const rows = scope.all<{ id: string; user_id: string; name: string | null; at: string; what: string; starts_at: string | null }>(
+      `SELECT b.id, b.user_id, COALESCE(b.guest_name, u.name) AS name, b.updated_at AS at, COALESCE(s.title, ct.name) AS what, s.starts_at
+       FROM bookings b JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id JOIN users u ON u.id = b.user_id
+       WHERE b.studio_id = $studio AND b.status = 'attended' AND s.starts_at >= $from AND s.starts_at < $to
+       UNION ALL
+       SELECT zc.id, zc.user_id, u.name, zc.at, z.name, NULL FROM zone_checkins zc JOIN zones z ON z.id = zc.zone_id JOIN users u ON u.id = zc.user_id
+       WHERE zc.studio_id = $studio AND zc.at >= $from AND zc.at < $to
+       ORDER BY at DESC LIMIT 100`,
+      day,
+    );
+    return rows.map((r) => ({ id: r.id, userId: r.user_id, name: r.name ?? 'Klientka', at: r.at, what: r.starts_at ? `${localParts(new Date(r.starts_at), studio.timezone).time} ${r.what}` : r.what }));
+  });
+
   app.post<{ Params: { id: string } }>('/api/staff/bookings/:id/checkin', perm('participants.view'), async (req) => {
     const { scope, studio } = ctx(req);
     checkIn(scope, studio, req.params.id);
@@ -157,42 +208,132 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     return res;
   });
 
-  // Check-in QR lub po telefonie (4.11): zajęcia za chwilę → obecność; inaczej wejście do strefy (siłownia, C3).
-  app.post<{ Body: { code?: string; phone?: string; zoneId?: string } }>('/api/staff/checkin', perm('participants.view'), async (req) => {
-    const { studio, scope, user } = ctx(req);
-    const now = new Date();
-    const today = localParts(now, studio.timezone).date;
-    let clientId: string | null = null;
-    if (req.body?.code) clientId = parseCheckinCode(studio.id, req.body.code, today);
-    else if (req.body?.phone) clientId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(normalizePhone(req.body.phone)) as { id: string } | undefined)?.id ?? null;
-    if (!clientId || !scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: clientId })) {
-      throw notFound('Nie rozpoznałyśmy kodu. Poproś o odświeżenie kodu w aplikacji albo wpisz numer telefonu.');
-    }
-    const name = clientName(scope, clientId);
-    const booking = scope.get<{ id: string; class_name: string; starts_at: string }>(
-      `SELECT b.id, COALESCE(s.title, ct.name) AS class_name, s.starts_at FROM bookings b JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id
-       WHERE b.studio_id = $studio AND b.user_id = $u AND b.status = 'booked' AND b.guest_name IS NULL AND s.starts_at BETWEEN $a AND $b ORDER BY s.starts_at LIMIT 1`,
-      { u: clientId, a: new Date(now.getTime() - 30 * 60_000).toISOString(), b: new Date(now.getTime() + 90 * 60_000).toISOString() },
-    );
-    if (booking && !req.body?.zoneId) {
-      checkIn(scope, studio, booking.id, now);
-      return { name, kind: 'class', message: `${name} – obecna na ${booking.class_name} ✓` };
-    }
-    // Wejście do strefy z kontrolowanym / wolnym wstępem: „Czy aktywny produkt pokrywa tę strefę i godzinę?” (1.1.3).
-    const zone = scope.get<{ id: string; name: string }>(
-      `SELECT id, name FROM zones WHERE studio_id = $studio AND access IN ('checkin', 'open', 'mixed') ${req.body?.zoneId ? 'AND id = $z' : ''} ORDER BY access = 'checkin' DESC LIMIT 1`,
-      req.body?.zoneId ? { z: req.body.zoneId } : {},
-    );
-    if (!zone) throw conflict('no_class', `${name} nie ma teraz zajęć, a studio nie ma strefy z wolnym wstępem.`);
-    const results = loadPasses(scope, clientId, now).map((p) => checkAccess(p, { classTypeId: null, zoneId: zone.id, startsAt: now, tz: studio.timezone, usage: { day: 0, week: 0 } }));
-    const choice = pickPass(results.filter((r): r is AccessGranted => r.ok));
-    if (!choice) throw conflict('no_access', `${name}: żaden karnet nie obejmuje strefy ${zone.name} o tej godzinie.`);
-    scope.tx(() => {
-      if (choice.poolId) consumeEntry(scope, choice.pass, choice.poolId, now);
-      scope.run('INSERT INTO zone_checkins (id, studio_id, user_id, zone_id, pass_id, by_user, at) VALUES ($id, $studio, $u, $z, $p, $by, $now)', { id: id(), u: clientId, z: zone.id, p: choice.pass.id, by: user.id, now: now.toISOString() });
-    });
-    return { name, kind: 'zone', message: `${name} – wejście: ${zone.name} ✓`, pass: describePass(choice.pass, studio.timezone) };
-  });
+  // Check-in w recepcji (4.11, C3): QR z aplikacji, telefon albo kod wejściówki od znajomej (aktywacja na miejscu).
+  // Rezerwacja w oknie → obecność; bez rezerwacji → propozycja dopisania na trwające zajęcia (409 no_booking
+  // z opcjami – recepcja wybiera, serwer nie zgaduje) albo wejście do strefy z wolnym wstępem (siłownia).
+  app.post<{ Body: { code?: string; phone?: string; zoneId?: string; sessionId?: string; payAtDesk?: boolean; guest?: { name: string; phone: string } } }>(
+    '/api/staff/checkin',
+    perm('participants.view'),
+    async (req) => {
+      const { studio, scope, user, roles } = ctx(req);
+      const body = req.body ?? {};
+      const now = new Date();
+      const today = localParts(now, studio.timezone).date;
+      const raw = String(body.code ?? '').trim();
+      const giftCode = guestPassCodeOf(raw);
+      let clientId: string | null = null;
+      let activated: string | null = null;
+
+      if (giftCode) {
+        const gp = scope.get<{ id: string; buyer_id: string | null; recipient_phone: string | null; status: string; variant: string; rules_json: string | null; activated_by: string | null; expires_at: string }>(
+          'SELECT id, buyer_id, recipient_phone, status, variant, rules_json, activated_by, expires_at FROM guest_passes WHERE studio_id = $studio AND code = $c',
+          { c: giftCode },
+        );
+        if (!gp) throw notFound('Ta wejściówka nie jest z naszego studia albo kod jest błędny.');
+        const variant = studio.settings.guestPass.variants.find((v) => v.id === gp.variant)?.label ?? 'Wejściówka';
+        if (gp.status !== 'sent') {
+          if (!gp.activated_by) throw conflict('expired', `Wejściówka „${variant}” wygasła.`);
+          clientId = gp.activated_by;
+        } else if (Date.parse(gp.expires_at) < now.getTime()) {
+          throw conflict('expired', `Wejściówka „${variant}” wygasła ${gp.expires_at.slice(0, 10).split('-').reverse().join('.')}.`);
+        } else if (!body.guest) {
+          throw conflict('guest_pass_new', `Wejściówka „${variant}” – jeszcze nieaktywowana. Wpisz imię i telefon osoby, która przyszła.`, { code: giftCode, variant, phone: gp.recipient_phone });
+        } else {
+          if (!can(roles, 'clients.create')) throw forbidden();
+          const phone = normalizePhone(body.guest.phone);
+          const name = String(body.guest.name ?? '').trim().slice(0, 80);
+          if (name.length < 2) throw badRequest('Podaj imię osoby z wejściówką.');
+          if (gp.recipient_phone && gp.recipient_phone !== phone) throw conflict('wrong_recipient', 'Ta wejściówka jest przypisana do innego numeru telefonu.');
+          let u = db.prepare('SELECT id, name FROM users WHERE phone = ?').get(phone) as { id: string; name: string | null } | undefined;
+          if (u && u.id === gp.buyer_id) throw conflict('own_pass', 'To wejściówka kupiona przez tę klientkę dla znajomej – wejść może tylko obdarowana.');
+          if (!u) {
+            u = { id: id(), name };
+            db.prepare('INSERT INTO users (id, phone, name, created_at) VALUES (?, ?, ?, ?)').run(u.id, phone, name, nowIso());
+          }
+          activateGuestPass(scope, studio, gp, u, now);
+          audit(scope, { actorId: user.id, action: 'guest_pass.activated_at_desk', entity: 'guest_pass', entityId: gp.id, subjectUserId: u.id });
+          clientId = u.id;
+          activated = variant;
+        }
+      } else if (raw) clientId = parseCheckinCode(studio.id, raw, today);
+      else if (body.phone) clientId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(normalizePhone(body.phone)) as { id: string } | undefined)?.id ?? null;
+
+      if (!clientId || !scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: clientId })) {
+        const otherDay = raw ? checkinCodeOtherDay(studio.id, raw, today) : null;
+        if (otherDay) {
+          throw conflict('code_other_day', `Ten kod jest na ${otherDay.split('-').reverse().join('.')}, a działa tylko w swoim dniu. Poproś o otwarcie „Mój kod wejścia” w aplikacji albo wpisz numer telefonu.`);
+        }
+        throw notFound(body.phone ? 'Nie ma klientki z tym numerem w studiu.' : 'Nie rozpoznałyśmy kodu. Poproś o odświeżenie kodu w aplikacji albo wpisz numer telefonu.');
+      }
+
+      const name = clientName(scope, clientId);
+      const attendedBefore = scope.get<{ n: number }>("SELECT COUNT(*) AS n FROM bookings WHERE studio_id = $studio AND user_id = $u AND status = 'attended' AND guest_name IS NULL", { u: clientId })!.n;
+      const h = can(roles, 'day.all') ? healthFor(scope, clientId) : null;
+      const who = {
+        name,
+        userId: clientId,
+        firstVisit: attendedBefore === 0,
+        health: h ? [h.pregnancy && 'ciąża', h.limitations, h.injuries].filter(Boolean).join(' · ') || null : null,
+        activated,
+      };
+      const windowAround = { u: clientId, a: new Date(now.getTime() - 30 * 60_000).toISOString(), b: new Date(now.getTime() + 90 * 60_000).toISOString() };
+      const bookingIn = (status: 'booked' | 'attended') =>
+        scope.get<{ id: string; class_name: string; starts_at: string; updated_at: string }>(
+          `SELECT b.id, COALESCE(s.title, ct.name) AS class_name, s.starts_at, b.updated_at FROM bookings b JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id
+           WHERE b.studio_id = $studio AND b.user_id = $u AND b.status = '${status}' AND b.guest_name IS NULL AND s.starts_at BETWEEN $a AND $b ORDER BY s.starts_at LIMIT 1`,
+          windowAround,
+        );
+
+      // Dopisanie „z ulicy” na wybrane zajęcia i od razu obecność.
+      if (body.sessionId) {
+        if (!can(roles, 'participants.manage')) throw forbidden();
+        const res = bookSession(scope, studio, clientId, body.sessionId, now, { staff: true, payAtDesk: !!body.payAtDesk, source: 'desk' });
+        if (res.status !== 'booked') throw conflict('full', 'Brak wolnych miejsc – dopisałyśmy na listę oczekujących.');
+        checkIn(scope, studio, res.bookingId, now);
+        audit(scope, { actorId: user.id, action: 'booking.walk_in', entity: 'booking', entityId: res.bookingId, subjectUserId: clientId, details: { payAtDesk: !!body.payAtDesk } });
+        const s = loadSession(scope, body.sessionId);
+        return { ...who, kind: 'class', className: s.class_name, startsAt: s.starts_at, pass: res.pass, payAtDesk: !!body.payAtDesk, message: `${name} – dopisana i obecna na ${s.class_name} ✓` };
+      }
+
+      const booking = body.zoneId ? undefined : bookingIn('booked');
+      if (booking) {
+        checkIn(scope, studio, booking.id, now);
+        return { ...who, kind: 'class', className: booking.class_name, startsAt: booking.starts_at, message: `${name} – obecna na ${booking.class_name} ✓` };
+      }
+      const done = body.zoneId ? undefined : bookingIn('attended');
+      if (done) {
+        return { ...who, kind: 'already', className: done.class_name, startsAt: done.starts_at, message: `${name} jest już odhaczona na ${done.class_name} (od ${localParts(new Date(done.updated_at), studio.timezone).time}).` };
+      }
+
+      // Wejście do strefy z kontrolowanym / wolnym wstępem: „Czy aktywny produkt pokrywa tę strefę i godzinę?” (1.1.3).
+      const zone = scope.get<{ id: string; name: string }>(
+        `SELECT id, name FROM zones WHERE studio_id = $studio AND access IN ('checkin', 'open', 'mixed') ${body.zoneId ? 'AND id = $z' : ''} ORDER BY access = 'checkin' DESC LIMIT 1`,
+        body.zoneId ? { z: body.zoneId } : {},
+      );
+      const results = zone ? loadPasses(scope, clientId, now).map((p) => checkAccess(p, { classTypeId: null, zoneId: zone.id, startsAt: now, tz: studio.timezone, usage: { day: 0, week: 0 } })) : [];
+      const choice = pickPass(results.filter((r): r is AccessGranted => r.ok));
+
+      if (!body.zoneId && can(roles, 'participants.manage')) {
+        const options = walkInOptions(scope, studio, clientId, now);
+        if (options.length) {
+          throw conflict('no_booking', `${name} nie ma rezerwacji na najbliższe zajęcia. Dopisać i wpuścić?`, {
+            ...who,
+            options,
+            zone: zone && choice ? { id: zone.id, name: zone.name } : null,
+          });
+        }
+      }
+      // Świeżo aktywowana wejściówka ma zwykle jedno wejście – nie zużywamy go na strefę bez wyraźnego wyboru recepcji.
+      if (activated) return { ...who, kind: 'activated', message: `${name} – wejściówka aktywna. Zapisz ją na zajęcia (Dziś → + Dodaj).` };
+      if (!zone) throw conflict('no_class', `${name} nie ma teraz zajęć, a studio nie ma strefy z wolnym wstępem.`);
+      if (!choice) throw conflict('no_access', `${name}: żaden karnet nie obejmuje strefy ${zone.name} o tej godzinie.`);
+      scope.tx(() => {
+        if (choice.poolId) consumeEntry(scope, choice.pass, choice.poolId, now);
+        scope.run('INSERT INTO zone_checkins (id, studio_id, user_id, zone_id, pass_id, by_user, at) VALUES ($id, $studio, $u, $z, $p, $by, $now)', { id: id(), u: clientId, z: zone.id, p: choice.pass.id, by: user.id, now: now.toISOString() });
+      });
+      return { ...who, kind: 'zone', message: `${name} – wejście: ${zone.name} ✓`, pass: describePass(choice.pass, studio.timezone) };
+    },
+  );
 
   // ——— Zarządzanie sesjami ———
 
@@ -234,7 +375,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       const b = req.body ?? ({} as typeof req.body);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !/^\d{2}:\d{2}$/.test(b.time)) throw badRequest('Podaj datę i godzinę.');
       if (!scope.get('SELECT 1 FROM class_types WHERE studio_id = $studio AND id = $c', { c: b.classTypeId })) throw notFound('Nie znaleziono typu zajęć.');
-      if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role = 'trainer'", { t: b.trainerId })) throw notFound('Nie znaleziono trenerki.');
+      if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role IN ('trainer', 'owner')", { t: b.trainerId })) throw notFound('Nie znaleziono trenerki.');
       if (!(b.durationMin >= 15 && b.durationMin <= 240) || !(b.capacity >= 1 && b.capacity <= 200)) throw badRequest('Czas trwania 15–240 min, miejsca 1–200.');
       const start = zonedToUtc(b.date, b.time, studio.timezone);
       const sid = id();
@@ -273,7 +414,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
   app.post<{ Body: { from: string; to: string; note?: string; trainerId?: string } }>('/api/staff/absences', perm('schedule.view'), async (req) => {
     const { scope, studio, user, roles } = ctx(req);
     const trainerId = req.body?.trainerId && can(roles, 'schedule.edit') ? req.body.trainerId : user.id;
-    if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role = 'trainer'", { t: trainerId })) throw forbidden();
+    if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $t AND role IN ('trainer', 'owner')", { t: trainerId })) throw forbidden();
     const b = req.body;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(b?.from ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(b?.to ?? '') || b.to < b.from) throw badRequest('Podaj zakres dat.');
     const aid = id();
@@ -373,7 +514,9 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       goal: m.goal,
       trainerId: m.trainer_id,
       segments: facts ? segmentsOf(facts, now) : [],
-      passes: can(roles, 'clients.view') ? passesView(scope, studio, u.id) : undefined,
+      passes: can(roles, 'clients.view')
+        ? passesView(scope, studio, u.id).map((p) => ({ ...p, canUndo: can(roles, 'desk.sell') && !deskSaleUndoBlocker(scope, u.id, p.id) }))
+        : undefined,
       bookings: scope.all(
         `SELECT b.id, b.status, b.rating, b.rating_comment, s.starts_at, COALESCE(s.title, ct.name) AS class_name, t.name AS trainer_name FROM bookings b
          JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id JOIN users t ON t.id = s.trainer_id
@@ -476,6 +619,20 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     }
     if (!DESK_METHODS.includes(method as (typeof DESK_METHODS)[number])) throw badRequest('Wybierz: gotówka, terminal albo link do płatności.');
     return purchaseProduct(deps, scope, studio, { userId: req.params.id, productId: req.body.productId, method, channel: 'desk', actorId: user.id });
+  });
+
+  // Cofnięcie pomyłkowej sprzedaży w recepcji: karnet znika, płatność wypada z raportów (status 'voided').
+  app.delete<{ Params: { id: string; passId: string } }>('/api/staff/clients/:id/passes/:passId', perm('desk.sell'), async (req) => {
+    const { scope, user } = ctx(req);
+    const blocker = deskSaleUndoBlocker(scope, req.params.id, req.params.passId);
+    if (blocker) throw conflict('cannot_undo', blocker);
+    const pass = scope.get<{ product_name: string }>('SELECT product_name FROM passes WHERE studio_id = $studio AND id = $p', { p: req.params.passId })!;
+    scope.tx(() => {
+      scope.run("UPDATE payments SET status = 'voided' WHERE studio_id = $studio AND kind = 'pass' AND reference_id = $p AND status = 'paid'", { p: req.params.passId });
+      scope.run('DELETE FROM passes WHERE studio_id = $studio AND id = $p', { p: req.params.passId });
+      audit(scope, { actorId: user.id, action: 'pass.sale_undone', entity: 'pass', entityId: req.params.passId, subjectUserId: req.params.id, details: { product: pass.product_name } });
+    });
+    return { ok: true, message: 'Sprzedaż cofnięta.' };
   });
 
   // V2: wejściówka sprzedana przy kasie (gotówka / terminal) – bez paragonu z aplikacji (4.8.1).

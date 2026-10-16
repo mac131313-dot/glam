@@ -1,6 +1,6 @@
 // Panele ról (3, 2.1): menu budowane z siatki uprawnień (core/roles.ts) – to samo, co sprawdza serwer.
-// Trenerka: Dziś · Klientki · Wiadomości · Powitania · Kursy · Kartki · Mój grafik.
-// Recepcja: Dziś · Klientki · Grafik · Wiadomości · Kasa · Sklep · Wydarzenia.
+// Trenerka: Dziś · Klientki · Wiadomości · Powitania · Mój profil · Kursy · Kartki · Mój grafik.
+// Recepcja: Wejście · Dziś · Klientki · Grafik · Wiadomości · Kasa · Sklep · Wydarzenia.
 // Koordynatorka: Społeczność · Edycje sezonowe · Muzyka. Właścicielka: wszystko (panel w stylu Shopify).
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { can, ROLE_LABEL, type Permission, type Role } from '@glam/core';
@@ -10,6 +10,7 @@ import { StudioBrand } from '../StudioBrand.tsx';
 import { Select, Spinner, Watermark } from '../ui.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { Desk } from './Desk.tsx';
+import { Entrance } from './Entrance.tsx';
 import { LookEditor } from './LookEditor.tsx';
 import { Products } from './Products.tsx';
 import { ScheduleAdmin } from './ScheduleAdmin.tsx';
@@ -32,16 +33,20 @@ const Marketing = lazy(() => import('./Marketing.tsx'));
 const LoyaltyAdmin = lazy(() => import('./LoyaltyAdmin.tsx'));
 const Finance = lazy(() => import('./Finance.tsx'));
 const Settings = lazy(() => import('./Settings.tsx'));
+const TrainerProfile = lazy(() => import('./TrainerProfile.tsx'));
 
-type Section = { id: string; label: string; icon: IconName; perms: Permission[]; group: string };
+/** role – sekcja tylko dla osób z tą rolą (np. profil trenerki nie dotyczy właścicielki, która nie prowadzi zajęć). */
+type Section = { id: string; label: string; icon: IconName; perms: Permission[]; group: string; role?: Role };
 const SECTIONS: Section[] = [
   { id: 'dashboard', label: 'Pulpit', icon: 'chart', perms: ['finance.view'], group: 'Studio' },
   { id: 'analytics', label: 'Analityka i KPI', icon: 'chart', perms: ['finance.view'], group: 'Studio' },
+  { id: 'entrance', label: 'Wejście', icon: 'ticket', perms: ['participants.manage'], group: 'Codziennie' },
   { id: 'today', label: 'Dziś', icon: 'sun', perms: ['day.own', 'day.all'], group: 'Codziennie' },
   { id: 'clients', label: 'Klientki', icon: 'people', perms: ['clients.view', 'notes.write'], group: 'Codziennie' },
   { id: 'messages', label: 'Wiadomości', icon: 'chat', perms: ['messages.group.own', 'messages.group.all', 'chat.answer'], group: 'Codziennie' },
   { id: 'desk', label: 'Kasa i wejściówki', icon: 'gift', perms: ['desk.sell'], group: 'Codziennie' },
   { id: 'welcomes', label: 'Powitania', icon: 'mail', perms: ['welcomes.write', 'welcomes.approve'], group: 'Relacje' },
+  { id: 'profile', label: 'Mój profil', icon: 'user', perms: ['day.own'], group: 'Relacje', role: 'trainer' },
   { id: 'gifts', label: 'Kartki i nagrody', icon: 'pen', perms: ['cards.write', 'cards.manage'], group: 'Relacje' },
   { id: 'events', label: 'Wydarzenia', icon: 'sparkle', perms: ['events.manage', 'day.own'], group: 'Relacje' },
   { id: 'schedule', label: 'Grafik i sale', icon: 'grid', perms: ['schedule.edit'], group: 'Grafik' },
@@ -62,7 +67,7 @@ const SECTIONS: Section[] = [
 
 export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; reloadMe: () => Promise<void>; onSwitchStudio: () => void; onPreviewClient: () => void; onLogout: () => void }) {
   const roles = props.studio.roles as Role[];
-  const visible = SECTIONS.filter((s) => s.perms.some((p) => can(roles, p)));
+  const visible = SECTIONS.filter((s) => s.perms.some((p) => can(roles, p)) && (!s.role || roles.includes(s.role)));
   const fallback = visible[0]?.id ?? 'today';
   const fromHash = () => {
     const id = location.hash.slice(1);
@@ -88,22 +93,14 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
       <Watermark src={props.studio.look.watermark} />
       <aside className="side" aria-label="Menu panelu">
         <div style={{ padding: '4px 12px 14px' }}>
-          <div className="wordmark" style={{ fontSize: '1.7rem' }}>
-            glam
-          </div>
-          <button className="studio-chip" style={{ marginTop: 16 }} onClick={props.onSwitchStudio} title="Zmień studio">
-            <StudioBrand studio={props.studio} />
-          </button>
-          <div className="tiny muted" style={{ marginTop: 10, paddingLeft: 4 }}>
-            {props.me.user.name} · {ROLE_LABEL[mainRole]}
-            {props.persona && (
-              <>
-                <br />
-                <a href="/" style={{ color: 'var(--muted)' }}>
-                  tryb demo · zmień konto
-                </a>
-              </>
-            )}
+          <div className="cobrand" aria-label={`glam × ${props.studio.name}`}>
+            <span className="wordmark" style={{ fontSize: '1.7rem' }}>
+              glam
+            </span>
+            <span className="cobrand-x" aria-hidden="true">
+              ×
+            </span>
+            <span className="cobrand-name">{props.studio.name}</span>
           </div>
         </div>
         {groups.map((g) => (
@@ -127,6 +124,23 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
             <Icon name="out" size={18} /> Wyloguj
           </button>
         )}
+        <div style={{ padding: '14px 12px 4px' }}>
+          <button className="studio-chip" onClick={props.onSwitchStudio} title="Zmień studio">
+            <StudioBrand studio={props.studio} showName={false} />
+            <span className="small muted">Zmień studio</span>
+          </button>
+          <div className="tiny muted" style={{ marginTop: 10, paddingLeft: 4 }}>
+            {props.me.user.name} · {ROLE_LABEL[mainRole]}
+            {props.persona && (
+              <>
+                <br />
+                <a href="/" style={{ color: 'var(--muted)' }}>
+                  tryb demo · zmień konto
+                </a>
+              </>
+            )}
+          </div>
+        </div>
       </aside>
       <nav className="mobile-nav" aria-label="Menu panelu">
         <div className="wordmark" style={{ fontSize: '1.5rem' }}>
@@ -147,10 +161,12 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
         <Suspense fallback={<Spinner />}>
           {section === 'dashboard' && <Dashboard go={setSection} />}
           {section === 'analytics' && <Analytics />}
+          {section === 'entrance' && <Entrance />}
           {section === 'today' && <Today roles={roles} />}
           {section === 'clients' && <Clients roles={roles} />}
           {section === 'messages' && <Messages roles={roles} />}
           {section === 'welcomes' && <Welcomes me={props.me} isOwner={roles.includes('owner')} />}
+          {section === 'profile' && <TrainerProfile me={props.me} reloadMe={props.reloadMe} />}
           {section === 'gifts' && <Gifts roles={roles} />}
           {section === 'desk' && <Desk />}
           {section === 'events' && <EventsAdmin roles={roles} />}

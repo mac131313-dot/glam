@@ -10,63 +10,22 @@
         "-w",
         "@glam/api"
       ],
-      "port": 3001
+      "port": 3001,
+      "autoPort": true
     },
     {
       "name": "web",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "env",
       "runtimeArgs": [
+        "API_PORT=3002",
+        "npm",
         "run",
         "dev",
         "-w",
         "@glam/web"
       ],
-      "port": 5173
-    },
-    {
-      "name": "web-alt",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "dev",
-        "-w",
-        "@glam/web",
-        "--",
-        "--port",
-        "5174",
-        "--strictPort"
-      ],
-      "port": 5174
-    },
-    {
-      "name": "web-verify",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "dev",
-        "-w",
-        "@glam/web",
-        "--",
-        "--port",
-        "5175",
-        "--strictPort"
-      ],
-      "port": 5175
-    },
-    {
-      "name": "web-breath",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "dev",
-        "-w",
-        "@glam/web",
-        "--",
-        "--port",
-        "5176",
-        "--strictPort"
-      ],
-      "port": 5176
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }

@@ -181,7 +181,9 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
       </div>
       {tab !== 'start' && <BackToStart onBack={() => setTab('start')} />}
       {stack.map((route, i) => (
-        <div key={`${route}-${i}`} style={{ display: i === stack.length - 1 ? 'contents' : 'none' }}>
+        // Warstwa musi być prawdziwym pudełkiem. `display: contents` przepuszczało kliknięcia –
+        // katalog było widać, ale karta produktu nie dostawała zdarzenia.
+        <div key={`${route}-${i}`} className="route-layer" style={{ display: i === stack.length - 1 ? 'flex' : 'none', zIndex: 40 + i }}>
           <RouteView route={route} close={() => setStack((st) => st.slice(0, i))} />
         </div>
       ))}

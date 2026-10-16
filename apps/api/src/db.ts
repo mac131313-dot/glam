@@ -1,8 +1,12 @@
 // Baza: wbudowany node:sqlite (zero zależności na MVP). Model danych od początku zakłada
 // wiele studiów (najemców): każdy rekord studia ma kolumnę studio_id (sekcja 1.2.3).
 // Dane zdrowotne (dziennik, pomiary, cykl, ankieta zdrowia) trzymamy zaszyfrowane (*_enc, crypto.ts).
+import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { imageRatio } from './services/image.ts';
+import { attachMediaDir, mediaDir, moveVideoBlobsToDisk } from './services/media-files.ts';
 
 const SCHEMA = /* sql */ `
 CREATE TABLE IF NOT EXISTS plans (
@@ -91,6 +95,8 @@ CREATE TABLE IF NOT EXISTS memberships (
   user_id TEXT NOT NULL REFERENCES users(id),
   role TEXT NOT NULL CHECK (role IN ('client', 'trainer', 'reception', 'owner', 'coordinator')),
   bio TEXT,
+  about TEXT,               -- opis własny trenerki (dłuższy niż bio; strona WWW i profil w aplikacji)
+  intro_video_id TEXT,      -- film „poznajmy się” z profilu trenerki (media, rodzaj 'intro')
   goal TEXT,
   trainer_id TEXT,
   prefs_json TEXT,
@@ -365,6 +371,17 @@ CREATE TABLE IF NOT EXISTS session_invites (
   created_at TEXT NOT NULL
 );
 
+-- Zaproszenia trenerki na jej własne zajęcia: krótka notka przy terminie, widoczna w aplikacji (Start, profil trenerki).
+CREATE TABLE IF NOT EXISTS trainer_invites (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  trainer_id TEXT NOT NULL REFERENCES users(id),
+  session_id TEXT NOT NULL REFERENCES class_sessions(id),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_trainer_invites_session ON trainer_invites (studio_id, session_id);
+
 CREATE TABLE IF NOT EXISTS coupons (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
@@ -560,11 +577,25 @@ CREATE TABLE IF NOT EXISTS media (
   owner_id TEXT,
   kind TEXT NOT NULL,
   mime TEXT NOT NULL,
-  data BLOB NOT NULL,
+  data BLOB,                -- obrazy i PDF; filmy leżą na dysku (path względem katalogu mediów)
+  path TEXT,
   size INTEGER NOT NULL,
   duration_sec REAL,
   ratio REAL,
   private INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+-- Wgrywanie filmów kawałkami z wznawianiem: received = ile bajtów już jest w uploads/<id>.part.
+CREATE TABLE IF NOT EXISTS media_uploads (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  owner_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  received INTEGER NOT NULL DEFAULT 0,
+  duration_sec REAL,
   created_at TEXT NOT NULL
 );
 
@@ -829,15 +860,22 @@ CREATE TABLE IF NOT EXISTS card_tasks (
 );
 
 -- ——— Sklep i partnerzy (4.8) ———
+-- media_id = okładka (pierwsze zdjęcie galerii); gallery_json = wszystkie zdjęcia w kolejności.
+-- variants_json: stock NULL = bez limitu (napoje); nutrition_json: tylko uzupełnione wartości (core/shop.ts).
 CREATE TABLE IF NOT EXISTS shop_products (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
+  category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('drink', 'accessory', 'apparel', 'other')),
   name TEXT NOT NULL,
   description TEXT,
   price_grosze INTEGER NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('available', 'sold_out', 'hidden')),
+  size_scale TEXT NOT NULL DEFAULT 'none',
   variants_json TEXT NOT NULL,
   media_id TEXT,
+  gallery_json TEXT NOT NULL DEFAULT '[]',
+  nutrition_json TEXT,
+  featured INTEGER NOT NULL DEFAULT 0,
   reward_eligible INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
@@ -950,8 +988,50 @@ CREATE TABLE IF NOT EXISTS courses (
   status TEXT NOT NULL CHECK (status IN ('draft', 'beta', 'pending', 'published', 'suspended', 'archived')),
   review_note TEXT,
   cover_media_id TEXT,
+  page_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+-- Strona sprzedażowa kursu: edycje (daty sprzedaży i dostępu w jednym miejscu), pakiety, prowadzące i eksperci.
+CREATE TABLE IF NOT EXISTS course_editions (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  course_id TEXT NOT NULL REFERENCES courses(id),
+  name TEXT NOT NULL,
+  theme TEXT,
+  sales_from TEXT,
+  sales_until TEXT,
+  starts_at TEXT,
+  access_until TEXT,
+  news_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS course_tiers (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  course_id TEXT NOT NULL REFERENCES courses(id),
+  name TEXT NOT NULL,
+  price_grosze INTEGER NOT NULL CHECK (price_grosze >= 0),
+  features_json TEXT NOT NULL DEFAULT '[]',
+  highlight INTEGER NOT NULL DEFAULT 0,
+  seat_limit INTEGER,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS course_people (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  course_id TEXT NOT NULL REFERENCES courses(id),
+  user_id TEXT REFERENCES users(id),
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('author', 'trainer', 'expert')),
+  title TEXT,
+  bio TEXT,
+  photo_media_id TEXT,
+  sort INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS course_lessons (
@@ -970,6 +1050,7 @@ CREATE TABLE IF NOT EXISTS course_lessons (
   unlock_day INTEGER NOT NULL DEFAULT 0,
   free_preview INTEGER NOT NULL DEFAULT 0,
   live_at TEXT,
+  person_id TEXT REFERENCES course_people(id),
   sort INTEGER NOT NULL
 );
 
@@ -983,6 +1064,8 @@ CREATE TABLE IF NOT EXISTS course_enrollments (
   started_at TEXT NOT NULL,
   expires_at TEXT,
   completed_at TEXT,
+  tier_id TEXT REFERENCES course_tiers(id),
+  edition_id TEXT REFERENCES course_editions(id),
   PRIMARY KEY (course_id, user_id)
 );
 
@@ -1250,11 +1333,32 @@ const normalize = (s: string) =>
     .replace(/\s*([(),])\s*/g, '$1')
     .trim();
 
-export function openDb(file = process.env.GLAM_DB ?? 'glam.db'): Db {
+/**
+ * Stałe miejsce na dane firmy: apps/api/data (niezależnie od katalogu, z którego odpalono proces).
+ * Tu leży baza – a w niej zdjęcia i logo (BLOB-y) – filmy w data/media oraz nocne kopie zapasowe.
+ */
+export const DATA_DIR = process.env.GLAM_DATA_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+export const DB_FILE = process.env.GLAM_DB ?? join(DATA_DIR, 'glam.db');
+
+/** Jednorazowo przenosi starą bazę z apps/api/glam.db do data/, żeby nie zgubić tego, co już wgrano. */
+function adoptLegacyDb(file: string) {
+  const legacy = join(dirname(fileURLToPath(import.meta.url)), '..', 'glam.db');
+  if (file !== DB_FILE || existsSync(file) || !existsSync(legacy)) return;
+  for (const suffix of ['', '-wal', '-shm']) if (existsSync(legacy + suffix)) renameSync(legacy + suffix, file + suffix);
+}
+
+export function openDb(file = DB_FILE): Db {
+  if (file !== ':memory:') {
+    mkdirSync(dirname(file), { recursive: true });
+    adoptLegacyDb(file);
+  }
   const db = new DatabaseSync(file);
   if (file !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   migrate(db);
   db.exec('PRAGMA foreign_keys = ON;');
+  attachMediaDir(db, file === ':memory:' ? null : (process.env.GLAM_MEDIA_DIR ?? join(file === DB_FILE ? DATA_DIR : dirname(file), 'media')));
+  const moved = moveVideoBlobsToDisk(db);
+  if (moved) console.log(`🎞️  Przeniesiono ${moved} filmów z bazy na dysk (${mediaDir(db)})`);
   return db;
 }
 

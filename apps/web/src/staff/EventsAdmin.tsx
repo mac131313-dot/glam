@@ -1,9 +1,9 @@
 // Wydarzenia w panelu (4.13.4, W1–W6): lista i kalendarz, oferta i cena, zaliczka / płatność na miejscu /
 // ustalenia prywatne, statusy, notatka wewnętrzna (niewidoczna dla klientki), historia ustaleń; cennik pakietów.
 import { useState } from 'react';
-import { can, EVENT_ADDONS, EVENT_KINDS, type Role } from '@glam/core';
-import { api, fmtDay, fmtLongDay, fmtTime, useApi } from '../api.ts';
-import { Empty, Field, Page, Spinner, Tabs, useAction } from '../ui.tsx';
+import { can, EVENT_ACTIVITIES, EVENT_ADDONS, EVENT_KINDS, type Role } from '@glam/core';
+import { api, fmtDay, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
+import { Empty, Field, Page, Select, Spinner, Tabs, useAction } from '../ui.tsx';
 
 type Ev = {
   id: string;
@@ -37,9 +37,17 @@ export default function EventsAdmin({ roles }: { roles: Role[] }) {
   const [tab, setTab] = useState<'list' | 'packages'>('list');
   const list = useApi<Ev[]>('/staff/events');
   const [open, setOpen] = useState<Ev | null>(null);
+  const [adding, setAdding] = useState(false);
   return (
     <div className="stack-lg">
-      <h1>Wydarzenia</h1>
+      <div className="row between">
+        <h1 style={{ margin: 0 }}>Wydarzenia</h1>
+        {manage && (
+          <button className="btn" onClick={() => setAdding(true)}>
+            + Wydarzenie studia
+          </button>
+        )}
+      </div>
       {manage && <Tabs label="Wydarzenia" value={tab} onChange={setTab} options={[['list', 'Wydarzenia'], ['packages', 'Cennik pakietów']]} />}
       {tab === 'list' &&
         (!list.data ? (
@@ -60,6 +68,11 @@ export default function EventsAdmin({ roles }: { roles: Role[] }) {
           ))
         ))}
       {tab === 'packages' && <Packages />}
+      {adding && (
+        <Page title="Nowe wydarzenie studia" onBack={() => setAdding(false)}>
+          <StudioEventForm onDone={() => (list.reload(), setAdding(false), setTab('list'))} />
+        </Page>
+      )}
       {open && (
         <Page title={heading(open)} onBack={() => setOpen(null)}>
           <EventEditor ev={open} manage={manage} onDone={() => (list.reload(), setOpen(null))} />
@@ -156,6 +169,85 @@ function EventEditor({ ev, manage, onDone }: { ev: Ev; manage: boolean; onDone: 
           </div>
         ))}
       </section>
+    </div>
+  );
+}
+
+type Options = { trainers: { id: string; name: string }[]; zones: { id: string; name: string }[] };
+
+// Wydarzenie organizowane przez studio (np. Halloween Flow): od razu potwierdzone, blokuje salę i trenerkę w grafiku.
+function StudioEventForm({ onDone }: { onDone: () => void }) {
+  const opts = useApi<Options>('/events/options');
+  const [f, setF] = useState({ title: '', description: '', date: localDate(), time: '19:00', durationMin: 75, zoneId: '', trainerId: '', activity: 'Mat', capacity: 12, price: '', internalNote: '' });
+  const { run, busy } = useAction();
+  if (opts.error?.code === 'feature_off') return <Empty>Wydarzenia są wyłączone w planie studia.</Empty>;
+  if (!opts.data) return <Spinner />;
+  const o = opts.data;
+  const ready = f.title.trim() && f.zoneId && f.trainerId && f.date && f.time;
+  return (
+    <div className="stack-lg" style={{ maxWidth: 620 }}>
+      <Field label="Nazwa">
+        <input className="input" placeholder="Halloween Flow / Glow in the Dark Pilates" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
+      </Field>
+      <Field label="Opis dla uczestniczek">
+        <textarea className="input" placeholder="Co się wydarzy, w co się ubrać, ile kosztuje wstęp" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+      </Field>
+      <div className="row">
+        <input className="input" type="date" min={localDate()} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} aria-label="Data" />
+        <input className="input" type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} aria-label="Godzina" />
+        <input className="input" type="number" min={30} value={f.durationMin} onChange={(e) => setF({ ...f, durationMin: Number(e.target.value) })} aria-label="Minuty" />
+      </div>
+      <div className="pill-row">
+        {o.zones.map((z) => (
+          <button key={z.id} className="chip" aria-pressed={f.zoneId === z.id} onClick={() => setF({ ...f, zoneId: z.id })}>
+            {z.name}
+          </button>
+        ))}
+      </div>
+      <Select ariaLabel="Prowadząca" value={f.trainerId} onChange={(v) => setF({ ...f, trainerId: v })} options={[{ value: '', label: 'Prowadząca' }, ...o.trainers.map((t) => ({ value: t.id, label: t.name }))]} />
+      <div className="pill-row">
+        {EVENT_ACTIVITIES.map((a) => (
+          <button key={a} className="chip" aria-pressed={f.activity === a} onClick={() => setF({ ...f, activity: a })}>
+            {a}
+          </button>
+        ))}
+      </div>
+      <div className="row">
+        <Field label="Liczba miejsc">
+          <input className="input" type="number" min={1} value={f.capacity} onChange={(e) => setF({ ...f, capacity: Number(e.target.value) })} />
+        </Field>
+        <Field label="Cena za osobę (zł)" hint="Puste = bezpłatne">
+          <input className="input" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
+        </Field>
+      </div>
+      <Field label="Notatka wewnętrzna (niewidoczna dla klientek)">
+        <textarea className="input" placeholder="Np. lampy UV kupić do 29.10" value={f.internalNote} onChange={(e) => setF({ ...f, internalNote: e.target.value })} />
+      </Field>
+      <button
+        className="btn"
+        disabled={!ready || busy}
+        onClick={() =>
+          run(() =>
+            api<{ message: string }>('/staff/events', {
+              method: 'POST',
+              body: {
+                title: f.title,
+                description: f.description,
+                trainerId: f.trainerId,
+                zoneId: f.zoneId,
+                activity: f.activity,
+                startsAt: new Date(`${f.date}T${f.time}`).toISOString(),
+                durationMin: f.durationMin,
+                capacity: f.capacity,
+                priceGrosze: f.price ? Math.round(Number(f.price.replace(',', '.')) * 100) : null,
+                internalNote: f.internalNote,
+              },
+            }).then((r) => (onDone(), r)),
+          )
+        }
+      >
+        Dodaj wydarzenie
+      </button>
     </div>
   );
 }

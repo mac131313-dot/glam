@@ -618,3 +618,42 @@ test('czat: załącznik ze zdjęciem widzą klientka i recepcja, inna klientka n
   assert.equal(fromStaff.from_staff, 1);
   assert.equal((await call(natalia, SSG_STUDIO, 'GET', fromStaff.attachment.url)).statusCode, 200, 'plik od recepcji');
 });
+
+test('profil trenerki: opis własny, film i zaproszenia na jej zajęcia', async () => {
+  const marzena = await login(DEMO.marzena);
+  const ola = await login(DEMO.ola);
+  const magda = await login(DEMO.magda);
+  const marzenaId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(DEMO.marzena) as { id: string }).id;
+
+  // Opis własny: moderacja (bez linków), akapity zostają.
+  assert.equal((await call(marzena, R, 'PUT', '/api/staff/profile', { about: 'Zajrzyj na www.moja-strona.pl' })).statusCode, 400);
+  assert.equal((await call(marzena, R, 'PUT', '/api/staff/profile', { about: 'Pierwszy akapit.\n\nDrugi akapit.' })).statusCode, 200);
+  assert.equal((await call(magda, R, 'PUT', '/api/staff/profile', { about: 'x' })).statusCode, 403, 'klientka nie ma profilu trenerki');
+
+  // Zaproszenie tylko na własne zajęcia.
+  const own = (await call(marzena, R, 'GET', '/api/staff/profile')).json();
+  assert.ok(own.sessions.length > 0);
+  const olaSession = (db.prepare("SELECT s.id FROM class_sessions s JOIN users u ON u.id = s.trainer_id WHERE s.studio_id = ? AND u.phone = ? AND s.status = 'scheduled' AND s.starts_at > ? LIMIT 1").get(R, DEMO.ola, new Date().toISOString()) as { id: string } | undefined)?.id;
+  if (olaSession) assert.equal((await call(marzena, R, 'POST', '/api/staff/invites', { sessionId: olaSession, body: 'Zapraszam!' })).statusCode, 400);
+  const inv = await call(marzena, R, 'POST', '/api/staff/invites', { sessionId: own.sessions[0].id, body: 'Spokojne tempo, dużo oddechu.' });
+  assert.equal(inv.statusCode, 200, inv.body);
+
+  // Klientka widzi profil z opisem i zaproszeniami; strona WWW pokazuje opis własny.
+  const p = (await call(magda, R, 'GET', `/api/trainers/${marzenaId}`)).json();
+  assert.equal(p.about, 'Pierwszy akapit.\n\nDrugi akapit.');
+  assert.ok(p.invites.some((i: { sessionId: string }) => i.sessionId === own.sessions[0].id));
+  const homeRes = await call(magda, R, 'GET', '/api/home');
+  const home = homeRes.json();
+  assert.ok(Array.isArray(home.trainerInvites), homeRes.body.slice(0, 300));
+  assert.ok(Array.isArray(home.trainerInvites) && home.trainerInvites.length <= 3);
+  const site = (await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu' })).json();
+  const onSite = site.trainers.find((t: { id: string }) => t.id === marzenaId);
+  assert.equal(onSite.about, 'Pierwszy akapit.\n\nDrugi akapit.');
+
+  // Cudzego zaproszenia nie da się usunąć.
+  const inviteId = p.invites[0].id;
+  await call(ola, R, 'DELETE', `/api/staff/invites/${inviteId}`);
+  assert.ok(db.prepare('SELECT 1 FROM trainer_invites WHERE id = ?').get(inviteId));
+  await call(marzena, R, 'DELETE', `/api/staff/invites/${inviteId}`);
+  assert.equal(db.prepare('SELECT 1 FROM trainer_invites WHERE id = ?').get(inviteId), undefined);
+});

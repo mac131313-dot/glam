@@ -41,7 +41,7 @@ import { HttpError, badRequest, conflict, notFound } from '../errors.ts';
 import { StudioScope } from '../scope.ts';
 import { notify } from '../services/notify.ts';
 import { issuePass } from '../services/passes.ts';
-import { loadStudio, logoInfo } from '../services/studio.ts';
+import { loadStudio, logoInfo, type Studio } from '../services/studio.ts';
 import { loginOptions, registrationOptions, verifyLogin, verifyRegistration, type RelyingParty } from '../services/webauthn.ts';
 import { vapidKeys } from '../services/webpush.ts';
 import { validateImage } from './logo.ts';
@@ -442,17 +442,7 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
     if (gp.buyer_id === user.id) throw conflict('own_pass', 'To Twój prezent dla znajomej – przekaż jej kod.');
 
     const studio = loadStudio(db, gp.studio_id);
-    const scope = new StudioScope(db, studio.id);
-    const rules = (gp.rules_json ? JSON.parse(gp.rules_json) : guestRules(studio.settings.guestPass.validityDays, 1)) as ProductRules;
-    scope.tx(() => {
-      scope.run("INSERT OR IGNORE INTO memberships (studio_id, user_id, role, joined_at) VALUES ($studio, $user, 'client', $now)", { user: user.id, now: nowIso() });
-      const v = passValidity(rules, new Date(now));
-      const passId = issuePass(scope, { userId: user.id, versionId: null, name: 'Wejściówka od znajomej', rules, balances: initialBalances(rules), validFrom: v.validFrom, validUntil: v.validUntil, source: 'guest_pass' });
-      scope.run("UPDATE guest_passes SET status = 'activated', pass_id = $pass, activated_by = $user WHERE studio_id = $studio AND id = $id", { pass: passId, user: user.id, id: gp.id });
-      if (gp.buyer_id) {
-        notify(scope, { userId: gp.buyer_id, category: 'community', tz: studio.timezone, body: `${user.name ?? 'Twoja znajoma'} odebrała Twój prezent 💛`, action: 'community/invites' });
-      }
-    });
+    activateGuestPass(new StudioScope(db, studio.id), studio, gp, { id: user.id, name: user.name }, new Date(now));
     return { studio: { id: studio.id, name: studio.name }, message: `Prezent odebrany! Masz wejście do ${studio.name}.` };
   });
 
@@ -617,6 +607,26 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
 
 export function guestRules(validityDays: number, entries: number, classTypeIds: string[] | 'all' = 'all'): ProductRules {
   return { validityDays, pools: [{ id: 'guest', label: 'Wejściówka', entries, classTypeIds }] };
+}
+
+/** Wejściówka → karnet obdarowanej i członkostwo w studiu (aktywacja w aplikacji albo w recepcji). */
+export function activateGuestPass(
+  scope: StudioScope,
+  studio: Studio,
+  gp: { id: string; buyer_id: string | null; rules_json: string | null },
+  user: { id: string; name: string | null },
+  now = new Date(),
+) {
+  const rules = (gp.rules_json ? JSON.parse(gp.rules_json) : guestRules(studio.settings.guestPass.validityDays, 1)) as ProductRules;
+  scope.tx(() => {
+    scope.run("INSERT OR IGNORE INTO memberships (studio_id, user_id, role, joined_at) VALUES ($studio, $user, 'client', $now)", { user: user.id, now: nowIso() });
+    const v = passValidity(rules, now);
+    const passId = issuePass(scope, { userId: user.id, versionId: null, name: 'Wejściówka od znajomej', rules, balances: initialBalances(rules), validFrom: v.validFrom, validUntil: v.validUntil, source: 'guest_pass' });
+    scope.run("UPDATE guest_passes SET status = 'activated', pass_id = $pass, activated_by = $user WHERE studio_id = $studio AND id = $id", { pass: passId, user: user.id, id: gp.id });
+    if (gp.buyer_id) {
+      notify(scope, { userId: gp.buyer_id, category: 'community', tz: studio.timezone, body: `${user.name ?? 'Twoja znajoma'} odebrała Twój prezent 💛`, action: 'community/invites' });
+    }
+  });
 }
 
 export function publicUser(u: AuthUser) {

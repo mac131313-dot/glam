@@ -3,19 +3,20 @@
 // Kierunek: minimalizm na maksa (Isola / Unbound) – dużo powietrza, zdjęcia, jedno kursywne słowo, cienkie linie, bez cieni.
 // Kontrakt z edytorem: każda sekcja to bezpośrednie dziecko <main> z id i data-section-name (most szuka `main > section[id]`).
 //   ?podglad=1 – szkic zamiast wersji publicznej (wymaga sesji panelu), ?edytor=1 – most do edytora w ramce.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { isNewClass, siteImageUrl, siteLook, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { Spinner, Watermark } from '../ui.tsx';
 import { EditorBridge } from './EditorBridge.tsx';
 import { FOOTER_ID, HERO_ID } from './protocol.ts';
+import { SideRays } from './SideRays.tsx';
 import './site.css';
 
 type PublicSession = { id: string; startsAt: string; endsAt: string; classTypeId: string; className: string; trainer: string; zone: string; kind: string; spotsLeft: number };
 type PublicClass = { id: string; name: string; level: string | null; color: string; description: string | null; photoUrl: string | null; zone: string; createdAt: string | null };
 type PublicProduct = { id: string; name: string; description: string | null; price: string; soldOut: boolean; photoUrl: string | null };
-type PublicTrainer = { id: string; name: string; bio: string | null; avatarUrl: string | null; classes: string[] };
+type PublicTrainer = { id: string; name: string; bio: string | null; about: string | null; avatarUrl: string | null; classes: string[] };
 export type PublicStudio = {
   id: string;
   slug: string;
@@ -330,15 +331,18 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
       {layout === 'cover' && photo ? (
         <div className="site-hero-cover">
           <MediaEl src={photo} />
+          <SideRays className="site-hero-rays" rayColor1="#FFD9A0" rayColor2="#FFF4E2" intensity={1.6} speed={1.6} dust={0.3} />
           {text}
         </div>
       ) : layout === 'side' && photo ? (
         <div className="site-split">
+          <SideRays className="site-hero-rays bleed" lightMode rayColor1="#E8B27A" rayColor2="#F2C9B8" intensity={1.8} speed={1.6} opacity={0.75} />
           {text}
           <Photo src={photo} className="tall" />
         </div>
       ) : (
         <>
+          <SideRays className="site-hero-rays bleed" lightMode rayColor1="#E8B27A" rayColor2="#F2C9B8" intensity={1.8} speed={1.6} opacity={0.75} />
           {photo && <Photo src={photo} className="wide" />}
           {text}
         </>
@@ -565,18 +569,41 @@ function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: V
   );
 }
 
+/**
+ * Trenerki jako zakładki: karta (zdjęcie + imię) otwiera pod siatką panel z większym zdjęciem, bio, opisem własnym
+ * i zajęciami. Ponowne kliknięcie zamyka. Zdjęcie: z edytora strony, a gdy go nie ma – z profilu w GLAM.
+ */
 function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const open = studio.trainers.find((t) => t.id === openId) ?? null;
+  useEffect(() => {
+    if (!open || !panelRef.current) return;
+    const r = panelRef.current.getBoundingClientRect();
+    // Panel poza ekranem (np. na telefonie pod długą siatką) – przewijamy do niego łagodnie.
+    if (r.top > window.innerHeight * 0.75 || r.bottom < 0) panelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [open]);
   if (studio.trainers.length === 0) return null;
   const className = (id: string) => studio.classes.find((c) => c.id === id)?.name;
+  const panelId = `${attrs.id}-panel`;
   return (
     <section {...attrs}>
       <Head v={v} />
-      <div className="site-people">
+      <div className="site-people" role="tablist" aria-label="Trenerki">
         {studio.trainers.map((t) => {
           const names = [...new Set(t.classes.map(className).filter(Boolean))];
           const photo = trainerPhoto(studio, t);
+          const selected = t.id === openId;
           return (
-            <article key={t.id} className="site-person">
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={panelId}
+              className="site-person"
+              onClick={() => setOpenId(selected ? null : t.id)}
+            >
               {photo ? (
                 <Photo src={photo} className="portrait" />
               ) : (
@@ -587,22 +614,31 @@ function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values
               <h3>{t.name}</h3>
               {b(v, 'showBio') && t.bio && <p className="site-desc">{t.bio}</p>}
               {b(v, 'showClasses') && names.length > 0 && <p className="site-quiet">{names.slice(0, 3).join(' · ')}</p>}
-            </article>
+              {(t.bio || t.about) && <span className="site-person-more">{selected ? 'zwiń' : 'poznaj'}</span>}
+            </button>
           );
         })}
       </div>
+      {open && <TrainerPanel key={open.id} studio={studio} t={open} id={panelId} panelRef={panelRef} names={[...new Set(open.classes.map(className).filter(Boolean))] as string[]} />}
     </section>
   );
 }
 
-/** Sklep: produkty z panelu (Sklep → Produkty i stany). „Kup teraz” otwiera zakup w aplikacji klientki – tam wariant i płatność. */
+/**
+ * Sklep na stronie głównej: produkty z panelu (Sklep → Produkty i stany) z „Kup teraz” prosto do zakupu w aplikacji.
+ * Pełny katalog z kategoriami i stroną produktu to osobna podstrona /s/:slug/sklep (ShopSite).
+ */
 function ShopSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
   const list = studio.products.filter((p) => b(v, 'showSoldOut') || !p.soldOut);
   if (!studio.modules.shop || list.length === 0) return null;
   const buy = s(v, 'buyLabel') || 'Kup teraz';
   return (
     <section {...attrs}>
-      <Head v={v} />
+      <Head v={v}>
+        <a className="site-link" href={`/s/${encodeURIComponent(studio.slug)}/sklep`}>
+          Cały sklep
+        </a>
+      </Head>
       <div className="site-cards">
         {list.map((p) => (
           <article key={p.id} className="site-item site-product">
@@ -622,23 +658,67 @@ function ShopSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; at
   );
 }
 
-/** Odnośniki do podstron, które dojdą w kolejnym etapie (wydarzenia, kursy). */
+function TrainerPanel({ studio, t, id, names, panelRef }: { studio: PublicStudio; t: PublicTrainer; id: string; names: string[]; panelRef: RefObject<HTMLDivElement | null> }) {
+  const photo = trainerPhoto(studio, t);
+  const paragraphs = (t.about ?? '').split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  return (
+    <div ref={panelRef} id={id} role="tabpanel" aria-label={t.name} className="site-trainer site-split">
+      {photo ? (
+        <Photo src={photo} className="tall" alt={t.name} />
+      ) : (
+        <div className="site-photo tall empty" aria-hidden="true">
+          <span className="serif">{t.name.charAt(0)}</span>
+        </div>
+      )}
+      <div className="site-trainer-text">
+        <h3 className="site-trainer-name serif">{t.name}</h3>
+        {t.bio && <p className="site-lead">{t.bio}</p>}
+        {paragraphs.map((p, i) => (
+          <p key={i} className="site-prose">
+            {p}
+          </p>
+        ))}
+        {names.length > 0 && <p className="site-quiet">prowadzi {names.join(' · ')}</p>}
+        <a className="site-link" href={APP_URL}>
+          Zapisz się na zajęcia
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/** Odnośniki do podstron (wydarzenia i kursy – wkrótce; sklep – /s/:slug/sklep). */
 function MoreSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
-  const items = (['events', 'courses'] as const).filter((k) => studio.modules[k] && b(v, `${k}Visible`));
+  const items = (['events', 'courses', 'shop'] as const).filter((k) => studio.modules[k] && b(v, `${k}Visible`));
   if (items.length === 0) return null;
+  const href = (k: (typeof items)[number]) => (k === 'shop' ? `/s/${encodeURIComponent(studio.slug)}/sklep` : null);
   return (
     <section {...attrs}>
       <Head v={v} />
       <ul className="site-rows">
-        {items.map((k) => (
-          <li key={k} aria-disabled="true">
-            <span className="site-row-main">
-              <span className="site-row-name">{s(v, `${k}Title`)}</span>
-              {s(v, `${k}Text`) && <span className="site-quiet">{s(v, `${k}Text`)}</span>}
-            </span>
-            {s(v, 'soonLabel') && <span className="site-quiet">{s(v, 'soonLabel')}</span>}
-          </li>
-        ))}
+        {items.map((k) => {
+          const to = href(k);
+          const body = (
+            <>
+              <span className="site-row-main">
+                <span className="site-row-name">{s(v, `${k}Title`)}</span>
+                {s(v, `${k}Text`) && <span className="site-quiet">{s(v, `${k}Text`)}</span>}
+              </span>
+              {!to && s(v, 'soonLabel') && <span className="site-quiet">{s(v, 'soonLabel')}</span>}
+            </>
+          );
+          return to ? (
+            <li key={k}>
+              <a href={to} className="site-row-link">
+                {body}
+              </a>
+            </li>
+          ) : (
+            <li key={k} aria-disabled="true">
+              {body}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

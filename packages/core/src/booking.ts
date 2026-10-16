@@ -46,6 +46,15 @@ export function cancellationOutcome(policy: BookingPolicy, startsAt: Date, now: 
   return minutesLeft >= policy.cancelMinutesBefore ? 'refund' : 'late';
 }
 
+/**
+ * Wejście „z ulicy” w recepcji: czy klientkę bez rezerwacji można jeszcze dopisać do tych zajęć i wpuścić na salę.
+ * Recepcja może zapisać najpóźniej 15 min po starcie (bookSession) – okno nie może sięgać dalej.
+ */
+export function canWalkIn(startsAt: Date, now: Date, freeSeats: number): boolean {
+  const minutes = (startsAt.getTime() - now.getTime()) / 60_000;
+  return freeSeats > 0 && minutes >= -10 && minutes <= 45;
+}
+
 export type SeatDecision = 'booked' | 'waitlist' | 'full';
 
 export function seatDecision(capacity: number, taken: number, waitlistEnabled: boolean): SeatDecision {
