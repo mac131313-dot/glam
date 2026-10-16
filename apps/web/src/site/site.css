@@ -465,5 +465,5 @@ html:has(.site-menu[open]) { overflow: hidden; }
   width: 100%; padding-block: 0 clamp(36px, 7vh, 88px);
   padding-inline: max(var(--gutter), calc((100vw - var(--site-w)) / 2 + var(--gutter)));
 }
-.site-hero.layout-screen .site-title { font-size: clamp(3.2rem, 10.5vw, 9.5rem); line-height: 0.92; }
-.site-hero.layout-screen .site-title .serif { font-size: 0.5em; }
+.site-hero.layout-screen .site-title { font-size: clamp(2.6rem, 6.2vw, 5.6rem); line-height: 0.95; max-width: 14em; }
+.site-hero.layout-screen .site-title .serif { font-size: 0.48em; }

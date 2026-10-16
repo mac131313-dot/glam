@@ -366,7 +366,8 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
       {(layout === 'cover' || layout === 'screen') && photo ? (
         <div className="site-hero-cover">
           <MediaEl src={photo} />
-          <SideRays className="site-hero-rays" rayColor1="#FFD9A0" rayColor2="#FFF4E2" intensity={1.6} speed={1.6} dust={0.3} />
+          {/* Na zdjęciu promienie mają być ledwo widoczne: chłodna biel zamiast złota, słabiej i z mniejszą ilością pyłu. */}
+          <SideRays className="site-hero-rays" rayColor1="#F3F1EC" rayColor2="#FFFFFF" intensity={0.8} speed={1.2} dust={0.12} opacity={0.55} />
           {text}
         </div>
       ) : layout === 'side' && photo ? (
