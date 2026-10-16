@@ -22,10 +22,10 @@ test('dokument strony: każda sekcja systemowa dokładnie raz, kolejność z dok
     ],
   });
   const keys = d.sections.map((s) => s.key);
-  assert.deepEqual(keys, ['classes', 'trainers', 'more', 'a-cennik', 'about', 'schedule']);
+  assert.deepEqual(keys, ['classes', 'trainers', 'shop', 'more', 'a-cennik', 'about', 'schedule']);
   for (const t of SYSTEM_SECTIONS) assert.equal(keys.filter((k) => k === t).length, 1, t);
   assert.equal(d.sections[0].visible, false);
-  assert.equal(d.sections[3].values.layout, 'plain');
+  assert.equal(d.sections[4].values.layout, 'plain');
 });
 
 test('dokument strony: liczby w granicach, motyw tylko z białej listy', () => {

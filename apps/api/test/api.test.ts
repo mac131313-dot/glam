@@ -586,3 +586,35 @@ test('filmy na stronie: wgranie mp4, serwer sam oznacza film w dokumencie, przew
   doc.media = { [jpg.id]: 'video' };
   assert.deepEqual((await call(beata, K, 'PUT', '/api/site/draft', { doc, auto: true })).json().doc.media, {});
 });
+
+test('czat: załącznik ze zdjęciem widzą klientka i recepcja, inna klientka nie; pusta wiadomość i zły plik odpadają', async () => {
+  const natalia = await login(SSG.natalia);
+  const julia = await login(SSG.julia);
+  const reception = await login(SSG.reception);
+  const photo = `data:image/jpeg;base64,${jpegHeader(40, 30).toString('base64')}`;
+
+  const sent = await call(natalia, SSG_STUDIO, 'POST', '/api/chat', { body: '', attachment: photo, attachmentName: 'kolano.jpg' });
+  assert.equal(sent.statusCode, 200, sent.body);
+  // Poza godzinami recepcji po wiadomości przychodzi jeszcze automatyczna odpowiedź – szukamy tej z plikiem.
+  const mine = (await call(natalia, SSG_STUDIO, 'GET', '/api/chat')).json().messages.findLast((m: { attachment: unknown }) => m.attachment);
+  assert.equal(mine.attachment.type, 'image');
+  assert.equal(mine.attachment.name, 'kolano.jpg');
+
+  const threads = (await call(reception, SSG_STUDIO, 'GET', '/api/staff/chats')).json();
+  const last = (await call(reception, SSG_STUDIO, 'GET', `/api/staff/chats/${threads.find((t: { name: string }) => t.name === 'Natalia').client_id}`)).json().at(-1);
+  if (!last.auto) assert.equal(threads.find((t: { name: string }) => t.name === 'Natalia').last_body, '📎 Załącznik');
+  assert.equal((await call(reception, SSG_STUDIO, 'GET', mine.attachment.url)).statusCode, 200);
+  assert.equal((await call(natalia, SSG_STUDIO, 'GET', mine.attachment.url)).statusCode, 200);
+  assert.equal((await call(julia, SSG_STUDIO, 'GET', mine.attachment.url)).statusCode, 404, 'cudzy załącznik');
+
+  assert.equal((await call(natalia, SSG_STUDIO, 'POST', '/api/chat', { body: '' })).statusCode, 400, 'pusta wiadomość');
+  const txt = `data:text/plain;base64,${Buffer.from('hej').toString('base64')}`;
+  assert.equal((await call(natalia, SSG_STUDIO, 'POST', '/api/chat', { body: 'plik', attachment: txt })).statusCode, 400, 'tylko zdjęcie, wideo, PDF');
+
+  const clientId = threads.find((t: { name: string }) => t.name === 'Natalia').client_id;
+  const reply = await call(reception, SSG_STUDIO, 'POST', `/api/staff/chats/${clientId}`, { body: 'Tak wygląda ćwiczenie', attachment: photo, attachmentName: 'cwiczenie.jpg' });
+  assert.equal(reply.statusCode, 200, reply.body);
+  const fromStaff = (await call(natalia, SSG_STUDIO, 'GET', '/api/chat')).json().messages.findLast((m: { from_staff: number; auto: number }) => m.from_staff && !m.auto);
+  assert.equal(fromStaff.from_staff, 1);
+  assert.equal((await call(natalia, SSG_STUDIO, 'GET', fromStaff.attachment.url)).statusCode, 200, 'plik od recepcji');
+});

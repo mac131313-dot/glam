@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Znak SS&G (Stretching Studio & Gym): napis po okręgu i serce, wyśrodkowane w kwadracie. Czarne na przezroczystym – strona używa go jako maski. -->
+  <defs>
+    <path id="top" d="M38,100 A62,62 0 0 1 162,100" />
+    <path id="bottom" d="M24,100 A76,76 0 0 0 176,100" />
+  </defs>
+  <g fill="#000" font-family="'DIN Alternate', 'Bahnschrift', 'Arial Narrow', Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="2.6">
+    <text text-anchor="middle"><textPath href="#top" startOffset="50%">STRETCHING</textPath></text>
+    <text text-anchor="middle"><textPath href="#bottom" startOffset="50%">STUDIO &amp; GYM</textPath></text>
+  </g>
+  <path fill="#000" transform="translate(100 100) scale(1.35) translate(-100 -101.5)" d="M100 110.5c-.6 0-1.1-.2-1.5-.6l-7.2-6.9c-2.3-2.2-2.5-5.8-.4-8.1 2.1-2.4 5.6-2.6 8-.6l1.1.9 1.1-.9c2.4-2 5.9-1.8 8 .6 2.1 2.3 1.9 5.9-.4 8.1l-7.2 6.9c-.4.4-.9.6-1.5.6z" />
+</svg>

@@ -26,6 +26,10 @@ export const SSG = {
   aleksandra: '+48500000213',
   michalina: '+48500000214',
   magdalena: '+48500000215',
+  natalia: '+48500000216',
+  zuzanna: '+48500000217',
+  karolina: '+48500000218',
+  paulina: '+48500000219',
 };
 
 type Helpers = {
@@ -46,7 +50,7 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
     `INSERT INTO studios (id, name, slug, invite_code, tagline, accent, look_json, logo, phone, policy_json, settings_json, guest_pass_price, welcome_approval, plan_id, status, catalog_visible, regulations, created_at)
      VALUES (?, 'SS&G', 'ssg', 'SSG2026', 'Pilates reformer, zajęcia grupowe i siłownia', '#b9cfe0', ?, 'S', '+48 530 333 554', ?, ?, 8000, 0, 'studio', 'active', 1, ?, ?)`,
     S,
-    JSON.stringify({ palette: 'sand', fonts: { display: 'playfair', head: 'urbanist', body: 'jakarta', label: 'urbanist' }, softness: 'softer' }),
+    JSON.stringify({ palette: 'sand', fonts: { display: 'playfair', head: 'urbanist', body: 'jakarta', label: 'urbanist' }, softness: 'softer', watermark: '/brand/ssg-watermark.svg' }),
     JSON.stringify({ opensDaysAhead: 14, closesMinutesBefore: 120, cancelMinutesBefore: 120, waitlist: true }),
     JSON.stringify({
       support: {
@@ -241,17 +245,60 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
       { ct: upcoming, min: iso(new Date(now.getTime() + 3 * 3_600_000)) },
     );
     if (next) bookSession(scope, studio, id, next.id, now);
+    return { id, passId };
   };
   client(SSG.julia, 'Julia', 'Mocne biodra i lepsza postawa', 'ss_ref8', 'ss_hips', 'ss_flow');
-  client(SSG.aleksandra, 'Aleksandra', 'Elastyczność i rozciągnięte plecy', 'ss_ref10', 'ss_flow', 'ss_hips', 3);
-  client(SSG.michalina, 'Michalina', 'Silny brzuch po ciąży', 'ss_ref8', 'ss_flow', 'ss_barre_stretch');
+  const aleksandra = client(SSG.aleksandra, 'Aleksandra', 'Elastyczność i rozciągnięte plecy', 'ss_ref10', 'ss_flow', 'ss_hips', 3);
+  const michalina = client(SSG.michalina, 'Michalina', 'Silny brzuch po ciąży', 'ss_ref8', 'ss_flow', 'ss_barre_stretch');
+  const natalia = client(SSG.natalia, 'Natalia', 'Powrót do formy po kontuzji kolana', 'ss_ref4', 'ss_core', 'ss_classic_basic', 2);
+  const zuzanna = client(SSG.zuzanna, 'Zuzanna', 'Szpagat przed wakacjami', 'ss_flexy', 'ss_split', 'ss_split');
+  client(SSG.karolina, 'Karolina', 'Mniej stresu i spokojniejszy sen', 'ss_yb8', 'ss_yoga_stretch', 'ss_barre_glow', 5);
+  client(SSG.paulina, 'Paulina', 'Silne ramiona i pewność w hamaku', 'ss_aerial8', 'ss_aerial_pilates', 'ss_aerial_stretch');
+
+  // ——— Dziś na liście: Aleksandra na Reformerze po ukraińsku, Michalina na Girly Pilates ———
+  // Zapis wprost (bez okna zapisów): poranne zajęcia mogą już trwać, gdy dane demo się wgrywają.
+  const today = localParts(now, studio.timezone).date;
+  const bookToday = (userId: string, passId: string, classTypeId: string) => {
+    const s = scope.get<{ id: string }>(
+      "SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = $ct AND status = 'scheduled' AND starts_at >= $from AND starts_at < $to ORDER BY starts_at LIMIT 1",
+      { ct: classTypeId, from: zonedToUtc(today, '00:00', studio.timezone).toISOString(), to: zonedToUtc(today, '23:59', studio.timezone).toISOString() },
+    );
+    if (!s) return;
+    scope.run(
+      "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'booked', $t, $t)",
+      { id: crypto.randomUUID(), s: s.id, u: userId, p: passId, t: iso(now) },
+    );
+    consumeEntry(scope, loadPass(scope, passId)!, 'main');
+  };
+  bookToday(aleksandra.id, aleksandra.passId, 'ss_ua');
+  bookToday(michalina.id, buy(S, michalina.id, 'ss_girly4', 2), 'ss_girly');
+
+  // ——— Wiadomości: dwie rozpoczęte rozmowy o zajęciach; ostatnia wiadomość klientki czeka na odpowiedź ———
+  const chat = (clientId: string, lines: [fromStaff: boolean, body: string, hoursAgo: number][]) =>
+    lines.forEach(([staff, body, h], i) => {
+      const at = iso(new Date(now.getTime() - h * 3_600_000));
+      const last = i === lines.length - 1;
+      run(
+        'INSERT INTO chat_messages (id, studio_id, client_id, author_id, from_staff, body, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        crypto.randomUUID(), S, clientId, staff ? reception : clientId, staff ? 1 : 0, body, at, last && !staff ? null : at,
+      );
+    });
+  chat(natalia.id, [
+    [false, 'Dzień dobry! Pół roku temu miałam kontuzję kolana. Czy Pilates Klasyczny na reformerze będzie dla mnie dobry na start?', 26],
+    [true, 'Dzień dobry Natalio! Tak, poziom podstawowy jest spokojny i dużo ćwiczy się w leżeniu, więc kolano nie jest obciążone. Daj znać trenerce przed zajęciami – dobierze sprężyny i pokaże zamienniki ćwiczeń 💛', 25],
+    [false, 'Super, dziękuję! A czy po zajęciach Core & Mobility mogę od razu iść na Klasyczny, czy lepiej zrobić dzień przerwy?', 2],
+  ]);
+  chat(zuzanna.id, [
+    [false, 'Hej! Chodzę na Kurs Szpagatu we wtorki. Czy z karnetem Flexy mogę w tym tygodniu przyjść w czwartek zamiast wtorku?', 20],
+    [true, 'Hej Zuzanno! Tak, Flexy działa na każdą grupę kursu, więc czwartek jest jak najbardziej ok. Zapisz się w aplikacji, póki są miejsca 🙂', 19],
+    [false, 'Zapisane! Czy na czwartek mam wziąć coś do rozciągania, np. klocki albo pasek?', 1],
+  ]);
 
   // ——— Prośba o termin: Magdalena czeka na wolne miejsce na dzisiejszą Joga Stretch o 18:00 ———
   const magdalena = user(SSG.magdalena, 'Magdalena');
   member(S, magdalena, 'client', 45, { goal: 'Rozciąganie i spokojna głowa po pracy' });
   run("INSERT OR REPLACE INTO consents (user_id, studio_id, kind, granted, updated_at) VALUES (?, '', 'terms', 1, ?)", magdalena, iso(now));
   run('UPDATE users SET onboarded_at = ? WHERE id = ?', iso(new Date(now.getTime() - 45 * DAY)), magdalena);
-  const today = localParts(now, studio.timezone).date;
   run(
     "INSERT INTO dormant_surveys (id, studio_id, user_id, reasons_json, comment, wants_proposal, status, created_at, answered_at, contact_due_at) VALUES ('ss_ds1', ?, ?, '[\"time\"]', ?, 1, 'answered', ?, ?, ?)",
     S,
@@ -261,6 +308,14 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
     iso(new Date(now.getTime() - 3_600_000)),
     iso(zonedToUtc(today, '17:00', studio.timezone)),
   );
+
+  // ——— Sklep (z Instagrama studia, ceny od studia 2026-10-16) ———
+  // Rozmiary i stany do uzupełnienia w panelu: Sklep → Produkty i stany.
+  const shopItem = (id: string, name: string, price: number, desc: string, sort: number) =>
+    run("INSERT INTO shop_products (id, studio_id, name, description, price_grosze, status, variants_json, reward_eligible, created_at) VALUES (?, ?, ?, ?, ?, 'available', ?, 0, ?)", id, S, name, desc, price, JSON.stringify([{ id: 'std', stock: 10 }]), iso(new Date(now.getTime() + sort * 1000)));
+  shopItem('ss_sp_socks', 'Skarpety antypoślizgowe', 4900, 'Do pilatesu, reformerów i stretchingu.', 1);
+  shopItem('ss_sp_matcha', 'Glow&Grow Coco Matcha', 3900, 'Nasz limitowany napój z matchą od Moshi Matcha.', 2);
+  shopItem('ss_sp_carpatree', 'Strój Carpatree – zestaw', 13900, 'Komplet do treningu marki Carpatree.', 3);
 
   seedHalloween(db, now, owner, T.weronika);
 }

@@ -6,7 +6,7 @@
 import { FONTS, PALETTES, SOFTNESS, type FontRole, type Look, type Softness } from './look.ts';
 
 /** Sekcje z danymi z systemu (grafik, zajęcia, trenerki…) – każda występuje dokładnie raz. */
-export type SystemSectionType = 'about' | 'schedule' | 'classes' | 'trainers' | 'more';
+export type SystemSectionType = 'about' | 'schedule' | 'classes' | 'trainers' | 'shop' | 'more';
 /** Sekcje stałe: nagłówek na górze i stopka na dole – nie zmieniają miejsca. */
 export type FixedSectionType = 'hero' | 'footer';
 /** Sekcje własne – może ich być dowolnie wiele. */
@@ -133,6 +133,15 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
     nav: 'Trenerki',
     groups: [heading('Trenerki'), { label: 'Elementy', fields: [toggle('showClasses', 'Zajęcia trenerki', false), toggle('showBio', 'Opis trenerki', false)] }],
   },
+  shop: {
+    label: 'Sklep',
+    nav: 'Sklep',
+    groups: [
+      heading('Sklep', 'studia'),
+      { label: 'Przycisk', fields: [text('buyLabel', 'Przycisk przy produkcie', 'Kup teraz', 24)] },
+      { label: 'Elementy', fields: [toggle('showDescription', 'Opisy', true), toggle('showSoldOut', 'Wyprzedane produkty', false)] },
+    ],
+  },
   more: {
     label: 'Więcej',
     nav: '',
@@ -140,7 +149,6 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
       heading('Więcej'),
       { label: 'Wydarzenia', fields: [toggle('eventsVisible', 'Pokazuj', true), text('eventsTitle', 'Tytuł', 'Wydarzenia', 40), text('eventsText', 'Opis', 'Warsztaty i wieczory w studiu.', 140)] },
       { label: 'Kursy online', fields: [toggle('coursesVisible', 'Pokazuj', true), text('coursesTitle', 'Tytuł', 'Kursy online', 40), text('coursesText', 'Opis', 'Trenuj z nami w domu.', 140)] },
-      { label: 'Sklep', fields: [toggle('shopVisible', 'Pokazuj', true), text('shopTitle', 'Tytuł', 'Sklep', 40), text('shopText', 'Opis', 'Akcesoria i vouchery.', 140)] },
       { label: 'Etykieta', fields: [text('soonLabel', 'Gdy podstrona jeszcze nie działa', 'wkrótce', 20)] },
     ],
   },
@@ -230,7 +238,7 @@ export type SiteDoc = {
   media: Record<string, 'video'>;
 };
 
-export const SYSTEM_SECTIONS: SystemSectionType[] = ['about', 'schedule', 'classes', 'trainers', 'more'];
+export const SYSTEM_SECTIONS: SystemSectionType[] = ['about', 'schedule', 'classes', 'trainers', 'shop', 'more'];
 const CUSTOM_PREFIX: Record<CustomSectionType, string> = { article: 'a', gallery: 'g' };
 export const MAX_SECTIONS = 30;
 const MAX_PHOTOS = 200;

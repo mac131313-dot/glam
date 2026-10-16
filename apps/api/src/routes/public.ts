@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { addDays, localParts, parseSiteDoc, receptionSlots, siteImageUrl, siteMediaIds, zonedToUtc, type SiteDoc } from '@glam/core';
+import { addDays, formatPLN, localParts, parseSiteDoc, receptionSlots, siteImageUrl, siteMediaIds, totalStock, zonedToUtc, type SiteDoc, type Variant } from '@glam/core';
 import { ctx, requirePerm, type Deps } from '../context.ts';
 import { nowIso, tx, type Db } from '../db.ts';
 import { badRequest, notFound } from '../errors.ts';
@@ -156,6 +156,12 @@ function sitePayload(db: Db, studioId: string, site: SiteDoc) {
      FROM class_types ct JOIN zones z ON z.id = ct.zone_id WHERE ct.studio_id = $studio ORDER BY z.name, ct.name`,
   );
   const teaches = scope.all<{ class_type_id: string; trainer_id: string }>('SELECT class_type_id, trainer_id FROM trainer_class_types WHERE studio_id = $studio');
+  // Sklep: tylko to, co klientka i tak widzi w aplikacji – bez ukrytych produktów i bez stanów magazynu.
+  const products = studio.has('shop')
+    ? scope.all<{ id: string; name: string; description: string | null; price_grosze: number; status: string; variants_json: string; media_id: string | null }>(
+        "SELECT id, name, description, price_grosze, status, variants_json, media_id FROM shop_products WHERE studio_id = $studio AND status != 'hidden' ORDER BY created_at, name",
+      )
+    : [];
 
   const from = localParts(new Date(), studio.timezone).date;
   const sessions = scope.all<{ id: string; starts_at: string; ends_at: string; capacity: number; class_type_id: string; class_name: string; trainer_id: string; trainer_name: string; zone_name: string; kind: string; taken: number }>(
@@ -200,6 +206,14 @@ function sitePayload(db: Db, studioId: string, site: SiteDoc) {
       classes: teaches.filter((x) => x.trainer_id === t.id).map((x) => x.class_type_id),
     })),
     classes: classes.map((c) => ({ id: c.id, name: c.name, level: c.level, color: c.color, description: c.description, photoUrl: c.photo_url, zone: c.zone_name, createdAt: c.created_at })),
+    products: products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      price: formatPLN(p.price_grosze),
+      soldOut: p.status === 'sold_out' || totalStock(JSON.parse(p.variants_json) as Variant[]) === 0,
+      photoUrl: p.media_id ? `/api/public-media/${p.media_id}` : null,
+    })),
     schedule: {
       from,
       sessions: sessions.map((s) => ({

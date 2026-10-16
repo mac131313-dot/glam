@@ -551,6 +551,7 @@ const SYSTEM_NOTES: Partial<Record<SiteSection['type'], string>> = {
   classes: 'Lista zajęć to oferta studia (Grafik i sale → typy zajęć). Nowe zajęcia same pojawiają się na stronie.',
   trainers: 'Trenerki, ich opisy i zdjęcia – z kont zespołu.',
   about: 'Godziny recepcji, kontakt i pytania – z Ustawień studia.',
+  shop: 'Produkty, ceny i zdjęcia – z panelu: Sklep → Produkty i stany. Sekcja pokazuje się, gdy sklep jest włączony.',
   more: 'Kafelki pokazują się tylko dla modułów włączonych w studiu.',
 };
 

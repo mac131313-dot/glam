@@ -1,6 +1,6 @@
 import { useAuthedUrl } from './api.ts';
 import { useLayer } from './back.ts';
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 type Toast = { text: string; kind: 'ok' | 'error' } | null;
@@ -362,4 +362,13 @@ export function AuthVideo({ src, videoRef, children, ...rest }: { src: string; v
   ) : (
     <Spinner />
   );
+}
+
+/**
+ * Znak studia w tle (Look.watermark): delikatny, za całą treścią, bez klikania. Kolor z motywu (maska + --ink),
+ * więc działa i w trybie ciemnym. Rodzic potrzebuje `isolation: isolate` (klasa .with-watermark), żeby znak był pod treścią.
+ */
+export function Watermark({ src }: { src: string | null | undefined }) {
+  if (!src) return null;
+  return <div className="watermark" aria-hidden="true" style={{ '--watermark': `url("${src}")` } as CSSProperties} />;
 }

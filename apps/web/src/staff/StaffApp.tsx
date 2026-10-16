@@ -7,7 +7,7 @@ import { can, ROLE_LABEL, type Permission, type Role } from '@glam/core';
 import type { Me, MeStudio } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
-import { Select, Spinner } from '../ui.tsx';
+import { Select, Spinner, Watermark } from '../ui.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { Desk } from './Desk.tsx';
 import { LookEditor } from './LookEditor.tsx';
@@ -84,7 +84,8 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
   const groups = [...new Set(visible.map((s) => s.group))];
 
   return (
-    <div className="staff">
+    <div className="staff with-watermark">
+      <Watermark src={props.studio.look.watermark} />
       <aside className="side" aria-label="Menu panelu">
         <div style={{ padding: '4px 12px 14px' }}>
           <div className="wordmark" style={{ fontSize: '1.7rem' }}>

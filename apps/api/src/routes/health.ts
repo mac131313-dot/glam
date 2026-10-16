@@ -132,6 +132,9 @@ export function healthRoutes(app: FastifyInstance, deps: Deps) {
       ok = m.owner_id === user.id || (roles.includes('trainer') && !!scope.get('SELECT 1 FROM progress_photos WHERE studio_id = $studio AND media_id = $m AND share_with_trainer = 1', { m: m.id }));
     } else if (m.kind === 'welcome') {
       ok = staff || !!scope.get('SELECT 1 FROM welcome_messages WHERE studio_id = $studio AND video_id = $m AND client_id = $u', { m: m.id, u: user.id });
+    } else if (m.kind === 'chat') {
+      // Załącznik z czatu: zespół studia i klientka, której rozmowy dotyczy.
+      ok = staff || !!scope.get('SELECT 1 FROM chat_messages WHERE studio_id = $studio AND media_id = $m AND client_id = $u', { m: m.id, u: user.id });
     } else if (m.kind === 'course' || m.kind === 'attachment') {
       ok = staff || lessonAccess(scope, user.id, m.id);
     }

@@ -59,6 +59,7 @@ const paths: Record<string, ReactNode> = {
   back: <path d="m15 6-6 6 6 6" />,
   swap: <path d="M7 7h11l-3-3M17 17H6l3 3" />,
   wave: <path d="M3 12c2-4 4-4 6 0s4 4 6 0 4-4 6 0" />,
+  clip: <path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" />,
   vibrate: (
     <>
       <rect x="8" y="4" width="8" height="16" rx="2.5" />

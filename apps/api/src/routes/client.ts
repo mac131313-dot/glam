@@ -39,6 +39,7 @@ import { HttpError, badRequest, conflict, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
 import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { bookSession, cancelBooking, confirmAttendance, rateSession } from '../services/booking.ts';
+import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
 import { checkinCode } from '../services/checkin.ts';
 import { logUsage } from '../services/dispatch.ts';
 import { attendedCount, awardPoints, badgeList, pointsOf, rewardProgress } from '../services/motivation.ts';
@@ -824,16 +825,19 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       open: isOpen(studio, new Date()),
       hours: studio.settings.support.hours,
       next: nextReceptionLabel(studio.settings.support.hours, new Date(), studio.timezone),
-      messages: scope.all('SELECT c.id, c.body, c.from_staff, c.auto, c.created_at, u.name AS author FROM chat_messages c LEFT JOIN users u ON u.id = c.author_id WHERE c.studio_id = $studio AND c.client_id = $u ORDER BY c.created_at', { u: user.id }),
+      messages: chatMessages(scope, user.id),
     };
   });
 
-  app.post<{ Body: { body: string } }>('/api/chat', member, async (req) => {
+  app.post<{ Body: ChatInput }>('/api/chat', { ...member, bodyLimit: CHAT_BODY_LIMIT }, async (req) => {
     const { scope, user, studio } = ctx(req);
     const body = String(req.body?.body ?? '').trim();
-    const m = moderate(body, { maxLength: 1000, allowLinks: true });
-    if (!m.ok) throw badRequest(MODERATION_COPY[m.reason]);
-    scope.run('INSERT INTO chat_messages (id, studio_id, client_id, author_id, from_staff, body, created_at) VALUES ($id, $studio, $u, $u, 0, $b, $now)', { id: id(), u: user.id, b: body, now: nowIso() });
+    // Sam plik bez tekstu jest w porządku – moderujemy tylko to, co napisano.
+    if (body || !req.body?.attachment) {
+      const m = moderate(body, { maxLength: 1000, allowLinks: true });
+      if (!m.ok) throw badRequest(MODERATION_COPY[m.reason]);
+    }
+    postChatMessage(scope, studio, { clientId: user.id, authorId: user.id, fromStaff: false, body, input: req.body ?? {} });
     if (!isOpen(studio, new Date())) {
       const last = scope.get<{ created_at: string }>('SELECT created_at FROM chat_messages WHERE studio_id = $studio AND client_id = $u AND auto = 1 AND from_staff = 1 ORDER BY created_at DESC LIMIT 1', { u: user.id });
       if (!last || Date.now() - Date.parse(last.created_at) > 6 * 3_600_000) {

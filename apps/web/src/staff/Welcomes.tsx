@@ -8,7 +8,7 @@ import { AuthVideo, Avatar, Empty, Field, readFile, Sheet, Spinner, Tabs, useAct
 
 type Todo = { id: string; name: string; goal: string | null; first_class: string | null };
 type Pending = { id: string; body: string; video_id: string | null; trainer_name: string; client_name: string };
-type Sent = { id: string; body: string; status: string; publish_at: string | null; seen_at: string | null; video_id: string | null; created_at: string; client_name: string };
+type Sent = { id: string; body: string; status: string; publish_at: string | null; seen_at: string | null; video_id: string | null; created_at: string; client_name: string; trainer_name: string | null };
 type Template = { id: string; label: string; body: string };
 
 const MAX = 400;
@@ -28,27 +28,28 @@ export function Welcomes({ me, isOwner }: { me: Me; isOwner: boolean }) {
         onChange={setTab}
         options={[...(isOwner ? ([['owner', 'Akceptacja i statystyki']] as ['owner', string][]) : []), ['todo', 'Do napisania'], ['sent', 'Wysłane']]}
       />
-      {tab === 'todo' && <TodoList me={me} />}
-      {tab === 'sent' && <SentList />}
+      {tab === 'todo' && <TodoList me={me} isOwner={isOwner} />}
+      {tab === 'sent' && <SentList isOwner={isOwner} />}
       {tab === 'owner' && <OwnerView />}
     </div>
   );
 }
 
-function TodoList({ me }: { me: Me }) {
+function TodoList({ me, isOwner }: { me: Me; isOwner: boolean }) {
   const todo = useApi<Todo[]>('/staff/welcome-todo');
   const [editing, setEditing] = useState<Todo | null>(null);
   return (
     <section className="stack">
-      {!todo.data && <Spinner />}
-      {todo.data?.length === 0 && <Empty icon="✨">Wszystkie Twoje klientki dostały powitanie.</Empty>}
+      {todo.error && <Empty>{todo.error.message}</Empty>}
+      {!todo.data && !todo.error && <Spinner />}
+      {todo.data?.length === 0 && <Empty icon="✨">{isOwner ? 'Każda klientka studia dostała już powitanie.' : 'Wszystkie Twoje klientki dostały powitanie.'}</Empty>}
       {todo.data?.map((c) => (
         <div key={c.id} className="card row">
           <Avatar name={c.name} size="sm" />
           <div className="grow">
             <div style={{ fontWeight: 600 }}>{c.name}</div>
             <div className="small muted">
-              {c.first_class ? `Pierwsze zajęcia: ${fmtDay(c.first_class)}` : 'Bez zapisu na zajęcia'}
+              {c.first_class ? `Najbliższe zajęcia: ${fmtDay(c.first_class)}` : 'Bez zapisu na najbliższe zajęcia'}
               {c.goal ? ` · cel: ${c.goal}` : ''}
             </div>
           </div>
@@ -99,10 +100,10 @@ function Editor({ me, client, onClose, onDone }: { me: Me; client: Todo; onClose
     );
 
   return (
-    <Sheet onClose={onClose} label={`Powitanie dla ${client.name}`}>
+    <Sheet onClose={onClose} label={`Powitanie – ${client.name}`}>
       {!preview ? (
         <div className="stack">
-          <h2>Powitanie dla {client.name}</h2>
+          <h2>Powitanie – {client.name}</h2>
           <div className="chips">
             {templates.data?.map((t) => (
               <button key={t.id} className="chip" onClick={() => setText(fill(t.body, vars))}>
@@ -162,17 +163,21 @@ function Editor({ me, client, onClose, onDone }: { me: Me; client: Todo; onClose
   );
 }
 
-function SentList() {
+function SentList({ isOwner }: { isOwner: boolean }) {
   const list = useApi<Sent[]>('/staff/welcomes/sent');
   const STATUS: Record<string, string> = { published: 'wysłane', scheduled: 'zaplanowane', pending: 'czeka na akceptację' };
+  if (list.error) return <Empty>{list.error.message}</Empty>;
   if (!list.data) return <Spinner />;
-  if (!list.data.length) return <Empty>Jeszcze nic nie wysłałaś.</Empty>;
+  if (!list.data.length) return <Empty>{isOwner ? 'W studiu nie ma jeszcze wysłanych powitań.' : 'Jeszcze nic nie wysłałaś.'}</Empty>;
   return (
     <div className="stack">
       {list.data.map((w) => (
         <div key={w.id} className="card flat stack" style={{ gap: 4 }}>
           <div className="row between">
-            <b>{w.client_name}</b>
+            <b>
+              {w.client_name}
+              {isOwner && w.trainer_name && <span className="small muted" style={{ fontWeight: 400 }}> · od {w.trainer_name}</span>}
+            </b>
             <span className="badge">
               {STATUS[w.status] ?? w.status}
               {w.status === 'scheduled' && w.publish_at ? ` ${fmtDay(w.publish_at)} ${fmtTime(w.publish_at)}` : ''}

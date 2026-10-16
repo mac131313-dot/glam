@@ -26,6 +26,7 @@ import type { StudioScope } from '../scope.ts';
 import { DESK_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
 import { bookSession, cancelBooking, changeTrainer, checkIn, loadSession, markNoShow } from '../services/booking.ts';
+import { CHAT_BODY_LIMIT, CHAT_LAST_BODY, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
 import { logUsage } from '../services/dispatch.ts';
 import { storeMedia } from '../services/media.ts';
 import { notify } from '../services/notify.ts';
@@ -557,38 +558,55 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
 
   // ——— Powitania (6, P1–P7) ———
 
-  app.get('/api/staff/welcome-templates', perm('welcomes.write'), async () => WELCOME_TEMPLATES);
+  // Właścicielka (welcomes.approve) widzi całe studio i też może napisać powitanie – bez akceptacji samej siebie.
+  const welcomer = perm('welcomes.write', 'welcomes.approve');
+
+  app.get('/api/staff/welcome-templates', welcomer, async () => WELCOME_TEMPLATES);
 
   // P6: klientki trenerki (z rezerwacją u niej albo przypisane do niej) bez powitania.
-  app.get('/api/staff/welcome-todo', perm('welcomes.write'), async (req) => {
-    const { scope, user } = ctx(req);
+  // Właścicielka: wszystkie klientki studia, do których nikt jeszcze nie napisał.
+  app.get('/api/staff/welcome-todo', welcomer, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    if (can(roles, 'welcomes.approve'))
+      return scope.all(
+        `SELECT u.id, u.name, m.goal, MIN(CASE WHEN s.starts_at > $now THEN s.starts_at END) AS first_class
+         FROM memberships m JOIN users u ON u.id = m.user_id
+         LEFT JOIN bookings b ON b.studio_id = m.studio_id AND b.user_id = u.id AND b.status IN ('booked', 'waitlist', 'attended')
+         LEFT JOIN class_sessions s ON s.id = b.session_id
+         WHERE m.studio_id = $studio AND m.role = 'client'
+           AND NOT EXISTS (SELECT 1 FROM welcome_messages w WHERE w.studio_id = $studio AND w.client_id = u.id AND w.kind = 'trainer')
+         GROUP BY u.id ORDER BY first_class IS NULL, first_class`,
+        { now: nowIso() },
+      );
     return scope.all(
-      `SELECT u.id, u.name, m.goal, MIN(s.starts_at) AS first_class
+      `SELECT u.id, u.name, m.goal, MIN(CASE WHEN s.starts_at > $now THEN s.starts_at END) AS first_class
        FROM memberships m JOIN users u ON u.id = m.user_id
        LEFT JOIN bookings b ON b.studio_id = m.studio_id AND b.user_id = u.id AND b.status IN ('booked', 'waitlist', 'attended')
        LEFT JOIN class_sessions s ON s.id = b.session_id AND s.trainer_id = $me
        WHERE m.studio_id = $studio AND m.role = 'client' AND (m.trainer_id = $me OR s.id IS NOT NULL)
          AND NOT EXISTS (SELECT 1 FROM welcome_messages w WHERE w.studio_id = $studio AND w.trainer_id = $me AND w.client_id = u.id AND w.kind = 'trainer')
        GROUP BY u.id ORDER BY first_class IS NULL, first_class`,
-      { me: user.id },
+      { me: user.id, now: nowIso() },
     );
   });
 
-  app.get('/api/staff/welcomes/sent', perm('welcomes.write'), async (req) => {
-    const { scope, user } = ctx(req);
+  app.get('/api/staff/welcomes/sent', welcomer, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const all = can(roles, 'welcomes.approve');
     return scope.all(
-      `SELECT w.id, w.body, w.status, w.publish_at, w.seen_at, w.video_id, w.created_at, c.name AS client_name FROM welcome_messages w JOIN users c ON c.id = w.client_id
-       WHERE w.studio_id = $studio AND w.trainer_id = $me AND w.kind = 'trainer' ORDER BY w.created_at DESC LIMIT 50`,
-      { me: user.id },
+      `SELECT w.id, w.body, w.status, w.publish_at, w.seen_at, w.video_id, w.created_at, c.name AS client_name, t.name AS trainer_name
+       FROM welcome_messages w JOIN users c ON c.id = w.client_id LEFT JOIN users t ON t.id = w.trainer_id
+       WHERE w.studio_id = $studio ${all ? '' : 'AND w.trainer_id = $me'} AND w.kind = 'trainer' ORDER BY w.created_at DESC LIMIT 50`,
+      all ? {} : { me: user.id },
     );
   });
 
   // P2/P3: powitanie pisze człowiek – zapisujemy autorkę, bez automatycznego generowania (6.6). Wideo do 30 s, pionowe.
   app.post<{ Body: { clientId: string; body: string; video?: { dataUrl: string; durationSec: number; ratio: number } | null; publishAt?: string | null } }>(
     '/api/staff/welcome',
-    { ...perm('welcomes.write'), bodyLimit: 45 * 1024 * 1024 },
+    { ...welcomer, bodyLimit: 45 * 1024 * 1024 },
     async (req) => {
-      const { studio, scope, user } = ctx(req);
+      const { studio, scope, user, roles } = ctx(req);
       const body = String(req.body?.body ?? '').trim();
       if (body.length < 20) throw badRequest('Napisz kilka zdań – min. 20 znaków.');
       if (body.length > WELCOME_MAX) throw badRequest(`Powitanie może mieć max ${WELCOME_MAX} znaków.`);
@@ -604,7 +622,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
         videoId = storeMedia(scope, studio, { dataUrl: req.body.video.dataUrl, kind: 'welcome', ownerId: user.id, durationSec: req.body.video.durationSec, private: true, allow: ['video'] }).id;
       }
       const publishAt = req.body.publishAt && Date.parse(req.body.publishAt) > Date.now() ? new Date(req.body.publishAt).toISOString() : null;
-      const status = studio.welcome_approval ? 'pending' : publishAt ? 'scheduled' : 'published';
+      const status = studio.welcome_approval && !can(roles, 'welcomes.approve') ? 'pending' : publishAt ? 'scheduled' : 'published';
       scope.run(
         `INSERT INTO welcome_messages (id, studio_id, trainer_id, client_id, kind, body, video_id, status, publish_at, created_at)
          VALUES ($id, $studio, $me, $c, 'trainer', $body, $video, $status, $pub, $now)
@@ -731,7 +749,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     ctx(req).scope.all(
       `SELECT c.client_id, u.name, MAX(c.created_at) AS last_at,
               SUM(CASE WHEN c.from_staff = 0 AND c.read_at IS NULL THEN 1 ELSE 0 END) AS unread,
-              (SELECT body FROM chat_messages x WHERE x.studio_id = c.studio_id AND x.client_id = c.client_id ORDER BY x.created_at DESC LIMIT 1) AS last_body
+              ${CHAT_LAST_BODY} AS last_body
        FROM chat_messages c JOIN users u ON u.id = c.client_id WHERE c.studio_id = $studio GROUP BY c.client_id ORDER BY last_at DESC`,
     ),
   );
@@ -739,16 +757,16 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
   app.get<{ Params: { clientId: string } }>('/api/staff/chats/:clientId', perm('chat.answer'), async (req) => {
     const { scope } = ctx(req);
     scope.run('UPDATE chat_messages SET read_at = $now WHERE studio_id = $studio AND client_id = $c AND from_staff = 0 AND read_at IS NULL', { c: req.params.clientId, now: nowIso() });
-    return scope.all('SELECT c.id, c.body, c.from_staff, c.auto, c.created_at, u.name AS author FROM chat_messages c LEFT JOIN users u ON u.id = c.author_id WHERE c.studio_id = $studio AND c.client_id = $c ORDER BY c.created_at', { c: req.params.clientId });
+    return chatMessages(scope, req.params.clientId);
   });
 
-  app.post<{ Params: { clientId: string }; Body: { body: string } }>('/api/staff/chats/:clientId', perm('chat.answer'), async (req) => {
+  app.post<{ Params: { clientId: string }; Body: ChatInput }>('/api/staff/chats/:clientId', { ...perm('chat.answer'), bodyLimit: CHAT_BODY_LIMIT }, async (req) => {
     const { scope, studio, user } = ctx(req);
     const body = String(req.body?.body ?? '').trim();
-    if (!body || body.length > 1000) throw badRequest('Napisz wiadomość (max 1000 znaków).');
+    if (body.length > 1000) throw badRequest('Napisz wiadomość (max 1000 znaków).');
     if (!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $c AND role = 'client'", { c: req.params.clientId })) throw notFound();
-    scope.run('INSERT INTO chat_messages (id, studio_id, client_id, author_id, from_staff, body, created_at) VALUES ($id, $studio, $c, $me, 1, $b, $now)', { id: id(), c: req.params.clientId, me: user.id, b: body, now: nowIso() });
-    notify(scope, { userId: req.params.clientId, category: 'transactional', tz: studio.timezone, title: studio.name, body: 'Recepcja odpisała na Twoją wiadomość 💬', action: 'chat' });
+    postChatMessage(scope, studio, { clientId: req.params.clientId, authorId: user.id, fromStaff: true, body, input: req.body ?? {} });
+    notify(scope, { userId: req.params.clientId, category: 'transactional', tz: studio.timezone, title: studio.name, body: body ? 'Recepcja odpisała na Twoją wiadomość 💬' : 'Recepcja przesłała Ci plik 📎', action: 'chat' });
     scope.run("UPDATE dormant_surveys SET status = 'contacted' WHERE studio_id = $studio AND user_id = $c AND status = 'answered' AND wants_proposal = 1", { c: req.params.clientId });
     return { ok: true };
   });

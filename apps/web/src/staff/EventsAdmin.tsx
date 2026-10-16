@@ -191,13 +191,23 @@ function Packages() {
           ))}
         </div>
         <div className="row">
-          <input className="input" type="number" value={f.minGuests} onChange={(e) => setF({ ...f, minGuests: Number(e.target.value) })} aria-label="Min osób" />
-          <input className="input" type="number" value={f.maxGuests} onChange={(e) => setF({ ...f, maxGuests: Number(e.target.value) })} aria-label="Max osób" />
-          <input className="input" type="number" value={f.durationMin} onChange={(e) => setF({ ...f, durationMin: Number(e.target.value) })} aria-label="Minuty" />
+          <Field label="Min. osób">
+            <input className="input" type="number" min={1} value={f.minGuests} onChange={(e) => setF({ ...f, minGuests: Number(e.target.value) })} />
+          </Field>
+          <Field label="Maks. osób">
+            <input className="input" type="number" min={1} value={f.maxGuests} onChange={(e) => setF({ ...f, maxGuests: Number(e.target.value) })} />
+          </Field>
+          <Field label="Czas (min)">
+            <input className="input" type="number" min={15} step={15} value={f.durationMin} onChange={(e) => setF({ ...f, durationMin: Number(e.target.value) })} />
+          </Field>
         </div>
         <div className="row">
-          <input className="input" placeholder="Cena zł (puste = do ustalenia)" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
-          <input className="input" placeholder="Zaliczka zł" value={f.deposit} onChange={(e) => setF({ ...f, deposit: e.target.value })} />
+          <Field label="Cena (zł)" hint="Puste = do ustalenia">
+            <input className="input" inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} />
+          </Field>
+          <Field label="Zaliczka (zł)" hint="Opcjonalnie">
+            <input className="input" inputMode="decimal" value={f.deposit} onChange={(e) => setF({ ...f, deposit: e.target.value })} />
+          </Field>
         </div>
         <button
           className="btn"

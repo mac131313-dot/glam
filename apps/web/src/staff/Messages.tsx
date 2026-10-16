@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { api, fmtDay, fmtTime, localDate, useApi } from '../api.ts';
 import { Empty, Select, Spinner, Tabs, useAction } from '../ui.tsx';
+import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 
 export default function Messages({ roles }: { roles: Role[] }) {
   const options: ['group' | 'chat' | 'followups' | 'inbox', string][] = [
@@ -96,9 +97,7 @@ function Chats() {
 }
 
 function Thread({ clientId, onRead }: { clientId: string; onRead: () => void }) {
-  const msgs = useApi<{ id: string; body: string; from_staff: number; auto: number; created_at: string; author: string | null }[]>(`/staff/chats/${clientId}`, [clientId]);
-  const [text, setText] = useState('');
-  const { run, busy } = useAction();
+  const msgs = useApi<ChatMessage[]>(`/staff/chats/${clientId}`, [clientId]);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' });
@@ -110,6 +109,7 @@ function Thread({ clientId, onRead }: { clientId: string; onRead: () => void }) 
       <div className="stack" style={{ gap: 8, maxHeight: 420, overflow: 'auto' }}>
         {msgs.data?.map((m) => (
           <div key={m.id} className={`chat-bubble ${m.from_staff ? 'me' : ''} ${m.auto ? 'auto' : ''}`}>
+            {m.attachment && <AttachmentView a={m.attachment} />}
             {m.body}
             <div className="tiny" style={{ opacity: 0.7 }}>
               {m.auto ? 'automatyczna odpowiedź' : m.author} · {fmtDay(m.created_at)} {fmtTime(m.created_at)}
@@ -118,12 +118,7 @@ function Thread({ clientId, onRead }: { clientId: string; onRead: () => void }) 
         ))}
         <div ref={end} />
       </div>
-      <div className="row">
-        <input className="input" placeholder="Odpowiedz…" value={text} onChange={(e) => setText(e.target.value)} />
-        <button className="btn sm" disabled={!text.trim() || busy} onClick={() => run(() => api(`/staff/chats/${clientId}`, { method: 'POST', body: { body: text } }).then(() => (setText(''), msgs.reload())))}>
-          Wyślij
-        </button>
-      </div>
+      <ChatComposer placeholder="Odpowiedz…" onSend={(msg) => api(`/staff/chats/${clientId}`, { method: 'POST', body: msg }).then(msgs.reload)} />
     </section>
   );
 }

@@ -7,13 +7,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { isNewClass, siteImageUrl, siteLook, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
-import { Spinner } from '../ui.tsx';
+import { Spinner, Watermark } from '../ui.tsx';
 import { EditorBridge } from './EditorBridge.tsx';
 import { FOOTER_ID, HERO_ID } from './protocol.ts';
 import './site.css';
 
 type PublicSession = { id: string; startsAt: string; endsAt: string; classTypeId: string; className: string; trainer: string; zone: string; kind: string; spotsLeft: number };
 type PublicClass = { id: string; name: string; level: string | null; color: string; description: string | null; photoUrl: string | null; zone: string; createdAt: string | null };
+type PublicProduct = { id: string; name: string; description: string | null; price: string; soldOut: boolean; photoUrl: string | null };
 type PublicTrainer = { id: string; name: string; bio: string | null; avatarUrl: string | null; classes: string[] };
 export type PublicStudio = {
   id: string;
@@ -36,6 +37,7 @@ export type PublicStudio = {
   modules: { events: boolean; courses: boolean; shop: boolean };
   trainers: PublicTrainer[];
   classes: PublicClass[];
+  products: PublicProduct[];
   schedule: { from: string; sessions: PublicSession[] };
   site: SiteDoc;
 };
@@ -125,7 +127,8 @@ export function StudioSite({ slug }: { slug: string }) {
   const news = newClasses(studio);
   return (
     <VideoIds.Provider value={doc.media}>
-    <div className="site">
+    <div className="site with-watermark">
+      <Watermark src={studio.look.watermark} />
       <SiteNav studio={studio} />
       <main>
         {doc.hero.visible && <Hero studio={studio} news={news} />}
@@ -244,7 +247,8 @@ const sectionKey = (studio: PublicStudio, type: SiteSection['type']) => studio.s
 
 function SiteNav({ studio }: { studio: PublicStudio }) {
   const doc = studio.site;
-  const links = doc.sections.filter((x) => x.visible && x.nav.trim());
+  // Sklep bez produktów (albo wyłączony) nie ma sekcji na stronie – więc i odnośnika w menu.
+  const links = doc.sections.filter((x) => x.visible && x.nav.trim() && (x.type !== 'shop' || (studio.modules.shop && studio.products.length > 0)));
   return (
     <header className="site-nav" data-edit-target={HERO_ID}>
       <a className="site-brand" href={`#${HERO_ID}`} aria-label={`${studio.name} – początek strony`}>
@@ -355,6 +359,8 @@ function SectionView({ studio, section, news }: { studio: PublicStudio; section:
       return <ClassesSection studio={studio} v={section.values} attrs={attrs} news={news} />;
     case 'trainers':
       return <TrainersSection studio={studio} v={section.values} attrs={attrs} />;
+    case 'shop':
+      return <ShopSection studio={studio} v={section.values} attrs={attrs} />;
     case 'more':
       return <MoreSection studio={studio} v={section.values} attrs={attrs} />;
     case 'article':
@@ -589,9 +595,36 @@ function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values
   );
 }
 
-/** Odnośniki do podstron, które dojdą w kolejnym etapie (wydarzenia, kursy, sklep). */
+/** Sklep: produkty z panelu (Sklep → Produkty i stany). „Kup teraz” otwiera zakup w aplikacji klientki – tam wariant i płatność. */
+function ShopSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
+  const list = studio.products.filter((p) => b(v, 'showSoldOut') || !p.soldOut);
+  if (!studio.modules.shop || list.length === 0) return null;
+  const buy = s(v, 'buyLabel') || 'Kup teraz';
+  return (
+    <section {...attrs}>
+      <Head v={v} />
+      <div className="site-cards">
+        {list.map((p) => (
+          <article key={p.id} className="site-item site-product">
+            {p.photoUrl ? <Photo src={p.photoUrl} className="card" alt={p.name} /> : <div className="site-photo card empty" aria-hidden="true" />}
+            <h3>{p.name}</h3>
+            <p className="site-quiet">{p.soldOut ? 'Wyprzedane' : p.price}</p>
+            {b(v, 'showDescription') && p.description && <p className="site-desc">{p.description}</p>}
+            {!p.soldOut && (
+              <a className="btn sm" href={`${APP_URL}?go=${encodeURIComponent(`shop/${p.id}`)}`} aria-label={`${buy}: ${p.name}, ${p.price}`}>
+                {buy}
+              </a>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Odnośniki do podstron, które dojdą w kolejnym etapie (wydarzenia, kursy). */
 function MoreSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
-  const items = (['events', 'courses', 'shop'] as const).filter((k) => studio.modules[k] && b(v, `${k}Visible`));
+  const items = (['events', 'courses'] as const).filter((k) => studio.modules[k] && b(v, `${k}Visible`));
   if (items.length === 0) return null;
   return (
     <section {...attrs}>

@@ -225,6 +225,8 @@ export type Look = {
   photoDim: number;
   /** stopniowe rozmycie pod nazwą zajęć – siła przy dolnej krawędzi (px, 0–32) */
   photoBlur: number;
+  /** znak studia w tle panelu, aplikacji i strony (plik z /brand/, np. „/brand/ssg-watermark.svg”); null = bez znaku */
+  watermark: string | null;
 };
 
 export const DEFAULT_LOOK: Look = {
@@ -234,6 +236,7 @@ export const DEFAULT_LOOK: Look = {
   logo: DEFAULT_LOGO_STYLE,
   photoDim: DEFAULT_PHOTO_DIM,
   photoBlur: DEFAULT_PHOTO_BLUR,
+  watermark: null,
 };
 
 export const paletteById = (id: string) => (PALETTES.find((p) => p.id === id) ?? PALETTES[0]).palette;
@@ -248,6 +251,7 @@ export function resolveLook(raw: Partial<Look> | null | undefined): Look {
     logo: { ...DEFAULT_LOGO_STYLE, ...(raw?.logo ?? {}) },
     photoDim: raw?.photoDim ?? DEFAULT_PHOTO_DIM,
     photoBlur: raw?.photoBlur ?? DEFAULT_PHOTO_BLUR,
+    watermark: typeof raw?.watermark === 'string' ? raw.watermark : null,
   };
 }
 
@@ -264,6 +268,7 @@ export function validateLook(look: Look): string[] {
   if (typeof dim !== 'number' || !Number.isFinite(dim) || dim < PHOTO_DIM_LIMITS[0] || dim > PHOTO_DIM_LIMITS[1]) errors.push('Przyciemnienie zdjęć poza zakresem 10–70%.');
   const blur = look.photoBlur;
   if (typeof blur !== 'number' || !Number.isFinite(blur) || blur < PHOTO_BLUR_LIMITS[0] || blur > PHOTO_BLUR_LIMITS[1]) errors.push('Rozmycie zdjęć poza zakresem 0–32 px.');
+  if (look.watermark !== null && !isWatermarkPath(look.watermark)) errors.push('Nieznany znak w tle.');
   const l = look.logo;
   const inRange = (v: number, [min, max]: readonly [number, number]) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
   if (!['auto', 'circle', 'rounded', 'square', 'free'].includes(l.shape)) errors.push('Nieznany kształt logo.');
@@ -286,3 +291,6 @@ export function resolveLogoDisplay(style: LogoStyle, wide: boolean) {
   const showName = style.showName === 'auto' ? !(wide && shape === 'free') : style.showName === 'yes';
   return { ...style, shape, showName };
 }
+
+/** Znak w tle to tylko plik z katalogu /brand/ aplikacji – żaden adres z zewnątrz. */
+export const isWatermarkPath = (v: string) => /^\/brand\/[a-z0-9-]{1,40}\.svg$/.test(v);

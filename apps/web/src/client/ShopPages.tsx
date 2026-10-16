@@ -1,6 +1,6 @@
 // Sklep studia (4.8.1): merch z rozmiarami i stanem, rezerwacja do odbioru (płatność na miejscu) albo zakup z wysyłką;
 // moje zamówienia; partnerzy studia (4.8.3).
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, fmtDay, useApi } from '../api.ts';
 import { Empty, PAYMENT_LABELS, Sheet, Spinner, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
@@ -8,16 +8,24 @@ import type { RouteProps } from './router.tsx';
 
 type Product = { id: string; name: string; description: string | null; price: string; priceGrosze: number; status: string; photoUrl: string | null; variants: { id: string; label: string; stock: number }[] };
 
-export default function ShopPages({ route }: RouteProps) {
+export default function ShopPages({ route, arg }: RouteProps) {
   if (route === 'orders') return <Orders />;
   if (route === 'partners') return <Partners />;
-  return <Shop />;
+  return <Shop productId={arg} />;
 }
 
-function Shop() {
+/** productId – link „Kup teraz” ze strony studia (/app?go=shop/:id) od razu otwiera zakup tego produktu. */
+function Shop({ productId }: { productId: string | null }) {
   const { open } = useClient();
   const shop = useApi<{ settings: { reservationDays: number; shipping: boolean; shippingPrice: string }; products: Product[] }>('/shop');
   const [pick, setPick] = useState<Product | null>(null);
+  const linked = useRef(false);
+  useEffect(() => {
+    if (linked.current || !productId || !shop.data) return;
+    linked.current = true;
+    const p = shop.data.products.find((x) => x.id === productId);
+    if (p && p.status !== 'sold_out') setPick(p);
+  }, [productId, shop.data]);
   if (shop.error?.code === 'feature_off') return <Empty>Studio nie prowadzi sklepu w aplikacji.</Empty>;
   if (!shop.data) return <Spinner />;
   return (

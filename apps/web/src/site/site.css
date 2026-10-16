@@ -174,3 +174,4 @@
 .eb-plus { pointer-events: auto; position: absolute; left: 50%; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; border: 0; background: #1a73e8; color: #fff; font: 600 17px/26px system-ui, sans-serif; padding: 0; cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / 0.2); }
 .eb-plus-top { top: -13px; }
 .eb-plus-bottom { bottom: -13px; }
+.site-product .btn { margin-top: 16px; }

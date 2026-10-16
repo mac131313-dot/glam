@@ -7,6 +7,7 @@ import { api, fmtDay, fmtTime, session, useApi } from '../api.ts';
 import { getAppearance, setAppearance, type Appearance } from '../look.ts';
 import { enablePush, passkeySupported, pushEnabled, pushSupported, registerPasskey } from '../push.ts';
 import { AuthVideo, Empty, Field, ListRow, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
+import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -587,9 +588,7 @@ function Inbox() {
 }
 
 function Chat() {
-  const chat = useApi<{ open: boolean; next: string | null; messages: { id: string; body: string; from_staff: number; auto: number; created_at: string; author: string | null }[] }>('/chat');
-  const [text, setText] = useState('');
-  const { run, busy } = useAction();
+  const chat = useApi<{ open: boolean; next: string | null; messages: ChatMessage[] }>('/chat');
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [chat.data]);
   if (!chat.data) return <Spinner />;
@@ -599,6 +598,7 @@ function Chat() {
       <div className="stack" style={{ gap: 8 }}>
         {chat.data.messages.map((m) => (
           <div key={m.id} className={`chat-bubble ${m.from_staff ? '' : 'me'} ${m.auto ? 'auto' : ''}`}>
+            {m.attachment && <AttachmentView a={m.attachment} />}
             {m.body}
             <div className="tiny" style={{ opacity: 0.7, marginTop: 4 }}>
               {m.from_staff ? (m.auto ? 'Automatyczna odpowiedź' : m.author ?? 'Recepcja') : 'Ty'} · {fmtTime(m.created_at)}
@@ -607,22 +607,8 @@ function Chat() {
         ))}
         <div ref={end} />
       </div>
-      <div className="row" style={{ position: 'sticky', bottom: 0, background: 'var(--bg)', paddingTop: 8 }}>
-        <input className="input" placeholder="Napisz do recepcji…" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && text.trim() && document.getElementById('chat-send')?.click()} />
-        <button
-          id="chat-send"
-          className="btn sm"
-          disabled={!text.trim() || busy}
-          onClick={() =>
-            run(async () => {
-              await api('/chat', { method: 'POST', body: { body: text } });
-              setText('');
-              chat.reload();
-            })
-          }
-        >
-          Wyślij
-        </button>
+      <div style={{ position: 'sticky', bottom: 0, background: 'var(--bg)', paddingTop: 8 }}>
+        <ChatComposer placeholder="Napisz do recepcji…" onSend={(msg) => api('/chat', { method: 'POST', body: msg }).then(chat.reload)} />
       </div>
     </div>
   );

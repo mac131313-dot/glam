@@ -1109,6 +1109,9 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   from_staff INTEGER NOT NULL,
   auto INTEGER NOT NULL DEFAULT 0,
   body TEXT NOT NULL,
+  -- załącznik (media, rodzaj „chat”) i jego nazwa z urządzenia; body może być wtedy puste
+  media_id TEXT,
+  attachment_name TEXT,
   created_at TEXT NOT NULL,
   read_at TEXT
 );

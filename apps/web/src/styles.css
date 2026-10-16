@@ -445,6 +445,13 @@ label.btn { cursor: pointer; }
 .chat-bubble { max-width: 80%; padding: 10px 14px; border-radius: 18px; background: var(--soft); font-size: 0.92rem; }
 .chat-bubble.me { align-self: flex-end; background: var(--accent); color: var(--accent-ink); }
 .chat-bubble.auto { opacity: 0.8; font-style: italic; }
+/* Załączniki w czacie: zdjęcie i wideo w dymku, PDF jako odnośnik; plik czekający na wysłanie nad polem. */
+.chat-bubble:has(.chat-media) { display: flex; flex-direction: column; gap: 6px; }
+.chat-media { display: block; width: 100%; max-width: 260px; max-height: 320px; object-fit: cover; border-radius: 12px; background: var(--surface); }
+.chat-file { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: underline; text-underline-offset: 3px; word-break: break-word; }
+.chat-pending { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--soft); width: fit-content; max-width: 100%; }
+.chat-pending .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-attach { flex: none; padding-inline: 10px; }
 html.a11y-contrast { --muted: var(--ink); --line: color-mix(in srgb, var(--ink) 35%, transparent); }
 html.a11y-reduce *, html.a11y-reduce *::before, html.a11y-reduce *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 
@@ -579,3 +586,15 @@ html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
 .mood-pick button { border: 0; background: transparent; border-radius: 14px; padding: 9px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: pointer; color: var(--muted); transition: all 0.25s var(--ease); font: inherit; }
 .mood-pick button .serif { font-size: 1.05rem; white-space: nowrap; color: var(--ink); }
 .mood-pick button[aria-pressed='true'] { background: var(--surface); box-shadow: var(--shadow); }
+
+/* ===== Znak studia w prawym górnym rogu (Look.watermark): mały, nad treścią strony, bez klikania ===== */
+.with-watermark { isolation: isolate; }
+.watermark { position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--ink); opacity: 0.9;
+  -webkit-mask: var(--watermark) right 36px top 4px / 96px no-repeat; mask: var(--watermark) right 36px top 4px / 96px no-repeat; }
+.staff > .watermark { left: 248px; }
+/* Panel: pas po prawej na znak, żeby przyciski w nagłówkach stron (np. „← Dziś →”) nie wchodziły pod niego. */
+.staff:has(> .watermark) > .main { padding-right: 150px; }
+.phone > .watermark { -webkit-mask-size: 88px; mask-size: 88px; -webkit-mask-position: right 18px top 74px; mask-position: right 18px top 74px; }
+.site > .watermark { -webkit-mask-position: right 36px top 84px; mask-position: right 36px top 84px; }
+@media print { .watermark { display: none; } }
+@media (max-width: 820px) { .staff > .watermark { display: none; } .staff:has(> .watermark) > .main { padding-right: 20px; } }
