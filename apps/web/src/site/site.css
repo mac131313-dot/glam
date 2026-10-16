@@ -113,21 +113,54 @@
 .site-gallery.row .site-photo { aspect-ratio: 4 / 5; scroll-snap-align: start; }
 
 /* ===== Grafik ===== */
-.site-days { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-bottom: 12px; }
-.site-days::-webkit-scrollbar { display: none; }
-.site-days button { flex: 1 0 52px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0 12px; border: 0; background: transparent; border-radius: 999px; cursor: pointer; color: var(--muted); font-family: var(--font-label); font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; transition: background 0.25s var(--ease), color 0.25s; }
-.site-days b { font-family: var(--font-head); font-size: 1.2rem; font-weight: 400; letter-spacing: -0.02em; color: var(--ink); }
-.site-days button[aria-pressed='true'] { background: var(--ink); color: var(--bg); }
-.site-days button[aria-pressed='true'] b { color: var(--bg); }
-.site-rows { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--line); }
-.site-rows li { display: flex; align-items: center; gap: clamp(16px, 3vw, 40px); padding: 22px 0; border-top: 1px solid var(--line); }
+/* Dni: siedem równych kolumn, bez „pigułki”. Wybrany dzień = ciemna liczba i cienka kreska, która przesuwa się
+   pod nim (--i z kodu). Kropki pod liczbą mówią, ile zajęć jest tego dnia; dzień bez zajęć jest przygaszony. */
+.site-days { position: relative; display: grid; grid-template-columns: repeat(var(--n, 7), minmax(0, 1fr)); border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.site-days button {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0 16px; border: 0; background: transparent; cursor: pointer;
+  color: var(--muted); font-family: var(--font-label); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; transition: color 0.3s var(--ease-out), opacity 0.3s;
+}
+.site-days b { font-family: var(--font-head); font-size: clamp(1.25rem, 2.4vw, 1.9rem); font-weight: 400; letter-spacing: -0.03em; line-height: 1; color: var(--muted); transition: color 0.3s var(--ease-out); }
+.site-days button.rest { opacity: 0.45; }
+.site-days button[aria-pressed='true'] { color: var(--ink); opacity: 1; }
+.site-days button[aria-pressed='true'] b { color: var(--ink); font-family: var(--font-display); font-style: italic; }
+@media (hover: hover) { .site-days button:hover b { color: var(--ink); } }
+.site-days button:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; border-radius: 12px; }
+.site-day-dots { display: flex; gap: 3px; height: 4px; }
+.site-day-dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.55; }
+.site-days-bar {
+  position: absolute; left: 0; bottom: -1px; height: 2px; width: calc(100% / var(--n, 7)); background: var(--ink);
+  translate: calc(var(--i, 0) * 100%) 0; transition: translate 0.5s var(--ease-out);
+}
+
+/* Wiersze zajęć: godzina kursywą, nazwa i kto prowadzi, miejsca jako mała pigułka, zapis jako przycisk-pigułka. */
+.site-rows { list-style: none; margin: 0; padding: 0; }
+.site-rows li {
+  display: grid; grid-template-columns: 5.2em minmax(0, 1fr) auto auto; align-items: center; gap: clamp(14px, 3vw, 40px);
+  padding: 22px 0; border-bottom: 1px solid var(--line);
+  transition: border-color 0.3s var(--ease-out); animation: site-hero-rise 0.6s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 0.05s);
+}
+@media (hover: hover) { .site-rows li:not(.past):hover .site-row-name { color: var(--ink); } .site-rows li:not(.past):hover { border-bottom-color: color-mix(in srgb, var(--ink) 35%, var(--line)); } }
 .site-rows li.past { opacity: 0.4; }
-.site-rows .site-time { min-width: 3.2em; }
-.site-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.site-row-name { font-family: var(--font-head); font-size: 1.08rem; }
-.site-spots { white-space: nowrap; }
-.site-spots.last { color: var(--ink); }
-.site-empty { padding: 48px 0; color: var(--muted); border-top: 1px solid var(--line); margin: 0; }
+.site-rows .site-time { font-size: clamp(1.4rem, 2.4vw, 1.9rem); font-style: italic; }
+.site-row-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.site-row-name { font-family: var(--font-head); font-size: clamp(1.05rem, 1.6vw, 1.25rem); letter-spacing: -0.01em; }
+.site-spots { white-space: nowrap; font-family: var(--font-label); font-size: 0.7rem; letter-spacing: 0.08em; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px 4px; }
+.site-spots.last { color: var(--ink); border-color: var(--ink); }
+.site-spots.full { border-style: dashed; }
+.site-book {
+  white-space: nowrap; text-decoration: none; color: var(--ink); font-family: var(--font-head); font-size: 0.9rem;
+  border: 1px solid var(--ink); border-radius: 999px; padding: 9px 18px; transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out);
+}
+.site-book span { display: inline-block; transition: translate 0.3s var(--ease-out); }
+@media (hover: hover) { .site-book:hover { background: var(--ink); color: var(--bg); } .site-book:hover span { translate: 4px 0; } }
+.site-book:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Pusty dzień: spokojny napis kursywą i skrót do najbliższego dnia z zajęciami. */
+.site-empty { padding: clamp(40px, 7vw, 80px) 0; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; animation: site-hero-rise 0.6s var(--ease-out) both; }
+.site-empty .serif { margin: 0; font-size: clamp(1.5rem, 3vw, 2.2rem); color: var(--muted); }
+.site-empty-next { border: 0; background: none; padding: 0; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .site-rows li, .site-empty { animation: none; } .site-days-bar { transition: none; } }
 
 /* ===== Zajęcia i trenerki ===== */
 .site-filter { display: flex; gap: 20px; flex-wrap: wrap; margin: -12px 0 32px; }
@@ -205,11 +238,12 @@ html:has(.site-dialog[open]) { overflow: hidden; }
   .site-gallery.grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .site-gallery.mosaic { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 160px; }
   .site-gallery.row { grid-auto-columns: 72%; }
-  .site-schedule .site-rows li { display: grid; grid-template-columns: 3.4em 1fr auto; grid-template-areas: 'time main main' '. spots link'; gap: 8px 14px; align-items: baseline; }
-  .site-schedule .site-time { grid-area: time; min-width: 0; font-size: 1.2rem; }
+  .site-schedule .site-rows li { grid-template-columns: 4em minmax(0, 1fr) auto; grid-template-areas: 'time main main' '. spots book'; gap: 10px 14px; align-items: baseline; padding-block: 18px; }
+  .site-schedule .site-time { grid-area: time; font-size: 1.3rem; }
   .site-schedule .site-row-main { grid-area: main; }
-  .site-schedule .site-spots { grid-area: spots; }
-  .site-schedule .site-rows li > .site-link { grid-area: link; }
+  .site-schedule .site-spots { grid-area: spots; justify-self: start; }
+  .site-schedule .site-book { grid-area: book; padding: 7px 14px; }
+  .site-days button { padding-inline: 0; letter-spacing: 0.06em; }
 }
 
 /* ===== Strona kursu (/s/:slug/kurs/:id) ===== */

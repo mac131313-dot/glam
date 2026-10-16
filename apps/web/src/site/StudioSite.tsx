@@ -3,7 +3,7 @@
 // Kierunek: minimalizm na maksa (Isola / Unbound) – dużo powietrza, zdjęcia, jedno kursywne słowo, cienkie linie, bez cieni.
 // Kontrakt z edytorem: każda sekcja to bezpośrednie dziecko <main> z id i data-section-name (most szuka `main > section[id]`).
 //   ?podglad=1 – szkic zamiast wersji publicznej (wymaga sesji panelu), ?edytor=1 – most do edytora w ramce.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { isNewClass, siteImageUrl, siteLook, sitePages, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { Icon } from '../icons.tsx';
@@ -491,19 +491,26 @@ function Contact({ studio, label }: { studio: PublicStudio; label: string }) {
 
 function ScheduleSection({ studio, v, attrs, news }: { studio: PublicStudio; v: Values; attrs: Attrs; news: Set<string> }) {
   const fmt = useFormatters(studio.timezone);
+  const now = Date.now();
+  const showPast = b(v, 'showPast');
+  /** Zajęcia dnia do pokazania (bez minionych, chyba że studio chce je widzieć). */
   const days = useMemo(() => {
     const m = new Map<string, PublicSession[]>();
     for (const x of studio.schedule.sessions) {
+      if (!showPast && new Date(x.startsAt).getTime() < now) continue;
       const key = fmt.dateKey(x.startsAt);
       m.set(key, [...(m.get(key) ?? []), x]);
     }
     return m;
-  }, [studio.schedule.sessions, fmt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studio.schedule.sessions, fmt, showPast]);
   const keys = nextDays(studio.schedule.from, 7);
-  const [day, setDay] = useState(keys[0]);
-  const now = Date.now();
-  const list = (days.get(day) ?? []).filter((x) => b(v, 'showPast') || new Date(x.startsAt).getTime() >= now);
+  // Na start pierwszy dzień, w którym coś jeszcze się odbędzie – wieczorem nie otwieramy pustego „dziś”.
+  const [day, setDay] = useState(() => keys.find((k) => days.has(k)) ?? keys[0]);
+  const list = days.get(day) ?? [];
+  const nextDay = keys.find((k) => k > day && days.has(k));
   const label = newsLabel(studio);
+  const dayIndex = Math.max(0, keys.indexOf(day));
 
   return (
     <section {...attrs}>
@@ -514,26 +521,41 @@ function ScheduleSection({ studio, v, attrs, news }: { studio: PublicStudio; v: 
           </a>
         )}
       </Head>
-      <div className="site-days" role="group" aria-label="Dzień tygodnia">
+      {/* Wskaźnik pod wybranym dniem przesuwa się (--i), zamiast skakać. Kropki = ile zajęć tego dnia. */}
+      <div className="site-days" role="group" aria-label="Dzień tygodnia" style={{ '--i': dayIndex, '--n': keys.length } as CSSProperties}>
         {keys.map((k) => {
           const d = new Date(`${k}T12:00:00Z`);
+          const count = days.get(k)?.length ?? 0;
           return (
-            <button key={k} aria-pressed={k === day} onClick={() => setDay(k)}>
-              <span>{WEEKDAYS[d.getUTCDay()].slice(0, 3)}</span>
+            <button key={k} type="button" aria-pressed={k === day} className={count ? undefined : 'rest'} onClick={() => setDay(k)} aria-label={`${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}, ${count ? `zajęcia: ${count}` : 'bez zajęć'}`}>
+              <span className="site-day-name">{WEEKDAYS[d.getUTCDay()].slice(0, 3)}</span>
               <b>{d.getUTCDate()}</b>
+              <span className="site-day-dots" aria-hidden="true">
+                {Array.from({ length: Math.min(count, 6) }, (_, i) => (
+                  <i key={i} />
+                ))}
+              </span>
             </button>
           );
         })}
+        <span className="site-days-bar" aria-hidden="true" />
       </div>
       {list.length === 0 ? (
-        <p className="site-empty">{s(v, 'emptyText')}</p>
+        <div className="site-empty" key={`empty-${day}`}>
+          <p className="serif">{s(v, 'emptyText')}</p>
+          {nextDay && (
+            <button type="button" className="site-link site-empty-next" onClick={() => setDay(nextDay)}>
+              Najbliższe zajęcia: {fmt.dayShort(days.get(nextDay)![0].startsAt)}, {fmt.time(days.get(nextDay)![0].startsAt)} →
+            </button>
+          )}
+        </div>
       ) : (
-        <ul className="site-rows">
-          {list.map((x) => {
+        <ul className="site-rows" key={day}>
+          {list.map((x, i) => {
             const past = new Date(x.startsAt).getTime() < now;
             const spots = spotsLabel(x.spotsLeft);
             return (
-              <li key={x.id} className={past ? 'past' : undefined}>
+              <li key={x.id} className={past ? 'past' : undefined} style={{ '--i': i } as CSSProperties}>
                 <span className="site-time">{fmt.time(x.startsAt)}</span>
                 <span className="site-row-main">
                   <span className="site-row-name">
@@ -541,13 +563,13 @@ function ScheduleSection({ studio, v, attrs, news }: { studio: PublicStudio; v: 
                     {news.has(x.classTypeId) && <span className="site-new">{label}</span>}
                   </span>
                   <span className="site-quiet">
-                    {x.trainer} · {minutes(x.startsAt, x.endsAt)} min
+                    {x.trainer} · {minutes(x.startsAt, x.endsAt)} min{x.zone ? ` · ${x.zone}` : ''}
                   </span>
                 </span>
-                {!past && b(v, 'showSpots') && <span className={`site-quiet site-spots ${spots.tone}`}>{spots.text}</span>}
+                {!past && b(v, 'showSpots') && <span className={`site-spots ${spots.tone}`}>{spots.text}</span>}
                 {!past && s(v, 'bookLabel') && (
-                  <a className="site-link" href={APP_URL} aria-label={`${s(v, 'bookLabel')}: ${x.className}, ${fmt.time(x.startsAt)}`}>
-                    {s(v, 'bookLabel')}
+                  <a className="site-book" href={APP_URL} aria-label={`${s(v, 'bookLabel')}: ${x.className}, ${fmt.time(x.startsAt)}`}>
+                    {s(v, 'bookLabel')} <span aria-hidden="true">→</span>
                   </a>
                 )}
               </li>
