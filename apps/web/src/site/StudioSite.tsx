@@ -4,7 +4,7 @@
 // Kontrakt z edytorem: każda sekcja to bezpośrednie dziecko <main> z id i data-section-name (most szuka `main > section[id]`).
 //   ?podglad=1 – szkic zamiast wersji publicznej (wymaga sesji panelu), ?edytor=1 – most do edytora w ramce.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { isNewClass, siteImageUrl, siteLook, sitePages, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
+import { isNewClass, menuItems, siteImageUrl, siteLook, sitePages, specOf, type FieldValue, type Look, type MenuItem, type SiteDoc, type SitePage, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { Icon } from '../icons.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
@@ -160,7 +160,9 @@ export function StudioSite({ slug }: { slug: string }) {
         {page ? (
           doc.sections
             .filter((s) => s.key === page.key)
-            .map((s) => <SectionView key={s.key} studio={studio} section={s} news={news} />)
+            .map((s) => (
+              <PageView key={s.key} studio={studio} section={s} page={page} news={news} onNavigate={navigate} />
+            ))
         ) : (
           <>
             {doc.hero.visible && <Hero studio={studio} news={news} />}
@@ -387,20 +389,71 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
   );
 }
 
-function SectionView({ studio, section, news }: { studio: PublicStudio; section: SiteSection; news: Set<string> }) {
+/**
+ * Podstrona = jedna zakładka menu: duży nagłówek strony (tytuł sekcji, wstęp, szerokie zdjęcie), pod nim treść sekcji
+ * w pełnej wersji (siatka zamiast karuzeli, galeria sal…) i na dole przejście do następnej zakładki.
+ * Tytuł sekcji jest już w nagłówku strony, więc sekcja dostaje wartości bez własnego tytułu.
+ */
+function PageView({ studio, section, page, news, onNavigate }: { studio: PublicStudio; section: SiteSection; page: SitePage; news: Set<string>; onNavigate: (path: string | null) => void }) {
+  const v = section.values;
+  const photo = img(v, 'pageImage');
+  const pages = pagesOf(studio);
+  const next = pages[(pages.findIndex((p) => p.key === page.key) + 1) % pages.length];
+  const bare = { ...section, values: { ...v, title: '', serif: '', eyebrow: '' } };
+  return (
+    <>
+      <header className={`site-page-head${photo ? ' has-photo' : ''}`}>
+        <SplitHeading as="h1" className="site-page-title" title={s(v, 'title') || page.label} serif={s(v, 'serif')} immediate />
+        {s(v, 'pageIntro') && (
+          <Reveal delay={0.25}>
+            <p className="site-lead">{s(v, 'pageIntro')}</p>
+          </Reveal>
+        )}
+        {photo && (
+          <Reveal delay={0.35}>
+            <Photo src={photo} className="wide" />
+          </Reveal>
+        )}
+      </header>
+      <SectionView studio={studio} section={bare} news={news} subpage />
+      {next && next.key !== page.key && (
+        <nav className="site-page-next" aria-label="Następna zakładka">
+          <a
+            href={pageHref(studio.slug, next.path)}
+            onClick={(e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+              e.preventDefault();
+              onNavigate(next.path);
+            }}
+          >
+            <span className="site-eyebrow">Dalej</span>
+            <span className="site-page-next-name">
+              {next.label} <span aria-hidden="true">→</span>
+            </span>
+          </a>
+        </nav>
+      )}
+    </>
+  );
+}
+
+function SectionView({ studio, section, news, subpage = false }: { studio: PublicStudio; section: SiteSection; news: Set<string>; subpage?: boolean }) {
   const label = section.type === 'article' ? s(section.values, 'title') || 'Sekcja z tekstem' : section.type === 'gallery' ? s(section.values, 'title') || 'Galeria' : specOf(section.type).label;
-  const attrs = { id: section.key, 'data-section-name': label, className: `site-section site-${section.type}` };
+  // .site-menu to już okno menu nawigacji na telefonie – sekcja menu baru dostaje klasę .site-bar.
+  const attrs = { id: section.key, 'data-section-name': label, className: `site-section site-${section.type === 'menu' ? 'bar' : section.type}` };
   switch (section.type) {
     case 'about':
-      return <About studio={studio} v={section.values} attrs={attrs} />;
+      return <About studio={studio} v={section.values} attrs={attrs} subpage={subpage} />;
     case 'schedule':
       return <ScheduleSection studio={studio} v={section.values} attrs={attrs} news={news} />;
     case 'classes':
-      return <ClassesSection studio={studio} v={section.values} attrs={attrs} news={news} />;
+      return <ClassesSection studio={studio} v={section.values} attrs={attrs} news={news} subpage={subpage} />;
     case 'trainers':
-      return <TrainersSection studio={studio} v={section.values} attrs={attrs} />;
+      return <TrainersSection studio={studio} v={section.values} attrs={attrs} subpage={subpage} />;
     case 'shop':
       return <ShopSection studio={studio} v={section.values} attrs={attrs} />;
+    case 'menu':
+      return <MenuSection v={section.values} attrs={attrs} />;
     case 'more':
       return <MoreSection studio={studio} v={section.values} attrs={attrs} />;
     case 'article':
@@ -411,6 +464,18 @@ function SectionView({ studio, section, news }: { studio: PublicStudio; section:
 }
 
 type Attrs = { id: string; 'data-section-name': string; className: string };
+
+/** Karty: na stronie głównej karuzela, na podstronie wszystkie naraz w siatce (podstrona ma pokazać całość). */
+function Cards({ subpage, label, className, children }: { subpage: boolean; label: string; className?: string; children: ReactNode }) {
+  if (subpage) return <div className={`site-cards${className ? ` ${className}` : ''}`}>{children}</div>;
+  return (
+    <Reveal>
+      <Carousel label={label} className={className}>
+        {children}
+      </Carousel>
+    </Reveal>
+  );
+}
 
 /** Tekst ze zdjęciem obok (lewo/prawo) albo nad nim – wspólny układ „O studiu” i sekcji z tekstem. */
 function WithPhoto({ photo, position, children }: { photo: string | null; position: string; children: ReactNode }) {
@@ -430,7 +495,8 @@ function WithPhoto({ photo, position, children }: { photo: string | null; positi
   );
 }
 
-function About({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
+function About({ studio, v, attrs, subpage }: { studio: PublicStudio; v: Values; attrs: Attrs; subpage: boolean }) {
+  const rooms = Array.isArray(v.rooms) ? (v.rooms as string[]) : [];
   const zones = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of studio.classes) m.set(c.zone, (m.get(c.zone) ?? 0) + 1);
@@ -452,6 +518,16 @@ function About({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: A
         )}
         {b(v, 'showContact') && <Contact studio={studio} label={s(v, 'contactLabel')} />}
       </WithPhoto>
+      {rooms.length > 0 && (
+        <div className="site-rooms">
+          <div className="site-head">
+            <SplitHeading as="h2" className="site-h2 site-h2-sm" title={s(v, 'roomsTitle')} serif={s(v, 'roomsSerif')} />
+            {zones.length > 0 && <Reveal className="site-quiet">{zones.map(([z]) => z).join(' · ')}</Reveal>}
+          </div>
+          {/* Strona główna: pasek do przewijania; podstrona „Studio”: duże kadry po dwa – sala w pełnej krasie. */}
+          <PhotoGallery ids={rooms} layout={subpage ? 'rooms' : 'row'} label="Zdjęcia sal" />
+        </div>
+      )}
       {b(v, 'showFaq') && studio.faq.length > 0 && (
         <div className="site-faq">
           {studio.faq.map((f) => (
@@ -581,7 +657,7 @@ function ScheduleSection({ studio, v, attrs, news }: { studio: PublicStudio; v: 
   );
 }
 
-function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: Values; attrs: Attrs; news: Set<string> }) {
+function ClassesSection({ studio, v, attrs, news, subpage }: { studio: PublicStudio; v: Values; attrs: Attrs; news: Set<string>; subpage: boolean }) {
   const zones = [...new Set(studio.classes.map((c) => c.zone))];
   const [zone, setZone] = useState<string | null>(null);
   // Nowości na początku listy – reszta w kolejności sal i nazw.
@@ -605,8 +681,7 @@ function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: V
         </div>
       )}
       {/* Nowa sala = karuzela od początku (key). Karta bez zdjęcia dostaje kolor zajęć z GLAM i inicjał w kursywie. */}
-      <Reveal>
-      <Carousel key={zone ?? 'all'} label={s(v, 'title') || 'Zajęcia'}>
+      <Cards key={zone ?? 'all'} subpage={subpage} label={s(v, 'title') || 'Zajęcia'}>
         {list.map((c) => {
           const who = trainersOf(c.id);
           const photo = photos ? classPhoto(studio, c) : null;
@@ -629,8 +704,7 @@ function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: V
             </article>
           );
         })}
-      </Carousel>
-      </Reveal>
+      </Cards>
     </section>
   );
 }
@@ -639,7 +713,7 @@ function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: V
  * Trenerki jako zakładki: karta (zdjęcie + imię) otwiera pod karuzelą panel z większym zdjęciem, bio, opisem własnym
  * i zajęciami. Ponowne kliknięcie zamyka. Zdjęcie: z edytora strony, a gdy go nie ma – z profilu w GLAM.
  */
-function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
+function TrainersSection({ studio, v, attrs, subpage }: { studio: PublicStudio; v: Values; attrs: Attrs; subpage: boolean }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = studio.trainers.find((t) => t.id === openId) ?? null;
   if (studio.trainers.length === 0) return null;
@@ -647,8 +721,7 @@ function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values
   return (
     <section {...attrs}>
       <Head v={v} />
-      <Reveal>
-      <Carousel label="Trenerki" className="site-people">
+      <Cards subpage={subpage} label="Trenerki" className="site-people">
         {studio.trainers.map((t) => {
           const names = [...new Set(t.classes.map(className).filter(Boolean))];
           const photo = trainerPhoto(studio, t);
@@ -668,8 +741,7 @@ function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values
             </button>
           );
         })}
-      </Carousel>
-      </Reveal>
+      </Cards>
       {open && <TrainerDialog key={open.id} studio={studio} t={open} names={[...new Set(open.classes.map(className).filter(Boolean))] as string[]} onClose={() => setOpenId(null)} />}
     </section>
   );
@@ -819,7 +891,7 @@ function Article({ v, attrs }: { v: Values; attrs: Attrs }) {
 }
 
 function Gallery({ v, attrs }: { v: Values; attrs: Attrs }) {
-  const ids = Array.isArray(v.images) ? v.images : [];
+  const ids = Array.isArray(v.images) ? (v.images as string[]) : [];
   // Pusta galeria: na stronie jej nie ma, w edytorze czeka miejsce na zdjęcia.
   if (ids.length === 0 && !IN_EDITOR) return null;
   const layout = s(v, 'layout') || 'grid';
@@ -835,11 +907,151 @@ function Gallery({ v, attrs }: { v: Values; attrs: Attrs }) {
           ))}
         </div>
       ) : (
-        <div className={`site-gallery ${layout}`}>
-          {ids.map((id) => (
-            <Photo key={id} src={siteImageUrl(id)} />
+        <PhotoGallery ids={ids} layout={layout} label={s(v, 'title') || 'Galeria'} />
+      )}
+    </section>
+  );
+}
+
+/**
+ * Zdjęcia w siatce / mozaice / pasku; kliknięcie otwiera podgląd na cały ekran ze strzałkami (← → na klawiaturze).
+ * Filmy grają w kadrze jak ruchome zdjęcia.
+ */
+function PhotoGallery({ ids, layout, label }: { ids: string[]; layout: string; label: string }) {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <>
+      <div className={`site-gallery ${layout}`}>
+        {ids.map((id, i) => (
+          <button key={id} type="button" className="site-photo site-gallery-item" style={{ '--i': i } as CSSProperties} onClick={() => setOpen(i)} aria-label={`${label}: ${i + 1} z ${ids.length}, powiększ`}>
+            <MediaEl src={siteImageUrl(id)} />
+          </button>
+        ))}
+      </div>
+      {open !== null && <Lightbox ids={ids} start={open} label={label} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
+function Lightbox({ ids, start, label, onClose }: { ids: string[]; start: number; label: string; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [i, setI] = useState(start);
+  const go = (d: number) => setI((x) => (x + d + ids.length) % ids.length);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="site-lightbox"
+      aria-label={label}
+      onClose={onClose}
+      onClick={(e) => e.target === e.currentTarget && ref.current?.close()}
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowRight') go(1);
+        if (e.key === 'ArrowLeft') go(-1);
+      }}
+    >
+      <figure key={ids[i]}>
+        <MediaEl src={siteImageUrl(ids[i])} />
+        <figcaption className="site-quiet">
+          {i + 1} / {ids.length}
+        </figcaption>
+      </figure>
+      <button type="button" className="site-dialog-close" onClick={() => ref.current?.close()} aria-label="Zamknij">
+        <Icon name="close" size={18} />
+      </button>
+      {ids.length > 1 && (
+        <>
+          <button type="button" className="site-lightbox-nav prev" onClick={() => go(-1)} aria-label="Poprzednie zdjęcie">
+            <span aria-hidden="true">←</span>
+          </button>
+          <button type="button" className="site-lightbox-nav next" onClick={() => go(1)} aria-label="Następne zdjęcie">
+            <span aria-hidden="true">→</span>
+          </button>
+        </>
+      )}
+    </dialog>
+  );
+}
+
+/**
+ * Menu baru: pozycje z edytora strony, pogrupowane w kategorie. Przy kilku kategoriach – zakładki nad listą.
+ * Wiersz jak w karcie kawiarni: nazwa, kropki prowadzące wzrok do ceny, pod spodem opis drobnym drukiem.
+ */
+function MenuSection({ v, attrs }: { v: Values; attrs: Attrs }) {
+  const items = menuItems(v);
+  const [cat, setCat] = useState<string | null>(null);
+  if (items.length === 0 && !IN_EDITOR) return null;
+  const groups = new Map<string, MenuItem[]>();
+  for (const x of items) groups.set(x.category.trim(), [...(groups.get(x.category.trim()) ?? []), x]);
+  const cats = [...groups.keys()];
+  const tabs = b(v, 'showTabs') && cats.length > 1;
+  const shown = tabs && cat !== null && groups.has(cat) ? [[cat, groups.get(cat)!] as const] : [...groups.entries()];
+  const photo = img(v, 'image');
+  const photos = b(v, 'showPhotos');
+
+  const list = (
+    <div className="site-bar-body">
+      {s(v, 'text') && <p className="site-lead site-bar-lead">{s(v, 'text')}</p>}
+      {tabs && (
+        <div className="site-filter" role="group" aria-label="Kategoria menu">
+          <button aria-pressed={cat === null} onClick={() => setCat(null)}>
+            Wszystko
+          </button>
+          {cats.map((c) => (
+            <button key={c} aria-pressed={cat === c} onClick={() => setCat(c)}>
+              {c || 'Inne'}
+            </button>
           ))}
         </div>
+      )}
+      {items.length === 0 ? (
+        <p className="site-empty serif">Dodaj pozycje menu w panelu po prawej</p>
+      ) : (
+        <div key={cat ?? 'all'}>
+          {shown.map(([c, list]) => (
+            <div key={c} className="site-bar-group">
+              {c && (!tabs || cat === null) && <h3 className="site-bar-cat serif">{c}</h3>}
+              <ul className="site-bar-list">
+                {list.map((x, i) => (
+                  <li key={x.id} className={photos && x.image ? 'with-photo' : undefined} style={{ '--i': i } as CSSProperties}>
+                    {photos && x.image && (
+                      <span className="site-bar-thumb">
+                        <img src={siteImageUrl(x.image)} alt="" loading="lazy" decoding="async" />
+                      </span>
+                    )}
+                    <span className="site-bar-line">
+                      <span className="site-bar-name">
+                        {x.name}
+                        {x.tag && <span className="site-new">{x.tag}</span>}
+                      </span>
+                      <span className="site-bar-dots" aria-hidden="true" />
+                      {x.price && <span className="site-bar-price">{x.price}</span>}
+                    </span>
+                    {x.text && <span className="site-bar-desc">{x.text}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+      {s(v, 'note') && <p className="site-bar-note serif">{s(v, 'note')}</p>}
+    </div>
+  );
+
+  return (
+    <section {...attrs}>
+      <Head v={v} />
+      {photo ? (
+        <div className="site-bar-split">
+          {list}
+          <Photo src={photo} className="tall" />
+        </div>
+      ) : (
+        list
       )}
     </section>
   );

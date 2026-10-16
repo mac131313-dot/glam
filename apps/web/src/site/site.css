@@ -477,8 +477,89 @@ html:has(.site-menu[open]) { overflow: hidden; }
 .site-menu > .btn { align-self: stretch; text-align: center; justify-content: center; }
 @media (prefers-reduced-motion: reduce) { .site-menu[open], .site-menu-links a { animation: none; } }
 
-/* Podstrona: jedna sekcja pod menu, z oddechem od góry. */
-.site-subpage > .site-section:first-child { padding-top: clamp(48px, 8vw, 112px); min-height: 50vh; }
+/* ===== Podstrona (jedna zakładka menu) =====
+   Nagłówek jak okładka rozdziału: duży tytuł z kursywą, wstęp, cienka linia; opcjonalnie szerokie zdjęcie.
+   Pod nim treść sekcji, na dole „Dalej” – następna zakładka, żeby strona nie kończyła się ślepo. */
+.site main > .site-page-head { width: min(var(--site-w), 100%); margin: 0 auto; padding: clamp(56px, 10vw, 136px) var(--gutter) 0; }
+.site-page-title { font-family: var(--font-head); font-weight: 400; font-size: clamp(2.8rem, 7.4vw, 6rem); line-height: 0.95; letter-spacing: -0.045em; margin: 0; text-wrap: balance; }
+.site-page-title .serif { letter-spacing: -0.01em; color: var(--muted); }
+.site-page-head .site-lead { margin-top: clamp(18px, 2.4vw, 28px); }
+.site-page-head::after { content: ''; display: block; height: 1px; background: var(--line); margin-top: clamp(36px, 5vw, 64px); }
+.site-page-head.has-photo::after { display: none; }
+.site-page-head .site-photo.wide { margin-top: clamp(36px, 5vw, 64px); aspect-ratio: 16 / 7; }
+.site-subpage > .site-section { padding-top: clamp(40px, 6vw, 80px); min-height: 40vh; }
+.site-subpage > .site-section .site-head:empty { display: none; }
+.site main > .site-page-next { width: min(var(--site-w), 100%); margin: 0 auto; padding: var(--gap) var(--gutter) 0; }
+.site-page-next a { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-top: 28px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.site-page-next .site-eyebrow { margin: 0; }
+.site-page-next-name { font-family: var(--font-display); font-style: italic; font-size: clamp(2rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: -0.01em; }
+.site-page-next-name span { display: inline-block; transition: translate 0.4s var(--ease-out); }
+@media (hover: hover) { .site-page-next a:hover .site-page-next-name span { translate: 8px 0; } }
+
+/* Na podstronie karty zajęć i trenerek leżą w siatce (wszystkie naraz) – bez karuzeli. */
+.site-subpage .site-cards .site-photo.card, .site-subpage .site-cards .site-photo.portrait { aspect-ratio: 4 / 5; }
+.site-subpage .site-cards.site-people { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* ===== Galeria sal (w „O studiu”) i podgląd zdjęć ===== */
+.site-rooms { margin-top: clamp(64px, 9vw, 128px); }
+.site-h2-sm { font-size: clamp(1.7rem, 3.4vw, 2.6rem); }
+/* Sale na podstronie: pierwsze zdjęcie szeroko, dalej po dwa; gdy na końcu zostaje jedno – też szeroko (bez dziur). */
+.site-gallery.rooms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.site-gallery.rooms > * { aspect-ratio: 4 / 3; }
+.site-gallery.rooms > :first-child, .site-gallery.rooms > :last-child:nth-child(even) { grid-column: 1 / -1; aspect-ratio: 16 / 8; }
+@media (max-width: 600px) { .site-gallery.rooms { grid-template-columns: 1fr; } .site-gallery.rooms > * { aspect-ratio: 4 / 3 !important; } }
+.site-gallery-item { display: block; width: 100%; height: 100%; border: 0; padding: 0; cursor: zoom-in; font: inherit; color: inherit; }
+.site-gallery-item:focus-visible { outline: 1px solid var(--ink); outline-offset: 4px; }
+@media (hover: hover) { .site-gallery-item:hover img { transform: scale(1.03); } }
+html:has(.site-lightbox[open]) { overflow: hidden; }
+.site-lightbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: clamp(16px, 4vw, 56px); border: 0; background: rgb(18 16 14 / 0.94); color: #fbfaf7; }
+.site-lightbox[open] { display: grid; place-items: center; animation: site-fade-in 0.35s var(--ease-out); }
+.site-lightbox::backdrop { background: transparent; }
+.site-lightbox figure { position: relative; margin: 0; width: min(1200px, 100%); height: min(82dvh, 100%); display: grid; grid-template-rows: 1fr auto; gap: 12px; animation: site-fade-in 0.4s var(--ease-out); }
+.site-lightbox figure img, .site-lightbox figure video { width: 100%; height: 100%; object-fit: contain; border-radius: var(--radius); min-height: 0; }
+.site-lightbox figcaption { text-align: center; color: rgb(251 250 247 / 0.6); font-variant-numeric: tabular-nums; }
+.site-lightbox .site-dialog-close { position: fixed; top: 16px; right: 16px; float: none; margin: 0; background: transparent; color: #fbfaf7; border-color: rgb(251 250 247 / 0.35); }
+.site-lightbox-nav { position: fixed; top: 50%; translate: 0 -50%; width: 52px; height: 52px; border-radius: 999px; border: 1px solid rgb(251 250 247 / 0.35); background: transparent; color: #fbfaf7; font-size: 1.2rem; cursor: pointer; transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out); }
+.site-lightbox-nav.prev { left: 16px; }
+.site-lightbox-nav.next { right: 16px; }
+@media (hover: hover) { .site-lightbox-nav:hover, .site-lightbox .site-dialog-close:hover { background: #fbfaf7; color: #1b1715; } }
+@media (max-width: 600px) { .site-lightbox-nav { top: auto; bottom: 20px; translate: none; } }
+@media (prefers-reduced-motion: reduce) { .site-lightbox[open], .site-lightbox figure { animation: none; } }
+
+/* ===== Menu baru =====
+   Jak karta w kawiarni: kategoria kursywą, nazwa – kropki – cena, pod spodem opis drobnym drukiem.
+   Ze zdjęciem baru: menu po lewej, zdjęcie po prawej (przyklejone przy przewijaniu). */
+.site-bar-split { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 6vw, 96px); align-items: start; }
+.site-bar-split > .site-photo.tall { position: sticky; top: 96px; }
+.site-bar-body { max-width: 760px; }
+.site-bar-lead { margin: 0 0 clamp(28px, 4vw, 44px); }
+.site-bar-group + .site-bar-group { margin-top: clamp(40px, 5vw, 64px); }
+.site-bar-cat { font-size: clamp(1.5rem, 2.6vw, 2rem); font-weight: 400; color: var(--muted); margin: 0 0 8px; }
+.site-bar-list { list-style: none; margin: 0; padding: 0; }
+.site-bar-list li {
+  display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 18px; padding: 18px 0; border-bottom: 1px solid var(--line);
+  animation: site-hero-rise 0.6s var(--ease-out) both; animation-delay: calc(var(--i, 0) * 0.04s);
+}
+.site-bar-list li.with-photo { grid-template-columns: 64px minmax(0, 1fr); }
+.site-bar-thumb { grid-row: span 2; width: 64px; height: 64px; border-radius: 999px; overflow: hidden; background: var(--soft); }
+.site-bar-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.site-bar-line { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.site-bar-name { font-family: var(--font-head); font-size: clamp(1.05rem, 1.6vw, 1.2rem); letter-spacing: -0.01em; }
+.site-bar-dots { flex: 1; min-width: 24px; border-bottom: 1px dotted color-mix(in srgb, var(--ink) 28%, transparent); translate: 0 -0.3em; }
+.site-bar-price { font-family: var(--font-display); font-size: clamp(1.15rem, 1.8vw, 1.35rem); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.site-bar-desc { color: var(--muted); font-size: 0.9rem; margin-top: 4px; max-width: 34em; }
+.site-bar-note { margin: clamp(28px, 4vw, 44px) 0 0; color: var(--muted); font-size: 1.1rem; }
+@media (max-width: 900px) {
+  .site-bar-split { grid-template-columns: 1fr; }
+  .site-bar-split > .site-photo.tall { position: static; order: -1; aspect-ratio: 16 / 10; }
+  .site-subpage .site-cards.site-people { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .site-subpage .site-cards.site-people { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .site-bar-list li.with-photo { grid-template-columns: 52px minmax(0, 1fr); column-gap: 14px; }
+  .site-bar-thumb { width: 52px; height: 52px; }
+}
+@media (prefers-reduced-motion: reduce) { .site-bar-list li { animation: none; } }
 
 /* ——— Nagłówek: zdjęcie na cały ekran z napisem na nim (układ „screen”). Menu leży na zdjęciu, po przewinięciu
    wraca do zwykłego wyglądu. Zdjęcie od krawędzi do krawędzi, bez zaokrągleń. ——— */

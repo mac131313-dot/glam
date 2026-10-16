@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_LOOK, defaultSiteDoc, GALLERY_MAX, isNewClass, parseSiteDoc, siteLook, siteMediaIds, SYSTEM_SECTIONS } from '../src/index.ts';
+import { DEFAULT_LOOK, defaultSiteDoc, GALLERY_MAX, isNewClass, menuItems, parseSiteDoc, siteLook, siteMediaIds, sitePages, SYSTEM_SECTIONS } from '../src/index.ts';
 
 test('dokument strony: śmieci i stare JSON-y dostają wartości domyślne', () => {
   assert.deepEqual(parseSiteDoc(null), defaultSiteDoc());
@@ -22,10 +22,10 @@ test('dokument strony: każda sekcja systemowa dokładnie raz, kolejność z dok
     ],
   });
   const keys = d.sections.map((s) => s.key);
-  assert.deepEqual(keys, ['classes', 'trainers', 'shop', 'more', 'a-cennik', 'about', 'schedule']);
+  assert.deepEqual(keys, ['classes', 'trainers', 'shop', 'menu', 'more', 'a-cennik', 'about', 'schedule']);
   for (const t of SYSTEM_SECTIONS) assert.equal(keys.filter((k) => k === t).length, 1, t);
   assert.equal(d.sections[0].visible, false);
-  assert.equal(d.sections[4].values.layout, 'plain');
+  assert.equal(d.sections[5].values.layout, 'plain');
 });
 
 test('dokument strony: liczby w granicach, motyw tylko z białej listy', () => {
@@ -76,4 +76,34 @@ test('filmy na stronie: mapa „który plik to film” tylko z poprawnymi id', (
   assert.deepEqual(d.media, { [id(5)]: 'video' });
   assert.equal(d.hero.values.image, id(5), 'film siedzi w tym samym polu co zdjęcie');
   assert.deepEqual(defaultSiteDoc().media, {});
+});
+
+test('menu baru: pozycje oczyszczone, zdjęcia w bibliotece, zakładka dopiero z pozycjami', () => {
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const empty = parseSiteDoc({});
+  assert.ok(!sitePages(empty, { shop: false }).some((p) => p.type === 'menu'), 'pusta lista = bez zakładki');
+  const d = parseSiteDoc({
+    sections: [
+      {
+        type: 'menu',
+        values: {
+          items: [
+            { id: 'a1', name: 'Matcha latte', price: '18 zł', category: 'Kawa i matcha', image: id(7) },
+            { id: 'a1', name: 'Smoothie', price: 16, image: 'https://obcy.pl/x.jpg' },
+            { id: 'b2', name: '   ' },
+            'zle',
+          ],
+        },
+      },
+    ],
+  });
+  const menu = d.sections.find((s) => s.type === 'menu')!;
+  const items = menu.values.items as { id: string; price: string; image: string }[];
+  assert.equal(items.length, 3, 'śmieci odpadają, pusta nazwa zostaje dla edytora');
+  assert.notEqual(items[0].id, items[1].id, 'id bez powtórzeń');
+  assert.equal(items[1].price, '', 'cena tylko jako tekst');
+  assert.equal(items[1].image, '', 'zdjęcie tylko z biblioteki');
+  assert.deepEqual(menuItems(menu.values).map((x) => x.name), ['Matcha latte', 'Smoothie']);
+  assert.ok(siteMediaIds(d).includes(id(7)));
+  assert.equal(sitePages(d, { shop: false }).find((p) => p.type === 'menu')?.path, 'menu');
 });

@@ -6,7 +6,7 @@
 import { FONTS, PALETTES, SOFTNESS, type FontRole, type Look, type Softness } from './look.ts';
 
 /** Sekcje z danymi z systemu (grafik, zajęcia, trenerki…) – każda występuje dokładnie raz. */
-export type SystemSectionType = 'about' | 'schedule' | 'classes' | 'trainers' | 'shop' | 'more';
+export type SystemSectionType = 'about' | 'schedule' | 'classes' | 'trainers' | 'shop' | 'menu' | 'more';
 /** Sekcje stałe: nagłówek na górze i stopka na dole – nie zmieniają miejsca. */
 export type FixedSectionType = 'hero' | 'footer';
 /** Sekcje własne – może ich być dowolnie wiele. */
@@ -14,7 +14,10 @@ export type CustomSectionType = 'article' | 'gallery';
 export type SectionType = SystemSectionType | FixedSectionType | CustomSectionType;
 
 /** Zdjęcie lub film = id pliku w bibliotece studia (media, rodzaj „site”); pusty tekst = brak. Rodzaj pliku – w SiteDoc.media. */
-export type FieldValue = string | number | boolean | string[];
+export type FieldValue = string | number | boolean | string[] | MenuItem[];
+/** Pozycja menu baru: nazwa, cena (tekst – „14 zł”, „12 / 16”), krótki opis, kategoria i opcjonalne zdjęcie. */
+export type MenuItem = { id: string; category: string; name: string; price: string; text: string; tag: string; image: string };
+export const MENU_MAX = 60;
 export type FieldSpec =
   | { key: string; label: string; kind: 'text'; default: string; max?: number; hint?: string; placeholder?: string }
   | { key: string; label: string; kind: 'textarea'; default: string; max?: number; hint?: string; placeholder?: string }
@@ -22,7 +25,8 @@ export type FieldSpec =
   | { key: string; label: string; kind: 'number'; default: number; min: number; max: number; hint?: string; suffix?: string }
   | { key: string; label: string; kind: 'choice'; default: string; options: [string, string][]; hint?: string }
   | { key: string; label: string; kind: 'image'; default: string; hint?: string }
-  | { key: string; label: string; kind: 'images'; default: string[]; max: number; hint?: string };
+  | { key: string; label: string; kind: 'images'; default: string[]; max: number; hint?: string }
+  | { key: string; label: string; kind: 'menu'; default: MenuItem[]; max: number; hint?: string };
 
 /** Grupa pól w panelu edytora (np. „Nagłówek sekcji”, „Przyciski”). */
 export type FieldGroup = { label: string; fields: FieldSpec[] };
@@ -38,6 +42,15 @@ const image = (key: string, label: string, hint?: string): FieldSpec => ({ key, 
 const heading = (title: string, serif = '', eyebrow = ''): FieldGroup => ({
   label: 'Nagłówek',
   fields: [text('title', 'Tytuł', title, 60), text('serif', 'Dopisek w kursywie', serif, 60), text('eyebrow', 'Mała etykieta nad tytułem', eyebrow, 40, { hint: 'Zwykle pusta – minimalizm.' })],
+});
+
+/** Podstrona sekcji (/s/:slug/grafik…): duży tytuł z nagłówka sekcji, pod nim wstęp i opcjonalne szerokie zdjęcie. */
+const pageGroup = (intro: string): FieldGroup => ({
+  label: 'Podstrona',
+  fields: [
+    area('pageIntro', 'Wstęp na podstronie', intro, 300, { hint: 'Widać go tylko na podstronie tej zakładki. Jedno–dwa zdania.' }),
+    image('pageImage', 'Zdjęcie na górze podstrony', 'Opcjonalne – szerokie, spokojne zdjęcie.'),
+  ],
 });
 
 const photoPosition: FieldSpec = {
@@ -102,6 +115,15 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
         label: 'Elementy',
         fields: [toggle('showContact', 'Godziny recepcji i kontakt', true), text('contactLabel', 'Tytuł kontaktu', 'Recepcja', 40), toggle('showZones', 'Sale i liczba zajęć', false), toggle('showFaq', 'Pytania i odpowiedzi', false, 'Treść pytań: Ustawienia → Wsparcie.')],
       },
+      {
+        label: 'Galeria sal',
+        fields: [
+          { key: 'rooms', label: 'Zdjęcia sal', kind: 'images', default: [], max: 12, hint: 'Do 12 zdjęć lub filmów: sale, recepcja, szatnia. Pusta = bez galerii.' },
+          text('roomsTitle', 'Tytuł galerii', 'Nasze', 40),
+          text('roomsSerif', 'Dopisek w kursywie', 'sale', 40),
+        ],
+      },
+      pageGroup('Miejsce, w którym zwalniasz. Zajrzyj do środka.'),
     ],
   },
   schedule: {
@@ -111,6 +133,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
       heading('Grafik', 'tygodnia'),
       { label: 'Przyciski i komunikaty', fields: [text('bookLabel', 'Przycisk przy zajęciach', 'Zapisz się', 24), text('button', 'Przycisk przy nagłówku', '', 40, { placeholder: 'np. Pełny grafik' }), text('emptyText', 'Gdy dzień jest pusty', 'Tego dnia odpoczywamy.', 160)] },
       { label: 'Elementy', fields: [toggle('showSpots', 'Wolne miejsca', true), toggle('showPast', 'Zajęcia, które już minęły', false)] },
+      pageGroup('Wybierz dzień i zapisz się – miejsce czeka w aplikacji.'),
     ],
   },
   classes: {
@@ -127,12 +150,13 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
           { key: 'newsDays', label: 'Jak długo to nowość', kind: 'number', default: 30, min: 7, max: 120, suffix: 'dni' },
         ],
       },
+      pageGroup('Każde zajęcia w jednym miejscu. Znajdź swój rytm.'),
     ],
   },
   trainers: {
     label: 'Trenerki',
     nav: 'Trenerki',
-    groups: [heading('Trenerki'), { label: 'Elementy', fields: [toggle('showClasses', 'Zajęcia trenerki', false), toggle('showBio', 'Opis trenerki', false)] }],
+    groups: [heading('Trenerki'), { label: 'Elementy', fields: [toggle('showClasses', 'Zajęcia trenerki', false), toggle('showBio', 'Opis trenerki', false)] }, pageGroup('Poznaj kobiety, które poprowadzą Cię na macie.')],
   },
   shop: {
     label: 'Sklep',
@@ -142,6 +166,21 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
       { label: 'Przycisk', fields: [text('buyLabel', 'Przycisk przy produkcie', 'Kup teraz', 24)] },
       // Opisy produktów są na podstronie sklepu – na stronie głównej tylko zdjęcie, nazwa i cena.
       { label: 'Elementy', fields: [toggle('showSoldOut', 'Wyprzedane produkty', false)] },
+    ],
+  },
+  menu: {
+    label: 'Menu baru',
+    nav: 'Menu',
+    groups: [
+      heading('Menu', 'po treningu'),
+      { label: 'Pozycje', fields: [{ key: 'items', label: 'Pozycje menu', kind: 'menu', default: [], max: MENU_MAX, hint: 'Pusta lista = zakładki nie ma na stronie.' }] },
+      {
+        label: 'Treść',
+        fields: [area('text', 'Krótki wstęp', '', 300, { hint: 'Np. „Smoothie, matcha i coś słodkiego – po zajęciach przy barze.”' }), text('note', 'Dopisek pod menu', '', 160, { placeholder: 'np. Mleko roślinne bez dopłaty' })],
+      },
+      { label: 'Zdjęcie lub film', fields: [image('image', 'Zdjęcie baru', 'Pokazuje się obok menu.')] },
+      { label: 'Elementy', fields: [toggle('showPhotos', 'Zdjęcia pozycji', true), toggle('showTabs', 'Zakładki kategorii', true, 'Przy dwóch i więcej kategoriach.')] },
+      pageGroup(''),
     ],
   },
   more: {
@@ -241,12 +280,12 @@ export type SiteDoc = {
   media: Record<string, 'video'>;
 };
 
-export const SYSTEM_SECTIONS: SystemSectionType[] = ['about', 'schedule', 'classes', 'trainers', 'shop', 'more'];
+export const SYSTEM_SECTIONS: SystemSectionType[] = ['about', 'schedule', 'classes', 'trainers', 'shop', 'menu', 'more'];
 const CUSTOM_PREFIX: Record<CustomSectionType, string> = { article: 'a', gallery: 'g' };
 export const MAX_SECTIONS = 30;
 
 /** Adresy podstron sekcji systemowych: /s/:slug/grafik itd. Sklep ma własną podstronę z katalogiem (ShopSite). */
-const SYSTEM_PATHS: Record<SystemSectionType, string> = { about: 'studio', schedule: 'grafik', classes: 'zajecia', trainers: 'trenerki', shop: 'sklep', more: 'wiecej' };
+const SYSTEM_PATHS: Record<SystemSectionType, string> = { about: 'studio', schedule: 'grafik', classes: 'zajecia', trainers: 'trenerki', shop: 'sklep', menu: 'menu', more: 'wiecej' };
 /** Adresy zajęte przez inne strony studia – sekcja z własnym tekstem nie może ich przejąć. */
 const RESERVED_PATHS = new Set([...Object.values(SYSTEM_PATHS), 'kurs']);
 
@@ -273,7 +312,7 @@ export function sitePages(doc: SiteDoc, opts: { shop: boolean }): SitePage[] {
   const pages: SitePage[] = [];
   for (const s of doc.sections) {
     const label = s.nav.trim();
-    if (!s.visible || !label || (s.type === 'shop' && !opts.shop)) continue;
+    if (!s.visible || !label || (s.type === 'shop' && !opts.shop) || (s.type === 'menu' && menuItems(s.values).length === 0)) continue;
     let path = s.type === 'article' || s.type === 'gallery' ? pathSlug(label) : SYSTEM_PATHS[s.type];
     // Własna sekcja o nazwie jak systemowa („Grafik”) albo dwie o tej samej nazwie – dopisujemy klucz sekcji.
     if (!path || used.has(path) || (RESERVED_PATHS.has(path) && path !== SYSTEM_PATHS[s.type as SystemSectionType])) path = `${path || 'strona'}-${s.key}`;
@@ -291,7 +330,7 @@ export const isMediaId = (v: unknown): v is string => typeof v === 'string' && /
 export const siteImageUrl = (mediaId: string) => `/api/public-media/${mediaId}`;
 
 function defaults(spec: SectionSpec): Record<string, FieldValue> {
-  return Object.fromEntries(spec.groups.flatMap((g) => g.fields.map((f) => [f.key, Array.isArray(f.default) ? [...f.default] : f.default])));
+  return Object.fromEntries(spec.groups.flatMap((g) => g.fields.map((f) => [f.key, Array.isArray(f.default) ? ([...f.default] as FieldValue) : f.default])));
 }
 
 /** Wartości pól z dowolnego wejścia: zły typ → domyślna, tekst przycięty, liczba w granicach, zdjęcie tylko z biblioteki. */
@@ -305,9 +344,35 @@ export function parseValues(spec: SectionSpec, raw: unknown): Record<string, Fie
     else if (f.kind === 'choice') out[f.key] = typeof v === 'string' && f.options.some(([k]) => k === v) ? v : f.default;
     else if (f.kind === 'image') out[f.key] = isMediaId(v) ? v : '';
     else if (f.kind === 'images') out[f.key] = Array.isArray(v) ? [...new Set(v.filter(isMediaId))].slice(0, f.max) : [];
+    else if (f.kind === 'menu') out[f.key] = parseMenu(v, f.max);
     else out[f.key] = typeof v === 'string' ? v.slice(0, f.max ?? 200) : f.default;
   }
   return out;
+}
+
+/**
+ * Pozycje menu z dowolnego wejścia. Pusta nazwa zostaje (pozycja w trakcie wpisywania w edytorze),
+ * na stronie pokazujemy tylko pozycje z nazwą – zob. menuItems.
+ */
+function parseMenu(raw: unknown, max: number): MenuItem[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: MenuItem[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== 'object' || out.length >= max) continue;
+    const o = r as Record<string, unknown>;
+    let id = typeof o.id === 'string' && /^[a-z0-9]{1,12}$/.test(o.id) ? o.id : Math.random().toString(36).slice(2, 10);
+    while (seen.has(id)) id = Math.random().toString(36).slice(2, 10);
+    seen.add(id);
+    out.push({ id, category: str(o.category, 40), name: str(o.name, 60), price: str(o.price, 20), text: str(o.text, 200), tag: str(o.tag, 24), image: isMediaId(o.image) ? o.image : '' });
+  }
+  return out;
+}
+
+/** Pozycje menu do pokazania na stronie (z nazwą). */
+export function menuItems(values: Record<string, FieldValue>): MenuItem[] {
+  const v = values.items;
+  return Array.isArray(v) ? (v as unknown[]).filter((x): x is MenuItem => !!x && typeof x === 'object' && !!(x as MenuItem).name?.trim()) : [];
 }
 
 export function newSection(type: SystemSectionType | CustomSectionType, key?: string): SiteSection {
@@ -414,7 +479,7 @@ export function siteMediaIds(doc: SiteDoc): string[] {
   const ids = new Set<string>();
   const add = (v: FieldValue | undefined) => {
     if (typeof v === 'string' && isMediaId(v)) ids.add(v);
-    if (Array.isArray(v)) v.forEach((x) => ids.add(x));
+    if (Array.isArray(v)) for (const x of v) typeof x === 'string' ? ids.add(x) : x.image && ids.add(x.image);
   };
   for (const v of [...Object.values(doc.hero.values), ...Object.values(doc.footer.values), ...doc.sections.flatMap((s) => Object.values(s.values))]) add(v);
   for (const v of [...Object.values(doc.photos.classes), ...Object.values(doc.photos.trainers)]) add(v);

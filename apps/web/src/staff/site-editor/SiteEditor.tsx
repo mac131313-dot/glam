@@ -12,6 +12,7 @@ import {
   type FieldSpec,
   type FieldValue,
   type Look,
+  type MenuItem,
   type SectionSpec,
   type SiteDoc,
   type SiteSection,
@@ -21,6 +22,7 @@ import { api, ApiError } from '../../api.ts';
 import { Spinner, useToast } from '../../ui.tsx';
 import { FOOTER_ID, HERO_ID, type FromSite } from '../../site/protocol.ts';
 import { ImageField, ImagesField, MediaKinds, PhotoList } from './images.tsx';
+import { MenuField } from './menu.tsx';
 import { EditorShell, FieldRow, Glyph, Group, PanelHeader, useAutosave, useHistory, usePreviewBridge } from './shell.tsx';
 
 type CatalogItem = { id: string; name: string; photoUrl: string | null };
@@ -509,10 +511,11 @@ function SpecField({ field: f, value, onChange }: { field: FieldSpec; value: Fie
     return (
       <div className="se-pole">
         <span className="se-pole-etykieta">{f.label}</span>
-        <ImagesField value={Array.isArray(value) ? value : []} max={f.max} onChange={(ids) => onChange(ids)} />
+        <ImagesField value={Array.isArray(value) ? (value as string[]) : []} max={f.max} onChange={(ids) => onChange(ids)} />
         {f.hint && <span className="se-pole-podpowiedz">{f.hint}</span>}
       </div>
     );
+  if (f.kind === 'menu') return <MenuField value={Array.isArray(value) ? (value as MenuItem[]) : []} max={f.max} onChange={(items, grp) => onChange(items, grp)} />;
   if (f.kind === 'textarea')
     return (
       <FieldRow label={f.label} hint={f.hint}>
@@ -553,6 +556,7 @@ const SYSTEM_NOTES: Partial<Record<SiteSection['type'], string>> = {
   about: 'Godziny recepcji, kontakt i pytania – z Ustawień studia.',
   shop: 'Produkty, ceny i zdjęcia – z panelu: Sklep → Produkty i stany. Sekcja pokazuje się, gdy sklep jest włączony.',
   more: 'Kafelki pokazują się tylko dla modułów włączonych w studiu.',
+  menu: 'Menu baru wpisujesz tutaj. Zakładka „Menu” pojawia się na stronie, gdy dodasz pierwszą pozycję.',
 };
 
 function SystemNote({ type }: { type: SiteSection['type'] }) {

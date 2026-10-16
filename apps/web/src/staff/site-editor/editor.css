@@ -152,3 +152,15 @@ textarea.se-input { line-height: 1.5; }
 .se-zdjecie-kadr video, .se-galeria-el video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
 .se-film-znak { position: absolute; left: 6px; bottom: 6px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: rgb(0 0 0 / 0.55); color: #fff; }
 .se-film-znak svg { width: 12px; height: 12px; }
+
+/* Pozycje menu baru (menu.tsx) */
+.se-menu { display: flex; flex-direction: column; gap: 6px; }
+.se-menu-pozycja { border: 1px solid var(--se-linia); border-radius: 10px; background: #fff; }
+.se-menu-pozycja.otwarta { border-color: #c9cccf; }
+.se-menu-naglowek { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 9px 12px; font: inherit; text-align: left; cursor: pointer; color: var(--se-tekst); }
+.se-menu-naglowek em { color: var(--se-szary); }
+.se-menu-cena { font-variant-numeric: tabular-nums; color: var(--se-szary); white-space: nowrap; }
+.se-menu-pola { display: flex; flex-direction: column; gap: 10px; padding: 4px 12px 12px; }
+.se-menu-dwa { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+.se-menu-akcje { display: flex; align-items: center; gap: 4px; }
+.se-menu-akcje .grow { flex: 1; }
