@@ -657,3 +657,25 @@ test('profil trenerki: opis własny, film i zaproszenia na jej zajęcia', async 
   await call(marzena, R, 'DELETE', `/api/staff/invites/${inviteId}`);
   assert.equal(db.prepare('SELECT 1 FROM trainer_invites WHERE id = ?').get(inviteId), undefined);
 });
+
+test('grupy za zgodą: prośba czeka w panelu, akceptacja dodaje do grupy, a klientka dopiero wtedy widzi wpisy', async () => {
+  const owner = await login(SSG.owner);
+  const julia = await login(SSG.julia);
+  const hub = (await call(owner, SSG_STUDIO, 'GET', '/api/staff/community')).json();
+  assert.equal(hub.requests.length, 2, 'dwie przykładowe prośby z danych demo');
+
+  const split = (await call(julia, SSG_STUDIO, 'GET', '/api/groups')).json().find((g: { id: string }) => g.id === 'ss_g_split');
+  assert.equal(split.approval, 1);
+  const asked = await call(julia, SSG_STUDIO, 'POST', '/api/groups/ss_g_split/join', { message: 'Chcę spróbować!' });
+  assert.equal(asked.json().requested, true);
+  assert.equal((await call(julia, SSG_STUDIO, 'GET', '/api/feed?group=ss_g_split')).statusCode, 403, 'przed akceptacją bez dostępu do wpisów');
+
+  const juliaId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(SSG.julia) as { id: string }).id;
+  assert.equal((await call(julia, SSG_STUDIO, 'POST', `/api/staff/group-requests/ss_g_split/${juliaId}`, { action: 'accept' })).statusCode, 403, 'klientka nie akceptuje sama');
+  assert.equal((await call(owner, SSG_STUDIO, 'POST', `/api/staff/group-requests/ss_g_split/${juliaId}`, { action: 'accept' })).statusCode, 200);
+  const after = (await call(julia, SSG_STUDIO, 'GET', '/api/groups')).json().find((g: { id: string }) => g.id === 'ss_g_split');
+  assert.equal(after.joined, 1);
+  assert.equal(after.requested, 0);
+  assert.equal((await call(julia, SSG_STUDIO, 'GET', '/api/feed?group=ss_g_split')).statusCode, 200);
+  assert.equal((await call(owner, SSG_STUDIO, 'POST', `/api/staff/group-requests/ss_g_split/${juliaId}`, { action: 'accept' })).statusCode, 404, 'drugi raz – już rozpatrzona');
+});

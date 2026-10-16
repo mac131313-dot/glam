@@ -187,6 +187,7 @@ test('rytuał oddechu: seria dni, tydzień, myśl dnia', async () => {
   assert.equal(breathRitual(['2026-10-13', '2026-10-15'], '2026-10-15').streak, 1);
   assert.equal(breathRitual(['2026-10-12'], '2026-10-15').streak, 0);
   assert.equal(breathRitual([], '2026-10-15').total, 0);
+  assert.deepEqual(breathRitual(['2026-10-14', '2026-10-12', '2026-10-14'], '2026-10-15').days, ['2026-10-12', '2026-10-14']);
   assert.equal(affirmationFor('2026-10-15'), affirmationFor('2026-10-15'));
   assert.notEqual(affirmationFor('2026-10-15'), affirmationFor('2026-10-16'));
 });

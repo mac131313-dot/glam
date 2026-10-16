@@ -800,8 +800,8 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     const { scope, user, roles } = ctx(req);
     const all = can(roles, 'cards.manage');
     return scope
-      .all<{ id: string; client_id: string; client_name: string; trainer_name: string | null; due_on: string; delivery: string; status: string; goal: string | null }>(
-        `SELECT c.id, c.client_id, u.name AS client_name, t.name AS trainer_name, c.due_on, c.delivery, c.status, m.goal FROM card_tasks c
+      .all<{ id: string; client_id: string; client_name: string; trainer_name: string | null; due_on: string; delivery: string; status: string; draft: string | null; goal: string | null }>(
+        `SELECT c.id, c.client_id, u.name AS client_name, t.name AS trainer_name, c.due_on, c.delivery, c.status, c.draft, m.goal FROM card_tasks c
          JOIN users u ON u.id = c.client_id LEFT JOIN users t ON t.id = c.trainer_id
          LEFT JOIN memberships m ON m.studio_id = c.studio_id AND m.user_id = c.client_id AND m.role = 'client'
          WHERE c.studio_id = $studio ${all ? '' : 'AND c.trainer_id = $me'} ORDER BY c.status = 'collected', c.due_on`,

@@ -140,8 +140,17 @@ export function ListRow({ title, hint, badge, onClick, icon }: { title: ReactNod
 }
 
 export function Tabs<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: [T, string][]; label: string }) {
+  const ref = useScrollRow<HTMLDivElement>();
+  // Wybrana zakładka zawsze w widoku (np. „Zaproś znajomą” na końcu paska).
+  useEffect(() => {
+    const row = ref.current;
+    const tab = row?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!row || !tab) return;
+    const left = tab.offsetLeft - row.offsetLeft;
+    if (left < row.scrollLeft || left + tab.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollTo({ left: left - 16, behavior: 'smooth' });
+  }, [value, ref]);
   return (
-    <div className="chips" role="tablist" aria-label={label}>
+    <div ref={ref} className="chips scroll-row" role="tablist" aria-label={label}>
       {options.map(([v, l]) => (
         <button key={v} role="tab" className="chip" aria-pressed={value === v} aria-selected={value === v} onClick={() => onChange(v)}>
           {l}
@@ -149,6 +158,81 @@ export function Tabs<T extends string>({ value, onChange, options, label }: { va
       ))}
     </div>
   );
+}
+
+/**
+ * Pasek pigułek przewijany w bok: palcem (natywnie), myszką przeciągając, kółkiem myszy.
+ * Klik po przeciągnięciu nie wybiera pigułki. Krawędź z ukrytymi pigułkami miękko gaśnie (data-more).
+ */
+export function useScrollRow<E extends HTMLElement>() {
+  const ref = useRef<E>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let startX = 0;
+    let startLeft = 0;
+    let dragging = false;
+    let moved = false;
+    const edges = () => {
+      const more = el.scrollWidth - el.clientWidth > 2;
+      const atStart = el.scrollLeft <= 2;
+      const atEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 2;
+      el.dataset.more = !more ? '' : atStart ? 'end' : atEnd ? 'start' : 'both';
+    };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startLeft = el.scrollLeft;
+    };
+    const move = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      if (Math.abs(dx) > 4) {
+        moved = true;
+        el.classList.add('is-dragging');
+      }
+      if (moved) el.scrollLeft = startLeft - dx;
+    };
+    const up = () => {
+      dragging = false;
+      el.classList.remove('is-dragging');
+    };
+    const click = (e: MouseEvent) => {
+      if (!moved) return;
+      e.preventDefault();
+      e.stopPropagation();
+      moved = false;
+    };
+    // Kółko myszy przewija pasek w bok – ale tylko dopóki jest dokąd; potem przewija się strona.
+    const wheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      const max = el.scrollWidth - el.clientWidth;
+      if (max <= 0 || (e.deltaY < 0 && el.scrollLeft <= 0) || (e.deltaY > 0 && el.scrollLeft >= max)) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    edges();
+    const ro = new ResizeObserver(edges);
+    ro.observe(el);
+    el.addEventListener('scroll', edges, { passive: true });
+    el.addEventListener('pointerdown', down);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    el.addEventListener('click', click, true);
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('scroll', edges);
+      el.removeEventListener('pointerdown', down);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      el.removeEventListener('click', click, true);
+      el.removeEventListener('wheel', wheel);
+    };
+  }, []);
+  return ref;
 }
 
 /** Lista rozwijana w stylu aplikacji (zamiast systemowego <select>). Jak systemowa – otwiera się nad treścią

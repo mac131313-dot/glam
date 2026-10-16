@@ -11,7 +11,8 @@ export default function Messages({ roles }: { roles: Role[] }) {
     ['group', 'Do grupy'],
     ...(can(roles, 'chat.answer') ? ([['chat', 'Czat z klientkami']] as ['chat', string][]) : []),
     ...(can(roles, 'clients.contact') ? ([['followups', 'Prośby o termin']] as ['followups', string][]) : []),
-    ['inbox', 'Dla mnie'],
+    // Skrzynka „Dla mnie” – dla zespołu (np. zastępstwa trenerek); właścicielka jej nie potrzebuje.
+    ...(roles.includes('owner') ? [] : ([['inbox', 'Dla mnie']] as ['inbox', string][])),
   ];
   const [tab, setTab] = useState(options[0][0]);
   return (

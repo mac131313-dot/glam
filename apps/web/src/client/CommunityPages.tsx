@@ -177,7 +177,7 @@ export function ReportSheet({ target, onClose }: { target: { kind: string; id: s
 }
 
 function Groups() {
-  const groups = useApi<{ id: string; name: string; description: string | null; members: number; joined: number }[]>('/groups');
+  const groups = useApi<{ id: string; name: string; description: string | null; approval: number; members: number; joined: number; requested: number }[]>('/groups');
   const [open, setOpen] = useState<string | null>(null);
   const { run } = useAction();
   if (!groups.data) return <Spinner />;
@@ -185,45 +185,62 @@ function Groups() {
     const g = groups.data.find((x) => x.id === open)!;
     return (
       <div className="stack">
-        <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => setOpen(null)}>
+        <button className="ritual-toggle" style={{ alignSelf: 'flex-start', paddingLeft: 0 }} onClick={() => setOpen(null)}>
           ← Wszystkie grupy
         </button>
-        <h2>{g.name}</h2>
+        <div className="stack" style={{ gap: 4 }}>
+          <h2 className="forme-h serif">{g.name}</h2>
+          {g.description && <p className="small muted" style={{ margin: 0 }}>{g.description}</p>}
+          <button className="ritual-toggle" style={{ alignSelf: 'flex-start', paddingLeft: 0 }} onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(() => (setOpen(null), groups.reload())))}>
+            Opuść grupę
+          </button>
+        </div>
         <Feed group={g.id} />
       </div>
     );
   }
+  if (groups.data.length === 0) return <Empty icon="🌸">Studio nie założyło jeszcze grup.</Empty>;
+  // Lista jak reszta aplikacji: nazwa, jedno zdanie, liczba osób, jedna dyskretna akcja; cienka linia między grupami.
   return (
-    <div className="stack">
+    <ul className="session-list">
       {groups.data.map((g) => (
-        <div key={g.id} className="card flat row between">
-          <button className="link" style={{ textDecoration: 'none', textAlign: 'left' }} onClick={() => g.joined && setOpen(g.id)}>
-            <b>{g.name}</b>
-            <span className="small muted" style={{ display: 'block' }}>
-              {g.members} {g.members === 1 ? 'osoba' : 'osób'}
+        <li key={g.id} className="group-row">
+          <button className="group-main" onClick={() => (g.joined ? setOpen(g.id) : undefined)} disabled={!g.joined} aria-label={g.joined ? `Otwórz grupę ${g.name}` : undefined}>
+            <span className="session-title">{g.name}</span>
+            {g.description && <span className="session-meta">{g.description}</span>}
+            <span className="session-meta">
+              {g.members} {osoby(g.members)}
+              {g.joined ? ' · jesteś w grupie' : g.approval ? ' · dołączanie za zgodą studia' : ''}
             </span>
           </button>
           {g.joined ? (
-            <span className="row">
-              <button className="btn sm" onClick={() => setOpen(g.id)}>
-                Otwórz
-              </button>
-              <button className="btn ghost sm" onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(groups.reload))}>
-                Opuść
-              </button>
-            </span>
+            <button className="chip" aria-pressed="true" onClick={() => setOpen(g.id)}>
+              Otwórz
+            </button>
+          ) : g.requested ? (
+            <button className="chip" title="Kliknij, żeby wycofać prośbę" onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(groups.reload), 'Prośba wycofana')}>
+              Prośba wysłana
+            </button>
           ) : (
-            <button className="btn ghost sm" onClick={() => run(() => api(`/groups/${g.id}/join`, { method: 'POST' }).then(groups.reload), 'Witaj w grupie')}>
-              Dołącz
+            <button
+              className="chip"
+              onClick={() =>
+                run(
+                  () => api<{ requested?: boolean; message?: string }>(`/groups/${g.id}/join`, { method: 'POST' }).then((r) => (groups.reload(), r)),
+                  (r) => r?.message ?? 'Witaj w grupie 🌸',
+                )
+              }
+            >
+              {g.approval ? 'Poproś o dołączenie' : 'Dołącz'}
             </button>
           )}
-        </div>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
-type Challenge = { id: string; title: string; description: string | null; metric: string; target: number; starts_on: string; ends_on: string; joined_at: string | null; completed_at: string | null; members: number; progress: number; checkedToday: boolean; active: boolean; badge: { name: string } | null };
+type Challenge = { id: string; title: string; description: string | null; metric: string; target: number; starts_on: string; ends_on: string; joined_at: string | null; completed_at: string | null; members: number; progress: number; checkedToday: boolean; active: boolean; badge: { name: string } | null; author_name: string | null; class_name: string | null };
 
 function Challenges({ focus }: { focus: string | null }) {
   const list = useApi<Challenge[]>('/challenges');
@@ -240,9 +257,16 @@ function Challenges({ focus }: { focus: string | null }) {
             <b>{c.title}</b>
             {c.completed_at ? <span className="badge ok">ukończone</span> : !c.active && <span className="badge">zakończone</span>}
           </div>
-          {c.description && <p className="small" style={{ margin: 0 }}>{c.description}</p>}
+          {(c.author_name || c.class_name) && (
+            <div className="tiny muted">
+              {c.author_name && `trenerka ${c.author_name}`}
+              {c.author_name && c.class_name && ' · '}
+              {c.class_name && `dla grupy ${c.class_name}`}
+            </div>
+          )}
+          {c.description && <p className="small" style={{ margin: 0, whiteSpace: 'pre-line' }}>{c.description}</p>}
           <div className="tiny muted">
-            {c.starts_on.split('-').reverse().join('.')} – {c.ends_on.split('-').reverse().join('.')} · {c.members} uczestniczek {c.badge && `· odznaka „${c.badge.name}”`}
+            {c.starts_on.split('-').reverse().join('.')} – {c.ends_on.split('-').reverse().join('.')} · {c.members} {uczestniczki(c.members)} {c.badge && `· odznaka „${c.badge.name}”`}
           </div>
           {c.joined_at ? (
             <>
@@ -583,3 +607,8 @@ function SessionInvites() {
     </div>
   );
 }
+
+/** 1 osoba · 2–4 osoby · 5+ osób (12–14 też „osób”). */
+const osoby = (n: number) => (n === 1 ? 'osoba' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'osoby' : 'osób');
+/** 1 uczestniczka · 2–4 uczestniczki · 5+ uczestniczek. */
+const uczestniczki = (n: number) => (n === 1 ? 'uczestniczka' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'uczestniczki' : 'uczestniczek');

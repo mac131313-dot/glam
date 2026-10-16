@@ -632,19 +632,25 @@ test('wydarzenie: zmiana godziny nie omija innych zajęć, a stare zapytanie wyg
   const zoneId = opts.zones[0].id;
   const trainerId = opts.trainers[0].id;
   const date = new Date(Date.now() + 15 * 86_400_000).toISOString().slice(0, 10);
-  const free = (await call(magda, R, 'GET', `/api/events/slots?date=${date}&zoneId=${zoneId}&trainerId=${trainerId}&durationMin=60`)).json();
-  const a = free[0].startsAt;
-  const b = new Date(Date.parse(a) + 2 * 3_600_000).toISOString();
+  const otherTrainerId = opts.trainers[1]?.id ?? trainerId;
+  const slots = async (t: string) => (await call(magda, R, 'GET', `/api/events/slots?date=${date}&zoneId=${zoneId}&trainerId=${t}&durationMin=60`)).json() as { startsAt: string }[];
+  const free = await slots(trainerId);
+  const freeOther = new Set((await slots(otherTrainerId)).map((s) => s.startsAt));
+  const at = (iso: string, min: number) => new Date(Date.parse(iso) + min * 60_000).toISOString();
+  // Grafik zależy od dnia tygodnia – szukamy godziny A, przy której A+30 min i A+2 h też są wolne.
+  const a = free.find((s) => free.some((x) => x.startsAt === at(s.startsAt, 30)) && free.some((x) => x.startsAt === at(s.startsAt, 120)) && freeOther.has(at(s.startsAt, 120)))?.startsAt;
+  assert.ok(a, 'wolne A, A+30 min i A+2 h');
+  const b = at(a, 120);
   // Wydarzenie A potwierdzone, a o godzinie B – inne wydarzenie studia w tej samej sali.
   const ev = await call(magda, R, 'POST', '/api/events', { kind: 'birthday', trainerId, zoneId, activity: 'Mat', startsAt: a, durationMin: 60, guests: 6, termsAccepted: true });
   assert.equal(ev.statusCode, 200, ev.body);
   await call(owner, R, 'POST', `/api/staff/events/${ev.json().id}`, { status: 'confirmed' });
-  const other = await call(owner, R, 'POST', '/api/staff/events', { title: 'Warsztat oddechu', trainerId: opts.trainers[1]?.id ?? trainerId, zoneId, activity: 'Stretch', startsAt: b, durationMin: 60, capacity: 8 });
+  const other = await call(owner, R, 'POST', '/api/staff/events', { title: 'Warsztat oddechu', trainerId: otherTrainerId, zoneId, activity: 'Stretch', startsAt: b, durationMin: 60, capacity: 8 });
   assert.equal(other.statusCode, 200, other.body);
   // Przeniesienie A na godzinę B koliduje z warsztatem – musi być odrzucone.
   assert.equal((await call(magda, R, 'POST', `/api/events/${ev.json().id}/client`, { action: 'reschedule', startsAt: b })).statusCode, 409);
   // Przeniesienie o 30 min nachodzi tylko na samo siebie – przechodzi.
-  const half = new Date(Date.parse(a) + 30 * 60_000).toISOString();
+  const half = at(a, 30);
   assert.equal((await call(magda, R, 'POST', `/api/events/${ev.json().id}/client`, { action: 'reschedule', startsAt: half })).statusCode, 200);
 
   // Zapytanie bez odpowiedzi wygasa po terminie.

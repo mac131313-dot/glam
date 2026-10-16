@@ -1,6 +1,6 @@
 // Studio SS&G: prawdziwy grafik, cennik i godziny recepcji (materiały studia z 2026-10-13).
 // Dwie sale z osobnymi grafikami (reformery i zajęcia grupowe) oraz siłownia z wejściem QR.
-import { localParts, zonedToUtc, type Pool, type ProductRules } from '@glam/core';
+import { addDays, localParts, zonedToUtc, type Pool, type ProductRules } from '@glam/core';
 import type { Db } from './db.ts';
 import { StudioScope } from './scope.ts';
 import { bookSession } from './services/booking.ts';
@@ -40,6 +40,8 @@ type Helpers = {
 };
 
 const DAY = 86_400_000;
+/** Dni wstecz z oddechem Julii (demo kalendarza kwiatków): seria wczoraj–przedwczoraj–3 dni temu, potem luźniej. */
+const BREATH_DEMO_DAYS = [1, 2, 3, 5, 6, 8, 9, 10, 13, 15, 16, 20, 22, 23, 27, 30, 34];
 
 export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpers) {
   const S = SSG_STUDIO;
@@ -247,13 +249,20 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
     if (next) bookSession(scope, studio, id, next.id, now);
     return { id, passId };
   };
-  client(SSG.julia, 'Julia', 'Mocne biodra i lepsza postawa', 'ss_ref8', 'ss_hips', 'ss_flow');
+  const julia = client(SSG.julia, 'Julia', 'Mocne biodra i lepsza postawa', 'ss_ref8', 'ss_hips', 'ss_flow');
   const aleksandra = client(SSG.aleksandra, 'Aleksandra', 'Elastyczność i rozciągnięte plecy', 'ss_ref10', 'ss_flow', 'ss_hips', 3);
   const michalina = client(SSG.michalina, 'Michalina', 'Silny brzuch po ciąży', 'ss_ref8', 'ss_flow', 'ss_barre_stretch');
   const natalia = client(SSG.natalia, 'Natalia', 'Powrót do formy po kontuzji kolana', 'ss_ref4', 'ss_core', 'ss_classic_basic', 2);
   const zuzanna = client(SSG.zuzanna, 'Zuzanna', 'Szpagat przed wakacjami', 'ss_flexy', 'ss_split', 'ss_split');
-  client(SSG.karolina, 'Karolina', 'Mniej stresu i spokojniejszy sen', 'ss_yb8', 'ss_yoga_stretch', 'ss_barre_glow', 5);
-  client(SSG.paulina, 'Paulina', 'Silne ramiona i pewność w hamaku', 'ss_aerial8', 'ss_aerial_pilates', 'ss_aerial_stretch');
+  const karolina = client(SSG.karolina, 'Karolina', 'Mniej stresu i spokojniejszy sen', 'ss_yb8', 'ss_yoga_stretch', 'ss_barre_glow', 5);
+  const paulina = client(SSG.paulina, 'Paulina', 'Silne ramiona i pewność w hamaku', 'ss_aerial8', 'ss_aerial_pilates', 'ss_aerial_stretch');
+
+  // ——— Rytuał oddechu Julii: kilka tygodni kwiatków w kalendarzu „Dla mnie”, seria 3 dni; dziś jeszcze czeka ———
+  for (const d of BREATH_DEMO_DAYS)
+    run(
+      "INSERT INTO mindful_logs (id, studio_id, user_id, kind, ref, minutes, completed_at) VALUES (?, ?, ?, 'breath', 'calm', 3, ?)",
+      crypto.randomUUID(), S, julia.id, iso(new Date(now.getTime() - d * DAY)),
+    );
 
   // ——— Dziś na liście: Aleksandra na Reformerze po ukraińsku, Michalina na Girly Pilates ———
   // Zapis wprost (bez okna zapisów): poranne zajęcia mogą już trwać, gdy dane demo się wgrywają.
@@ -307,6 +316,76 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
     iso(new Date(now.getTime() - 2 * 3_600_000)),
     iso(new Date(now.getTime() - 3_600_000)),
     iso(zonedToUtc(today, '17:00', studio.timezone)),
+  );
+
+  // ——— Grupy (Razem → Grupy): dwie wokół zajęć studia, z pierwszymi wiadomościami ———
+  const group = (id: string, name: string, description: string, members: string[], posts: [string, string, number][]) => {
+    run('INSERT INTO groups (id, studio_id, name, description, approval, created_at) VALUES (?, ?, ?, ?, 1, ?)', id, S, name, description, iso(new Date(now.getTime() - 20 * DAY)));
+    members.forEach((u, i) => run('INSERT INTO group_members (studio_id, group_id, user_id, joined_at) VALUES (?, ?, ?, ?)', S, id, u, iso(new Date(now.getTime() - (18 - i * 3) * DAY))));
+    posts.forEach(([author, body, hoursAgo], i) =>
+      run("INSERT INTO posts (id, studio_id, author_id, group_id, kind, body, created_at) VALUES (?, ?, ?, ?, 'post', ?, ?)", `${id}_p${i + 1}`, S, author, id, body, iso(new Date(now.getTime() - hoursAgo * 3_600_000))),
+    );
+  };
+  group('ss_g_morning', 'Reformer o poranku', 'Pilates Klasyczny i Core & Mobility przed pracą – motywujemy się do wczesnych zajęć.', [julia.id, natalia.id, aleksandra.id], [
+    [natalia.id, 'Kto będzie jutro na Pilatesie Klasycznym? Pierwszy raz idę tak wcześnie 🙈', 30],
+    [julia.id, 'Ja! Weź skarpetki antypoślizgowe i nic się nie martw – po 10 minutach budzi się całe ciało ☀️', 28],
+    [aleksandra.id, 'Polecam po zajęciach matchę w recepcji, idealny start dnia 🍵', 5],
+  ]);
+  group('ss_g_split', 'Droga do szpagatu', 'Kurs Szpagatu i Joga Stretch – dzielimy się postępami i dobrym słowem.', [zuzanna.id, karolina.id, paulina.id], [
+    [zuzanna.id, 'Dziś pierwszy raz dotknęłam podłogi w szpagacie wzdłużnym! Pół roku temu brakowało 20 cm 🥹', 22],
+    [paulina.id, 'Gratulacje!! Ja wciąż walczę z poprzecznym, ale Aerial Stretch bardzo pomaga.', 20],
+    [karolina.id, 'Mój sposób: 10 minut rozciągania wieczorem z kwiatkiem w „Dla mnie” – i od razu lepiej śpię 🌸', 3],
+  ]);
+
+  // Dwie prośby o dołączenie czekające w panelu (Społeczność → Grupy).
+  const request = (groupId: string, userId: string, message: string, hoursAgo: number) =>
+    run("INSERT INTO group_requests (studio_id, group_id, user_id, message, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)", S, groupId, userId, message, iso(new Date(now.getTime() - hoursAgo * 3_600_000)));
+  request('ss_g_morning', michalina.id, 'Chcę wrócić do porannych treningów przed pracą – razem łatwiej się zmobilizować 🙂', 6);
+  request('ss_g_split', magdalena, 'Od dawna marzę o szpagacie, a rozciąganie po pracy bardzo mnie uspokaja 🌿', 2);
+
+  // ——— Wyzwanie od Weroniki dla grupy „Reformer w języku ukraińskim” ———
+  // Julia i Natalia zapisane na najbliższy reformer po ukraińsku (Aleksandra jest na dzisiejszym).
+  const nextUa = scope.get<{ id: string }>(
+    "SELECT id FROM class_sessions WHERE studio_id = $studio AND class_type_id = 'ss_ua' AND status = 'scheduled' AND starts_at > $min ORDER BY starts_at LIMIT 1",
+    { min: iso(new Date(now.getTime() + 24 * 3_600_000)) },
+  );
+  if (nextUa)
+    for (const c of [julia, natalia]) {
+      scope.run(
+        "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'booked', $t, $t)",
+        { id: crypto.randomUUID(), s: nextUa.id, u: c.id, p: c.passId, t: iso(now) },
+      );
+      consumeEntry(scope, loadPass(scope, c.passId)!, 'main');
+    }
+  run(
+    "INSERT INTO challenges (id, studio_id, title, description, metric, target, starts_on, ends_on, author_id, class_type_id, created_at) VALUES ('ss_ch_home10', ?, '10 serii w domu', ?, 'checkins', 10, ?, ?, ?, 'ss_ua', ?)",
+    S,
+    'Przed każdym treningiem zrób w domu jedną serię: 10 przysiadów, 10 mostków biodrowych i 10 martwych robaków. Odhacz w aplikacji – 10 serii do końca wyzwania.\n\nПеред кожним тренуванням зроби вдома одну серію і відміть її в застосунку.',
+    addDays(today, -3),
+    addDays(today, 25),
+    T.weronika,
+    iso(new Date(now.getTime() - 3 * DAY)),
+  );
+  const joined: [string, number][] = [[aleksandra.id, 3], [julia.id, 1], [natalia.id, 2]];
+  for (const [u, done] of joined) {
+    run("INSERT INTO challenge_members (studio_id, challenge_id, user_id, joined_at) VALUES (?, 'ss_ch_home10', ?, ?)", S, u, iso(new Date(now.getTime() - 3 * DAY)));
+    for (let d = 1; d <= done; d++) run("INSERT INTO challenge_checkins (studio_id, challenge_id, user_id, date) VALUES (?, 'ss_ch_home10', ?, ?)", S, u, addDays(today, -d));
+  }
+
+  // ——— Kartki po pierwszym miesiącu: Julia i Michalina są w studiu od 30 dni ———
+  // Propozycja treści do przepisania odręcznie – trenerka i tak pisze po swojemu.
+  const card = (id: string, clientId: string, trainerId: string, draft: string) =>
+    run(
+      "INSERT INTO card_tasks (id, studio_id, trainer_id, client_id, due_on, delivery, status, draft, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'pickup', 'todo', ?, ?, ?)",
+      id, S, trainerId, clientId, localParts(new Date(now.getTime() + 3 * DAY), studio.timezone).date, draft, iso(now), iso(now),
+    );
+  card(
+    'ss_ct_julia', julia.id, T.magda,
+    'Julio, minął Twój pierwszy miesiąc z nami – gratuluję! Każde wejście na reformer to krok do mocniejszych bioder i lepszej postawy, a Ty robisz te kroki regularnie. Dziękuję, że mi zaufałaś i dajesz sobie ten czas. Do zobaczenia na sali! Magda',
+  );
+  card(
+    'ss_ct_michalina', michalina.id, T.weronika,
+    'Michalino, cały miesiąc treningów za Tobą – brawo! Po ciąży to wymaga cierpliwości, a Ty przychodzisz i robisz swoje, spokojnie i konsekwentnie. Dziękuję za zaufanie i za każdą godzinę, którą dajesz sobie na sali. Trzymam kciuki za kolejny miesiąc! Weronika',
   );
 
   // ——— Sklep (z Instagrama studia, ceny od studia 2026-10-16) ———

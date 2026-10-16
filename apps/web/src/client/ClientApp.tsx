@@ -7,7 +7,7 @@ import { Icon, type IconName } from '../icons.tsx';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { BreathPlayer, type BreathRequest } from './BreathPlayer.tsx';
-import { Spinner, Watermark } from '../ui.tsx';
+import { Spinner } from '../ui.tsx';
 import { Community } from './Community.tsx';
 import { ForMe } from './ForMe.tsx';
 import { Profile } from './Profile.tsx';
@@ -147,8 +147,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
 
   return (
     <Ctx.Provider value={ctx}>
-      <div className="phone with-watermark" data-tab={tab}>
-        <Watermark src={studio.look?.watermark} />
+      <div className="phone" data-tab={tab}>
         {studio.theme?.effect === 'snow' && shouldSnow() && <Snowfall />}
         <header className="topbar">
           <button className="studio-chip" onClick={props.onSwitchStudio} aria-label={`Studio ${studio.name}. Zmień studio`}>

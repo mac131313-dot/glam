@@ -185,20 +185,6 @@ export function Start() {
         <p className="small muted" style={{ margin: 0 }}>{home.week.message}</p>
       </section>
 
-      {(home.reward || home.loyalty) && (
-        <button className="card flat row between" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => open('loyalty')}>
-          <span>
-            {home.loyalty && (
-              <span className="card-title" style={{ display: 'block' }}>
-                Poziom {home.loyalty.current.name} · {home.loyalty.points} pkt
-              </span>
-            )}
-            {home.reward && <span className="small muted">{rewardCounterCopy(home.reward.left)} ({home.reward.item.toLowerCase()})</span>}
-          </span>
-          <Icon name="chevron" size={18} />
-        </button>
-      )}
-
       {hasFeature(studio, 'shop') && (
         <button className="card flat row between" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => open('shop')}>
           <span>
@@ -220,7 +206,7 @@ export function Start() {
         </section>
       )}
 
-      {(home.nps || home.survey || home.locker > 0 || home.invites > 0 || home.quizDue || home.challenge) && (
+      {(home.nps || home.survey || home.invites > 0 || home.quizDue || home.challenge) && (
         <section className="stack" style={{ gap: 8 }}>
           {home.survey && (
             <button className="card soft" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open(`survey/${home.survey!.id}`)}>
@@ -232,11 +218,6 @@ export function Start() {
             <button className="card flat" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open(`nps/${home.nps!.id}`)}>
               <b>Jak Ci u nas?</b>
               <div className="small muted">Dwa kliknięcia, a bardzo nam pomogą.</div>
-            </button>
-          )}
-          {home.locker > 0 && (
-            <button className="card flat" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open('locker')}>
-              <b>Coś czeka w Twojej szafce 🎁</b>
             </button>
           )}
           {home.invites > 0 && (
@@ -271,15 +252,20 @@ export function Start() {
       <hr className="hairline" />
 
       <div className="stack" style={{ gap: 0 }}>
+        {/* Od najczęściej potrzebnego: kontakt (czat, telefon), potem dodatki. Kod wejścia – w Profilu i na karcie w dniu zajęć. */}
         {[
-          { label: 'Zaproś znajomą', hint: 'Wejściówka w prezencie', to: 'community' as const },
+          // Jedna pozycja: czat z recepcją jest na górze strony Pomocy; licznik nieprzeczytanych zostaje tutaj.
+          { label: home.chatUnread ? `Pomoc (${home.chatUnread})` : 'Pomoc', hint: 'Czat z recepcją, pytania i regulamin', to: 'faq' as const },
+          ...(studio.phone ? [{ label: 'Zadzwoń do studia', hint: studio.phone, to: 'phone' as const }] : []),
           { label: 'Trzy minuty oddechu', hint: 'Rytm 4–6, prowadzi aplikacja', to: 'breath' as const },
           ...(home.eventsEnabled ? [{ label: 'Zorganizuj wydarzenie w naszym studiu', hint: 'Urodziny, babski wieczór, trening w prezencie', to: 'event-new' as const }] : []),
-          { label: 'Mój kod wejścia', hint: 'QR do recepcji i bramki', to: 'checkin' as const },
-          { label: home.chatUnread ? `Czat z recepcją (${home.chatUnread})` : 'Czat z recepcją', hint: 'Pytania, zmiany, pomoc', to: 'chat' as const },
-          { label: 'Pomoc', hint: 'Najczęstsze pytania i regulamin', to: 'faq' as const },
-        ].map((l) => (
-          <button key={l.label} className="row between" onClick={() => (l.to === 'breath' ? openBreath({ patternId: 'calm', minutes: 3 }) : l.to === 'community' ? go(l.to) : open(l.to))} style={{ background: 'none', border: 0, borderBottom: '1px solid var(--line)', padding: '18px 0', cursor: 'pointer', textAlign: 'left' }}>
+        ].map((l, i, all) => (
+          <button
+            key={l.label}
+            className="row between"
+            onClick={() => (l.to === 'breath' ? openBreath({ patternId: 'calm', minutes: 3 }) : l.to === 'phone' ? (location.href = `tel:${studio.phone!.replace(/\s/g, '')}`) : open(l.to))}
+            style={{ background: 'none', border: 0, borderBottom: i < all.length - 1 ? '1px solid var(--line)' : 0, padding: '18px 0', cursor: 'pointer', textAlign: 'left' }}
+          >
             <span>
               <span className="card-title" style={{ display: 'block' }}>{l.label}</span>
               <span className="small muted">{l.hint}</span>
@@ -287,15 +273,6 @@ export function Start() {
             <Icon name="chevron" size={18} />
           </button>
         ))}
-        {studio.phone && (
-          <a className="row between" href={`tel:${studio.phone.replace(/\s/g, '')}`} style={{ padding: '18px 0', textDecoration: 'none' }}>
-            <span>
-              <span className="card-title" style={{ display: 'block' }}>Zadzwoń do studia</span>
-              <span className="small muted">{studio.phone}</span>
-            </span>
-            <Icon name="chevron" size={18} />
-          </a>
-        )}
       </div>
 
       {home.welcome && !popupDismissed && (
