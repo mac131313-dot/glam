@@ -64,9 +64,6 @@ function LoyaltyPage() {
           <div className="card-title">{data.reward.item}</div>
           <Progress value={studio.reward.every - data.reward.left} max={studio.reward.every} label="Postęp do nagrody" />
           <div className="small muted">{rewardCounterCopy(data.reward.left)}</div>
-          <button className="link small" style={{ alignSelf: 'flex-start' }} onClick={() => open('locker')}>
-            Moja szafka
-          </button>
         </section>
       )}
 

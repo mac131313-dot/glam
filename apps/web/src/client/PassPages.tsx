@@ -114,7 +114,7 @@ function Passes() {
       )}
 
       <button className="btn ghost" onClick={() => open('payments')}>
-        Płatności i faktury
+        Historia płatności
       </button>
       {freeze && <FreezeSheet pass={freeze} onClose={() => setFreeze(null)} onDone={passes.reload} />}
     </div>

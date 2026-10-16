@@ -9,9 +9,11 @@ type T = 'feed' | 'groups' | 'challenges' | 'invites' | 'music';
 
 export function Community() {
   const { studio } = useClient();
+  // Kolejność: grupy, wyzwania, feed – pierwsza dostępna zakładka otwiera się domyślnie.
   const options: [T, string][] = [
-    ...(hasFeature(studio, 'community') ? ([['feed', 'Feed'], ['groups', 'Grupy']] as [T, string][]) : []),
+    ...(hasFeature(studio, 'community') ? ([['groups', 'Grupy']] as [T, string][]) : []),
     ...(hasFeature(studio, 'challenges') ? ([['challenges', 'Wyzwania']] as [T, string][]) : []),
+    ...(hasFeature(studio, 'community') ? ([['feed', 'Feed']] as [T, string][]) : []),
     ['invites', 'Zaproś znajomą'],
     ...(hasFeature(studio, 'music') ? ([['music', 'Muzyka']] as [T, string][]) : []),
   ];

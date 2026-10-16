@@ -618,6 +618,11 @@ function Faq() {
   const { studio, open } = useClient();
   return (
     <div className="stack-lg">
+      {/* Kontakt na górze – czat z recepcją to główna droga do pomocy (Start ma jedną pozycję „Pomoc”). */}
+      <section>
+        <ListRow title="Czat z recepcją" hint="Pytania, zmiany – odpowiadamy w godzinach recepcji" onClick={() => open('chat')} />
+        {studio.phone && <ListRow title="Zadzwoń do studia" hint={studio.phone} onClick={() => (location.href = `tel:${studio.phone.replace(/\s/g, '')}`)} />}
+      </section>
       <section className="stack" style={{ gap: 0 }}>
         {studio.support.faq.map((f) => (
           <details key={f.q} className="list-row" style={{ display: 'block' }}>
@@ -637,10 +642,6 @@ function Faq() {
             </div>
           );
         })}
-      </section>
-      <section>
-        <ListRow title="Czat z recepcją" hint="Odpowiadamy w godzinach pracy recepcji" onClick={() => open('chat')} />
-        {studio.phone && <ListRow title="Zadzwoń do studia" hint={studio.phone} onClick={() => (location.href = `tel:${studio.phone.replace(/\s/g, '')}`)} />}
       </section>
       {studio.regulations && (
         <details>

@@ -5,7 +5,7 @@ import { can, type Role } from '@glam/core';
 import { api, fmtDay, useApi } from '../api.ts';
 import { Empty, Select, Spinner, useAction } from '../ui.tsx';
 
-type CardTask = { id: string; client_name: string; trainer_name: string | null; due_on: string; delivery: string; status: string; goal: string | null; address: { line: string; city: string; zip: string } | null };
+type CardTask = { id: string; client_name: string; trainer_name: string | null; due_on: string; delivery: string; status: string; draft: string | null; goal: string | null; address: { line: string; city: string; zip: string } | null };
 type LockerItem = { id: string; client_name: string; title: string; size: string | null; delivery: string | null; status: string; created_at: string; address: { line: string; city: string; zip: string } | null };
 
 const CARD: Record<string, string> = { todo: 'do napisania', written: 'napisana', sent: 'wysłana', collected: 'odebrana' };
@@ -19,7 +19,7 @@ export default function Gifts({ roles }: { roles: Role[] }) {
   return (
     <div className="stack-lg">
       <div>
-        <h1>Kartki i nagrody</h1>
+        <h1>Kartki i vouchery</h1>
         <p className="muted" style={{ margin: 0 }}>Odręczna kartka po pierwszym miesiącu – 3–4 zdania od trenerki, bez szablonu.</p>
       </div>
       <section className="stack">
@@ -39,6 +39,12 @@ export default function Gifts({ roles }: { roles: Role[] }) {
                 {c.address && (
                   <span className="tiny" style={{ display: 'block' }}>
                     {c.address.line}, {c.address.zip} {c.address.city}
+                  </span>
+                )}
+                {c.draft && (
+                  <span className="card-draft">
+                    <span className="tiny muted">Propozycja treści – przepisz odręcznie, po swojemu</span>
+                    <span className="serif">{c.draft}</span>
                   </span>
                 )}
               </span>
@@ -65,10 +71,10 @@ export default function Gifts({ roles }: { roles: Role[] }) {
         <p className="tiny muted">Adres widać tylko za zgodą klientki. Koszt kartki i wysyłki – budżet marketingowy studia.</p>
       </section>
       {manage && <Vouchers />}
-      {locker.data && (
+      {/* Kolejka nagród z „Mojej szafki” – tylko gdy coś czeka; pusta nie zajmuje miejsca. */}
+      {locker.data && locker.data.length > 0 && (
         <section className="stack">
-          <div className="eyebrow">Kolejka nagród i prezentów</div>
-          {locker.data.length === 0 && <Empty>Kolejka pusta.</Empty>}
+          <div className="eyebrow">Nagrody do przygotowania</div>
           {locker.data.map((l) => (
             <div key={l.id} className="card flat row between" style={{ alignItems: 'flex-start' }}>
               <span>

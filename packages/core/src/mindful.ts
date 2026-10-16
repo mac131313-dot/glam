@@ -258,6 +258,8 @@ export type BreathRitual = {
   week: boolean[];
   /** wszystkie dni z chwilą dla siebie */
   total: number;
+  /** dni z oddechem lub medytacją (YYYY-MM-DD, rosnąco) – do kalendarza kwiatków */
+  days: string[];
 };
 
 /** Codzienny rytuał oddechu z listy dni (YYYY-MM-DD, w strefie studia). */
@@ -266,7 +268,7 @@ export function breathRitual(days: string[], today: string): BreathRitual {
   let streak = 0;
   for (let d = set.has(today) ? today : addDays(today, -1); set.has(d); d = addDays(d, -1)) streak++;
   const monday = weekStart(today);
-  return { today: set.has(today), streak, week: Array.from({ length: 7 }, (_, i) => set.has(addDays(monday, i))), total: set.size };
+  return { today: set.has(today), streak, week: Array.from({ length: 7 }, (_, i) => set.has(addDays(monday, i))), total: set.size, days: [...set].sort() };
 }
 
 /** Myśl na dziś po sesji – jedna na dzień, ta sama przez cały dzień. */

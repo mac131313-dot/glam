@@ -220,16 +220,33 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
     const { scope, studio, user } = ctx(req);
     assertFeature(studio, 'community');
     return scope.all(
-      `SELECT g.id, g.name, g.description, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members,
-              EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.user_id = $u) AS joined
+      `SELECT g.id, g.name, g.description, g.approval, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members,
+              EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.user_id = $u) AS joined,
+              EXISTS (SELECT 1 FROM group_requests r WHERE r.group_id = g.id AND r.user_id = $u AND r.status = 'pending') AS requested
        FROM groups g WHERE g.studio_id = $studio ORDER BY g.name`,
       { u: user.id },
     );
   });
 
-  app.post<{ Params: { id: string } }>('/api/groups/:id/join', member, async (req) => {
+  // Grupa bez akceptacji – dołączenie od razu; z akceptacją (approval = 1) – prośba, którą studio rozpatruje w panelu.
+  app.post<{ Params: { id: string }; Body: { message?: string } }>('/api/groups/:id/join', member, async (req) => {
     const { scope, user } = ctx(req);
-    if (!scope.get('SELECT 1 FROM groups WHERE studio_id = $studio AND id = $id', { id: req.params.id })) throw notFound();
+    const g = scope.get<{ approval: number }>('SELECT approval FROM groups WHERE studio_id = $studio AND id = $id', { id: req.params.id });
+    if (!g) throw notFound();
+    if (scope.get('SELECT 1 FROM group_members WHERE studio_id = $studio AND group_id = $g AND user_id = $u', { g: req.params.id, u: user.id })) return { ok: true };
+    if (g.approval) {
+      const message = String(req.body?.message ?? '').trim().slice(0, 300) || null;
+      if (message) {
+        const m = moderate(message, { maxLength: 300, allowLinks: false });
+        if (!m.ok) throw badRequest(MODERATION_COPY[m.reason]);
+      }
+      scope.run(
+        `INSERT INTO group_requests (studio_id, group_id, user_id, message, status, created_at) VALUES ($studio, $g, $u, $m, 'pending', $now)
+         ON CONFLICT (group_id, user_id) DO UPDATE SET message = $m, status = 'pending', created_at = $now, decided_at = NULL, decided_by = NULL`,
+        { g: req.params.id, u: user.id, m: message, now: nowIso() },
+      );
+      return { requested: true, message: 'Prośba wysłana – studio da znać, gdy ją przejrzy 🌸' };
+    }
     scope.run('INSERT OR IGNORE INTO group_members (studio_id, group_id, user_id, joined_at) VALUES ($studio, $g, $u, $now)', { g: req.params.id, u: user.id, now: nowIso() });
     return { ok: true };
   });
@@ -237,14 +254,45 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
   app.post<{ Params: { id: string } }>('/api/groups/:id/leave', member, async (req) => {
     const { scope, user } = ctx(req);
     scope.run('DELETE FROM group_members WHERE studio_id = $studio AND group_id = $g AND user_id = $u', { g: req.params.id, u: user.id });
+    // Wycofanie prośby, która jeszcze czeka.
+    scope.run("DELETE FROM group_requests WHERE studio_id = $studio AND group_id = $g AND user_id = $u AND status = 'pending'", { g: req.params.id, u: user.id });
     return { ok: true };
   });
 
-  app.post<{ Body: { name: string; description?: string } }>('/api/staff/groups', requirePerm(db, 'challenges.edit', 'community.moderate'), async (req) => {
+  // Prośby o dołączenie – akceptacja dodaje do grupy i wysyła klientce powiadomienie.
+  app.post<{ Params: { groupId: string; userId: string }; Body: { action: 'accept' | 'decline' } }>(
+    '/api/staff/group-requests/:groupId/:userId',
+    requirePerm(db, 'community.moderate'),
+    async (req) => {
+      const { scope, studio, user } = ctx(req);
+      const action = req.body?.action;
+      if (action !== 'accept' && action !== 'decline') throw badRequest('Akceptuj albo odrzuć.');
+      const r = scope.get<{ name: string }>(
+        "SELECT g.name FROM group_requests r JOIN groups g ON g.id = r.group_id WHERE r.studio_id = $studio AND r.group_id = $g AND r.user_id = $u AND r.status = 'pending'",
+        { g: req.params.groupId, u: req.params.userId },
+      );
+      if (!r) throw notFound('Ta prośba została już rozpatrzona.');
+      scope.tx(() => {
+        scope.run('UPDATE group_requests SET status = $s, decided_at = $now, decided_by = $me WHERE studio_id = $studio AND group_id = $g AND user_id = $u', {
+          s: action === 'accept' ? 'accepted' : 'declined',
+          now: nowIso(),
+          me: user.id,
+          g: req.params.groupId,
+          u: req.params.userId,
+        });
+        if (action === 'accept')
+          scope.run('INSERT OR IGNORE INTO group_members (studio_id, group_id, user_id, joined_at) VALUES ($studio, $g, $u, $now)', { g: req.params.groupId, u: req.params.userId, now: nowIso() });
+      });
+      if (action === 'accept') notify(scope, { userId: req.params.userId, category: 'community', tz: studio.timezone, title: studio.name, body: `Witaj w grupie „${r.name}” 🌸`, action: 'community' });
+      return { message: action === 'accept' ? 'Dodana do grupy' : 'Prośba odrzucona' };
+    },
+  );
+
+  app.post<{ Body: { name: string; description?: string; approval?: boolean } }>('/api/staff/groups', requirePerm(db, 'challenges.edit', 'community.moderate'), async (req) => {
     const { scope } = ctx(req);
     if (!req.body?.name?.trim()) throw badRequest('Podaj nazwę grupy.');
     const gid = id();
-    scope.run('INSERT INTO groups (id, studio_id, name, description, created_at) VALUES ($id, $studio, $n, $d, $now)', { id: gid, n: req.body.name.trim().slice(0, 60), d: req.body.description?.slice(0, 300) ?? null, now: nowIso() });
+    scope.run('INSERT INTO groups (id, studio_id, name, description, approval, created_at) VALUES ($id, $studio, $n, $d, $a, $now)', { id: gid, n: req.body.name.trim().slice(0, 60), d: req.body.description?.slice(0, 300) ?? null, a: Number(!!req.body.approval), now: nowIso() });
     return { id: gid };
   });
 
@@ -252,6 +300,7 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
     const { scope } = ctx(req);
     scope.tx(() => {
       scope.run('DELETE FROM group_members WHERE studio_id = $studio AND group_id = $id', { id: req.params.id });
+      scope.run('DELETE FROM group_requests WHERE studio_id = $studio AND group_id = $id', { id: req.params.id });
       scope.run('UPDATE posts SET group_id = NULL, hidden = 1 WHERE studio_id = $studio AND group_id = $id', { id: req.params.id });
       scope.run('DELETE FROM groups WHERE studio_id = $studio AND id = $id', { id: req.params.id });
     });
@@ -261,14 +310,21 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
   // ——— Wyzwania (#27) ———
 
   app.get('/api/challenges', member, async (req) => {
-    const { scope, studio, user } = ctx(req);
+    const { scope, studio, user, roles } = ctx(req);
     assertFeature(studio, 'challenges');
     const today = localParts(new Date(), studio.timezone).date;
+    // Wyzwanie dla konkretnych zajęć widzą: zespół, uczestniczki tych zajęć (zapis w ostatnich 60 dniach albo przyszły) i osoby już zapisane.
     return scope
-      .all<{ id: string; title: string; description: string | null; metric: string; target: number; starts_on: string; ends_on: string; badge_code: string | null; joined_at: string | null; completed_at: string | null; members: number }>(
-        `SELECT c.*, m.joined_at, m.completed_at, (SELECT COUNT(*) FROM challenge_members x WHERE x.challenge_id = c.id) AS members
-         FROM challenges c LEFT JOIN challenge_members m ON m.challenge_id = c.id AND m.user_id = $u WHERE c.studio_id = $studio AND c.ends_on >= $past ORDER BY c.starts_on DESC`,
-        { u: user.id, past: addDays(today, -30) },
+      .all<{ id: string; title: string; description: string | null; metric: string; target: number; starts_on: string; ends_on: string; badge_code: string | null; joined_at: string | null; completed_at: string | null; members: number; author_name: string | null; class_name: string | null }>(
+        `SELECT c.*, m.joined_at, m.completed_at, (SELECT COUNT(*) FROM challenge_members x WHERE x.challenge_id = c.id) AS members, a.name AS author_name, ct.name AS class_name
+         FROM challenges c LEFT JOIN challenge_members m ON m.challenge_id = c.id AND m.user_id = $u
+         LEFT JOIN users a ON a.id = c.author_id LEFT JOIN class_types ct ON ct.id = c.class_type_id
+         WHERE c.studio_id = $studio AND c.ends_on >= $past
+           AND (c.class_type_id IS NULL OR $staff = 1 OR m.user_id IS NOT NULL OR EXISTS (
+             SELECT 1 FROM bookings b JOIN class_sessions s ON s.id = b.session_id
+             WHERE b.studio_id = $studio AND b.user_id = $u AND s.class_type_id = c.class_type_id AND b.status IN ('booked', 'waitlist', 'attended') AND s.starts_at >= $since))
+         ORDER BY c.starts_on DESC`,
+        { u: user.id, past: addDays(today, -30), staff: Number(isStaff(roles)), since: new Date(Date.now() - 60 * 86_400_000).toISOString() },
       )
       .map((c) => ({
         ...c,
@@ -281,8 +337,17 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
 
   app.post<{ Params: { id: string } }>('/api/challenges/:id/join', member, async (req) => {
     const { scope, user, studio } = ctx(req);
-    const ch = scope.get<{ ends_on: string }>('SELECT ends_on FROM challenges WHERE studio_id = $studio AND id = $id', { id: req.params.id });
+    const ch = scope.get<{ ends_on: string; class_type_id: string | null }>('SELECT ends_on, class_type_id FROM challenges WHERE studio_id = $studio AND id = $id', { id: req.params.id });
     if (!ch) throw notFound();
+    // Wyzwanie dla konkretnych zajęć – tylko dla ich uczestniczek (jak na liście).
+    if (
+      ch.class_type_id &&
+      !scope.get(
+        "SELECT 1 FROM bookings b JOIN class_sessions s ON s.id = b.session_id WHERE b.studio_id = $studio AND b.user_id = $u AND s.class_type_id = $ct AND b.status IN ('booked', 'waitlist', 'attended') AND s.starts_at >= $since",
+        { u: user.id, ct: ch.class_type_id, since: new Date(Date.now() - 60 * 86_400_000).toISOString() },
+      )
+    )
+      throw notFound();
     if (ch.ends_on < localParts(new Date(), studio.timezone).date) throw conflict('ended', 'To wyzwanie już się zakończyło.');
     scope.run('INSERT OR IGNORE INTO challenge_members (studio_id, challenge_id, user_id, joined_at) VALUES ($studio, $c, $u, $now)', { c: req.params.id, u: user.id, now: nowIso() });
     return { message: 'Dołączyłaś. W swoim tempie 🌿' };
@@ -346,7 +411,13 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/staff/community', requirePerm(db, 'community.moderate', 'challenges.edit'), async (req) => {
     const { scope } = ctx(req);
     return {
-      groups: scope.all('SELECT g.id, g.name, g.description, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members FROM groups g WHERE g.studio_id = $studio ORDER BY g.name'),
+      groups: scope.all('SELECT g.id, g.name, g.description, g.approval, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members FROM groups g WHERE g.studio_id = $studio ORDER BY g.name'),
+      requests: scope.all(
+        `SELECT r.group_id, g.name AS group_name, r.user_id, u.name, r.message, r.created_at, ms.goal
+         FROM group_requests r JOIN groups g ON g.id = r.group_id JOIN users u ON u.id = r.user_id
+         LEFT JOIN memberships ms ON ms.studio_id = r.studio_id AND ms.user_id = r.user_id AND ms.role = 'client'
+         WHERE r.studio_id = $studio AND r.status = 'pending' ORDER BY r.created_at`,
+      ),
       challenges: scope.all(
         'SELECT c.*, (SELECT COUNT(*) FROM challenge_members m WHERE m.challenge_id = c.id) AS members, (SELECT COUNT(*) FROM challenge_members m WHERE m.challenge_id = c.id AND m.completed_at IS NOT NULL) AS done FROM challenges c WHERE c.studio_id = $studio ORDER BY c.starts_on DESC',
       ),

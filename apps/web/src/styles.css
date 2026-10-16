@@ -119,6 +119,14 @@ button.card:hover { transform: translateY(-1px); }
 .day b { font-size: 1.2rem; color: var(--ink); font-weight: 500; letter-spacing: -0.02em; }
 .day[aria-pressed='true'] { background: var(--accent); color: var(--accent-ink); }
 .day[aria-pressed='true'] b { color: var(--accent-ink); }
+/* Pasek dni w grafiku: kółka, wybrany dzień w obręczy z kropek zamiast wypełnienia. */
+.day.ring { position: relative; flex: none; width: 56px; height: 56px; padding: 0; justify-content: center; border-radius: 50%; }
+.day.ring { font-size: 0.58rem; letter-spacing: 0.04em; gap: 0; line-height: 1.1; }
+.day.ring b { font-size: 1.02rem; line-height: 1.1; }
+.day.ring[aria-pressed='true'] { background: transparent; color: var(--ink); }
+.day.ring[aria-pressed='true'] b { color: var(--ink); }
+.day.ring svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; stroke-dasharray: 0 1; opacity: 0; transform: rotate(-90deg) scale(0.9); transition: opacity 0.25s var(--ease), transform 0.4s var(--ease); pointer-events: none; }
+.day.ring[aria-pressed='true'] svg { opacity: 1; transform: rotate(0deg) scale(1); }
 
 /* Karta zajęć ze zdjęciem (ClassCover). Zdjęcie przyciemnione płasko – bez gradientów koloru. */
 .cover { position: relative; display: block; width: 100%; min-height: 176px; padding: 0; border: 0; border-radius: var(--radius); overflow: hidden; background: var(--soft); color: var(--ink); font: inherit; text-align: left; box-shadow: var(--shadow); isolation: isolate; }
@@ -621,11 +629,41 @@ html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
 
 /* Sesja: żywa scena z piwonią na całym ekranie, słowo fazy nad kwiatem, bez licznika czasu. */
 .player-photo { background: #fff0f4; color: var(--ink); }
-.player-photo .breath-stage { justify-content: flex-start; padding-top: 9vh; }
-.player-photo .breath-word { color: #9b4a6a; text-shadow: 0 0 18px rgb(255 255 255 / 0.9); font-size: 1.9rem; }
-.player-photo .breath-prompt { color: #8c6474; text-shadow: 0 0 14px rgb(255 255 255 / 0.9); }
+/* Kwiat wyżej, napisy pod nim – tuż nad paskiem przycisków. */
+.player-photo .peony-full .peony-stage { top: 48%; }
+.player-photo .breath-stage { justify-content: flex-end; gap: 4px; padding-bottom: 22px; }
+.breath-label { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 34px; isolation: isolate; }
+/* Łodyga przechodzi za napisem w całości – tylko cienki, biały obrys wokół liter odcina je od niej, żeby były czytelne. */
+.player-photo .breath-label { --halo: #fff; }
+.player-photo :is(.breath-word, .breath-count) { text-shadow: 1.5px 0 var(--halo), -1.5px 0 var(--halo), 0 1.5px var(--halo), 0 -1.5px var(--halo), 1px 1px var(--halo), -1px -1px var(--halo), 1px -1px var(--halo), -1px 1px var(--halo); }
+.player-photo .breath-word { color: #8a3658; font-size: 2rem; line-height: 1.1; }
+.player-photo .breath-count { font-size: 1.35rem; font-weight: 500; letter-spacing: 0.08em; color: #a0466c; font-variant-numeric: tabular-nums; }
+:root[data-theme='dark'] .player-photo .breath-label { --halo: #1f151a; }
+.player-photo .breath-prompt { min-height: 0; margin-top: 8px; font-size: 1rem; color: #8c6474; text-shadow: 0 0 14px #fff, 0 0 4px #fff; }
+
+/* Koła oddechu za piwonią: --ring (skala koła) i --arc (postęp fazy) ustawia pętla co klatkę. */
+.breath-rings { --ring: 0.575; --rlv: 0; --arc: 1; left: 50%; top: 39%; width: 124%; aspect-ratio: 1; translate: -50% -50%; pointer-events: none; animation: fade 1.6s var(--ease); }
+.breath-rings svg { width: 100%; height: 100%; display: block; overflow: visible; }
+/* Bardzo delikatnie: cienkie linie, mało koloru, okręgi nie nachodzą na siebie. */
+.breath-rings { opacity: 0.75; }
+.ring-guide { fill: none; stroke: #efc9d6; stroke-width: 0.45; stroke-dasharray: 1 3; stroke-linecap: round; transform-origin: 100px 100px; }
+.ring-guide.g-inner { opacity: calc(0.7 - var(--rlv) * 0.5); animation: ring-spin 60s linear infinite; }
+@keyframes ring-spin { to { rotate: 360deg; } }
+.ring-arc { fill: none; stroke: #f2a9c1; stroke-width: 0.5; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: var(--arc); transform-origin: 100px 100px; rotate: -90deg; opacity: 0.6; }
+.ring-tick { fill: #f6dde5; r: 1.4px; transition: fill 0.6s var(--ease); }
+.ring-tick.on { fill: #eba5bd; }
+.ring-breath { transform-origin: 100px 100px; transform: scale(var(--ring)); will-change: transform; opacity: calc(0.55 + var(--rlv) * 0.3); }
+.breath-rings.is-paused .ring-guide { animation-play-state: paused; }
+:root[data-theme='dark'] .ring-guide { stroke: rgb(255 200 220 / 0.45); }
+:root[data-theme='dark'] .player-photo :is(.breath-word, .breath-count, .breath-prompt) { color: #f3c6d6; text-shadow: none; }
+html.a11y-reduce .ring-guide { animation: none; }
 .player-photo .glass-icon { color: #7a3f57; }
 .player-photo .glass-icon[aria-pressed='true'] { color: #7a3f57; background: linear-gradient(160deg, rgb(255 255 255 / 0.65), rgb(255 255 255 / 0.25)); }
+/* Sesja oddechu jak scena „Dla mnie”: czyste białe tło i sam kwiat – bez różowych zórz, poświaty, światełek i płatków. */
+:root:not([data-theme='dark']) :is(.player-photo, .player-photo .peony-full) { background: #fff; }
+.player-photo .peony-full :is(.peony-aurora, .peony-bokeh, .peony-glow, .peony-petals) { display: none; }
+.player-photo .player-controls.glass { border-color: var(--line); box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.8), 0 12px 32px -16px rgb(180 120 140 / 0.3); }
+.player-photo .glass-btn, .player-photo .glass-icon { border-color: color-mix(in srgb, var(--line) 70%, #fff); }
 .player-soft { background: linear-gradient(180deg, #fff0f4 0%, var(--bg) 100%); }
 :root[data-theme='dark'] .player-soft { background: var(--bg); }
 .breath-stage { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; text-align: center; }
@@ -659,10 +697,15 @@ html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
    na górze tylko data i jedno zdanie, kwiat z łodygą do samego dołu. */
 .phone[data-tab='forme'] { position: relative; }
 .phone[data-tab='forme'] .topbar { position: absolute; top: 0; left: 0; right: 0; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
-.forme-hero { position: relative; isolation: isolate; overflow: hidden; min-height: 100dvh; margin: -8px -20px 0; padding: calc(80px + env(safe-area-inset-top)) 24px calc(104px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; justify-content: space-between; gap: 20px; }
-.forme-hero .peony-full .peony-stage { top: 50%; width: min(96cqw, 440px, 58cqh); }
-.forme-more { align-self: center; background: none; border: 0; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 0.86rem; color: var(--muted); cursor: pointer; animation: more-hint 2.6s ease-in-out infinite; }
-@keyframes more-hint { 50% { transform: translateY(3px); } }
+/* Scena „Dla mnie”: ok. 2/3 ekranu (nie cały) – karta rytuału wjeżdża od razu pod spodem. */
+.forme-hero { position: relative; isolation: isolate; overflow: hidden; min-height: min(66dvh, 600px); margin: -8px -20px 0; padding: calc(80px + env(safe-area-inset-top)) 24px 24px; display: flex; flex-direction: column; justify-content: space-between; gap: 20px; }
+/* Dół sceny miękko gaśnie w tło strony – łodyga nie ciągnie się w dół, kwiat jest wykadrowany. */
+.forme-hero .peony-full { -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent); mask-image: linear-gradient(to bottom, #000 72%, transparent); }
+/* Piwonia oddalona i wykadrowana: mniejsza, z powietrzem dookoła, między cytatem a menu. */
+.forme-hero .peony-full .peony-stage { top: 52%; width: min(62cqw, 280px, 54cqh); }
+/* Minimalizm: czyste białe tło pod kwiatem – bez różowych zórz, poświaty i światełek (zostają spadające płatki). */
+:root:not([data-theme='dark']) .forme-hero .peony-full { background: #fff; }
+.forme-hero .peony-full :is(.peony-aurora, .peony-bokeh, .peony-glow) { display: none; }
 
 /* Góra sceny „Dla mnie”: drobna data i jedno zdanie kursywą. */
 .forme-hello { display: grid; gap: 4px; padding-top: 4px; }
@@ -676,9 +719,7 @@ html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
 .start-min:active { transform: scale(0.97); }
 .start-min-icon { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, #f7a8bd 30%, var(--surface)); color: var(--ink); }
 
-/* Karta rytuału w „Dla mnie” i wybór długości nastrojem. */
-.ritual-card { background: radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, #f7a8bd 22%, var(--surface)) 0%, var(--surface) 70%); overflow: hidden; }
-.ritual-card .stack.center { align-items: center; }
+/* Wybór długości nastrojem. */
 .mood-pick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 4px; border-radius: var(--radius-sm); background: var(--soft); }
 .mood-pick button { border: 0; background: transparent; border-radius: 14px; padding: 9px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: pointer; color: var(--muted); transition: all 0.25s var(--ease); font: inherit; }
 .mood-pick button .serif { font-size: 1.05rem; white-space: nowrap; color: var(--ink); }
@@ -691,7 +732,101 @@ html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
 .staff > .watermark { left: 248px; }
 /* Panel: pas po prawej na znak, żeby przyciski w nagłówkach stron (np. „← Dziś →”) nie wchodziły pod niego. */
 .staff:has(> .watermark) > .main { padding-right: 150px; }
-.phone > .watermark { -webkit-mask-size: 88px; mask-size: 88px; -webkit-mask-position: right 18px top 74px; mask-position: right 18px top 74px; }
 .site > .watermark { -webkit-mask-position: right 36px top 84px; mask-position: right 36px top 84px; }
 @media print { .watermark { display: none; } }
 @media (max-width: 820px) { .staff > .watermark { display: none; } .staff:has(> .watermark) > .main { padding-right: 20px; } }
+
+/* ===== Start oddechu w „Dla mnie”: jedna cienka pigułka pod piwonią, bez karty ===== */
+/* Liquid glass, minimalnie: czyste szkło bez koloru – cienki czarny obrys (kolor tekstu), delikatny odblask u góry i miękki cień.
+   Ikona to sam znak play w przezroczystym kółku. Wciśnięcie lekko „spłaszcza” szkło. */
+.forme-start { position: relative; z-index: 1; isolation: isolate; overflow: hidden; gap: 10px; padding: 5px 20px 5px 5px; border: 1px solid color-mix(in srgb, var(--ink) 85%, transparent);
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.18));
+  backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.95), 0 10px 26px -18px rgb(60 40 50 / 0.35);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.25s var(--ease); }
+.forme-start::before { content: ''; position: absolute; inset: 1px 14% 55%; z-index: -1; border-radius: 999px; background: linear-gradient(to bottom, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0)); pointer-events: none; }
+.forme-start:hover { background: linear-gradient(160deg, rgb(255 255 255 / 0.62), rgb(255 255 255 / 0.26)); }
+.forme-start:active { transform: scale(0.97, 0.94); }
+.forme-start .start-min-icon { width: 34px; height: 34px; color: var(--ink); border: 1px solid rgb(255 255 255 / 0.85); background: linear-gradient(160deg, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.2)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 1), 0 0 0 0.5px rgb(0 0 0 / 0.05); }
+.forme-start .start-min-icon svg { margin-left: 2px; }
+.forme-start:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+:root[data-theme='dark'] .forme-start { background: linear-gradient(160deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.03)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 10px 26px -18px rgb(0 0 0 / 0.6); }
+:root[data-theme='dark'] .forme-start::before { background: linear-gradient(to bottom, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0)); }
+:root[data-theme='dark'] .forme-start .start-min-icon { border-color: rgb(255 255 255 / 0.2); background: rgb(255 255 255 / 0.08); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25); }
+@media (prefers-reduced-motion: reduce) { .forme-start { transition: none; } }
+.ritual-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.ritual-toggle { margin-top: 10px; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 0 10px; background: none; border: 0; font: inherit; font-size: 0.82rem; color: var(--muted); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; cursor: pointer; }
+.ritual-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
+.ritual-toggle svg { transition: transform 0.2s var(--ease); }
+@media (prefers-reduced-motion: reduce) { .ritual-toggle svg { transition: none; } }
+
+/* ===== „Dla mnie”: listy medytacji i dodatków – tytuł, cienka linia, czas po prawej ===== */
+.forme-list { display: grid; gap: 12px; }
+.forme-h { margin: 0; font-size: 1.35rem; font-weight: 400; letter-spacing: -0.01em; color: var(--ink); }
+.session-list { list-style: none; margin: 0; padding: 0; }
+.session-list li + li { border-top: 1px solid var(--line); }
+.session-row { width: 100%; min-height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; background: none; border: 0; font: inherit; color: var(--ink); text-align: left; cursor: pointer; }
+.session-row:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 8px; }
+.session-row > svg { flex: none; color: var(--muted); }
+.session-text { display: grid; gap: 2px; min-width: 0; }
+.session-title { font-family: var(--font-head); font-size: 1rem; }
+.session-meta { font-size: 0.8rem; color: var(--muted); }
+.session-min { flex: none; font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; transition: color 0.2s var(--ease); }
+.session-row:hover .session-min, .session-row:hover > svg { color: var(--ink); }
+.forme-list > .ritual-toggle { justify-self: start; padding-left: 0; margin-top: -4px; }
+.more-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.more-pills button { min-height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: transparent; font: inherit; font-size: 0.88rem; color: var(--ink); cursor: pointer; transition: background 0.2s var(--ease), border-color 0.2s var(--ease); }
+.more-pills button:hover { background: var(--soft); border-color: transparent; }
+.more-pills button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* Kartki: propozycja treści – jak odręczny liścik, cienka linia z lewej. */
+.card-draft { display: grid; gap: 4px; margin-top: 10px; padding-left: 12px; border-left: 1.5px solid #f2b8c8; max-width: 60ch; }
+.card-draft .serif { font-size: 1.02rem; line-height: 1.45; white-space: pre-line; color: var(--ink); }
+/* Grupy (Razem → Grupy): wiersz jak lista medytacji – tekst po lewej, jedna pigułka po prawej. */
+.group-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; }
+.group-main { flex: 1; min-width: 0; display: grid; gap: 3px; padding: 0; background: none; border: 0; font: inherit; color: var(--ink); text-align: left; cursor: pointer; }
+.group-main:disabled { cursor: default; color: var(--ink); }
+.group-main:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; border-radius: 8px; }
+.group-row .chip { flex: none; }
+
+/* Pasek pigułek przewijany w bok (useScrollRow): łapka przy przeciąganiu, miękko gasnąca krawędź tam, gdzie jest więcej. */
+.scroll-row { cursor: grab; scroll-behavior: smooth; overscroll-behavior-x: contain; user-select: none; -webkit-user-select: none; }
+.scroll-row.is-dragging { cursor: grabbing; scroll-behavior: auto; }
+.scroll-row.is-dragging .chip { pointer-events: none; }
+.scroll-row[data-more='end'] { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent); }
+.scroll-row[data-more='start'] { -webkit-mask-image: linear-gradient(to left, #000 82%, transparent); mask-image: linear-gradient(to left, #000 82%, transparent); }
+.scroll-row[data-more='both'] { -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); }
+@media (prefers-reduced-motion: reduce) { .scroll-row { scroll-behavior: auto; } }
+
+/* ===== Kalendarz oddechu („Dla mnie”): ikona w prawym górnym rogu sceny i arkusz z miesiącem kwiatków ===== */
+/* Pasek studia leży nad sceną – przepuszcza dotyk, żeby ikona kalendarza pod nim była klikalna. */
+.phone[data-tab='forme'] .topbar { pointer-events: none; }
+.phone[data-tab='forme'] .topbar > * { pointer-events: auto; }
+.forme-cal { position: absolute; z-index: 6; top: calc(16px + env(safe-area-inset-top)); right: 20px; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 80%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--ink); cursor: pointer; transition: background 0.25s var(--ease), transform 0.2s var(--ease); }
+.forme-cal:hover { background: color-mix(in srgb, #f7a8bd 16%, var(--surface)); }
+.forme-cal:active { transform: scale(0.94); }
+.forme-cal:disabled { opacity: 0.5; cursor: default; }
+.bcal { display: grid; gap: 6px; }
+.bcal-head { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; }
+.bcal-title { margin: 0; text-align: center; font-size: 1.45rem; font-weight: 400; }
+.bcal-nav { width: 40px; height: 40px; border-radius: 50%; border: 0; background: transparent; color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.bcal-nav:hover:not(:disabled) { background: var(--soft); }
+.bcal-nav:disabled { opacity: 0.25; cursor: default; }
+.bcal-next svg { transform: scaleX(-1); }
+.bcal-sum { margin: 0 0 10px; text-align: center; }
+.bcal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.bcal-dow { text-align: center; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; padding-bottom: 6px; }
+.bcal-day { aspect-ratio: 1 / 1.08; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.bcal-num { font-size: 0.95rem; line-height: 1; }
+.bcal-day.future { color: color-mix(in srgb, var(--muted) 60%, transparent); }
+.bcal-day.today .bcal-num { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: var(--bg); font-weight: 600; }
+/* Dzień z oddechem – minimalnie: zielona cyfra (jak łodyga piwonii) i pod nią mały kwiatek z tygodnia rytuału, bez kafelka. */
+.bcal-day.on { color: var(--entry-ok); font-weight: 600; }
+.bcal-day.on.today .bcal-num { background: var(--entry-ok); color: var(--surface); }
+.bcal-day .mini-bloom { width: 16px; height: 16px; fill: #f7a8bd; stroke: transparent; transform: rotate(36deg); animation: bcal-bloom 0.6s var(--ease) backwards; }
+.bcal-day .mini-bloom-core { fill: #fff1f4; }
+/* Miejsce na kwiatek także w pustych dniach – cyfry w wierszu stoją na jednej linii. */
+.bcal-day:not(.on)::after { content: ''; height: 16px; }
+.bcal-day.today .mini-bloom { margin-top: 1px; }
+@keyframes bcal-bloom { from { transform: scale(0.3) rotate(0deg); opacity: 0; } }
+.bcal-total { margin: 12px 0 0; }
+@media (prefers-reduced-motion: reduce) { .bcal-day .mini-bloom { animation: none; } }

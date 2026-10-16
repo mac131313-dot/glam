@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { BADGES } from '@glam/core';
 import { api, fmtDay, localDate, addDaysStr, useApi } from '../api.ts';
-import { Empty, Field, Select, Spinner, Tabs, useAction } from '../ui.tsx';
+import { Empty, Field, Select, Spinner, Tabs, Toggle, useAction } from '../ui.tsx';
 
 type Report = { id: string; target_kind: string; target_id: string; reason: string | null; status: string; created_at: string; reporter: string; content?: { body?: string } };
 type Hub = {
-  groups: { id: string; name: string; description: string | null; members: number }[];
+  groups: { id: string; name: string; description: string | null; approval: number; members: number }[];
+  requests: { group_id: string; group_name: string; user_id: string; name: string; message: string | null; created_at: string; goal: string | null }[];
   challenges: { id: string; title: string; metric: string; target: number; starts_on: string; ends_on: string; members: number; done: number }[];
   hidden: { id: string; body: string; name: string; created_at: string }[];
   openReports: number;
@@ -29,7 +30,7 @@ export default function CommunityAdmin() {
         value={tab}
         onChange={setTab}
         options={[
-          ['reports', `Zgłoszenia${hub.data.openReports ? ` (${hub.data.openReports})` : ''}`],
+          ['reports', `Zgłoszenia${hub.data.openReports + hub.data.requests.length ? ` (${hub.data.openReports + hub.data.requests.length})` : ''}`],
           ['groups', 'Grupy'],
           ['challenges', 'Wyzwania'],
         ]}
@@ -45,11 +46,41 @@ function Reports({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
   const list = useApi<Report[]>('/staff/reports');
   const { run } = useAction();
   const act = (r: Report, action: 'hide' | 'dismiss') => run(() => api(`/staff/reports/${r.id}`, { method: 'POST', body: { action } }).then(() => (list.reload(), reload())), action === 'hide' ? 'Ukryte' : 'Odrzucone');
+  const decide = (r: Hub['requests'][number], action: 'accept' | 'decline') => run(() => api(`/staff/group-requests/${r.group_id}/${r.user_id}`, { method: 'POST', body: { action } }).then((res) => (reload(), res)));
   return (
     <div className="stack-lg">
+      {/* Prośby o dołączenie do grup (grupy „za zgodą”) – na górze zgłoszeń, bo czekają na decyzję studia. */}
+      {hub.requests.length > 0 && (
+        <section className="stack">
+          <div className="eyebrow">Prośby o dołączenie do grup</div>
+          {hub.requests.map((r) => (
+            <div key={`${r.group_id}:${r.user_id}`} className="card flat row between" style={{ alignItems: 'flex-start' }}>
+              <span className="stack" style={{ gap: 4 }}>
+                <span>
+                  <b>{r.name}</b> <span className="small muted">→ {r.group_name}</span>
+                </span>
+                {r.message && <span className="small">„{r.message}”</span>}
+                <span className="tiny muted">
+                  {fmtDay(r.created_at)}
+                  {r.goal && ` · cel: ${r.goal}`}
+                </span>
+              </span>
+              <span className="row" style={{ gap: 6 }}>
+                <button className="btn sm" onClick={() => decide(r, 'accept')}>
+                  Akceptuj
+                </button>
+                <button className="btn ghost sm" onClick={() => decide(r, 'decline')}>
+                  Odrzuć
+                </button>
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
       {!list.data ? (
         <Spinner />
       ) : list.data.length === 0 ? (
+        hub.requests.length > 0 ? null :
         <Empty>Żadnych zgłoszeń. Spokojnie jak po stretchingu 🌿</Empty>
       ) : (
         list.data.map((r) => (
@@ -97,13 +128,14 @@ function Reports({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
 function Groups({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
+  const [approval, setApproval] = useState(true);
   const { run, busy } = useAction();
   return (
     <div className="stack-lg">
       {hub.groups.map((g) => (
         <div key={g.id} className="card flat row between">
           <span>
-            <b>{g.name}</b> <span className="small muted">· {g.members} członkiń</span>
+            <b>{g.name}</b> <span className="small muted">· {g.members} członkiń{g.approval ? ' · dołączanie za zgodą' : ''}</span>
             {g.description && <span className="small muted" style={{ display: 'block' }}>{g.description}</span>}
           </span>
           <button className="btn ghost sm" onClick={() => window.confirm(`Usunąć grupę „${g.name}”?`) && run(() => api(`/staff/groups/${g.id}`, { method: 'DELETE' }).then(reload))}>
@@ -115,7 +147,8 @@ function Groups({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
         <div className="eyebrow">Nowa grupa</div>
         <input className="input" placeholder="Np. Mamy w ruchu" value={name} onChange={(e) => setName(e.target.value)} />
         <input className="input" placeholder="Opis (opcjonalnie)" value={desc} onChange={(e) => setDesc(e.target.value)} />
-        <button className="btn" disabled={!name || busy} onClick={() => run(() => api('/staff/groups', { method: 'POST', body: { name, description: desc } }).then(() => (setName(''), setDesc(''), reload())), 'Grupa utworzona')}>
+        <Toggle label="Dołączanie za zgodą" hint="Klientka wysyła prośbę, a studio ją akceptuje tutaj" checked={approval} onChange={setApproval} />
+        <button className="btn" disabled={!name || busy} onClick={() => run(() => api('/staff/groups', { method: 'POST', body: { name, description: desc, approval } }).then(() => (setName(''), setDesc(''), reload())), 'Grupa utworzona')}>
           Utwórz
         </button>
       </section>
@@ -189,3 +222,6 @@ function Challenges({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) 
     </div>
   );
 }
+
+/** 1 członkini · 2–4 członkinie · 5+ członkiń. */
+const czlonkinie = (n: number) => (n === 1 ? 'członkini' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'członkinie' : 'członkiń');

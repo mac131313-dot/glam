@@ -26,6 +26,13 @@
       ],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "web-win",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set API_PORT=3002&& npm run dev -w @glam/web"],
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }

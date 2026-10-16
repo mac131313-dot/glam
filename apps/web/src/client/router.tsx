@@ -27,7 +27,7 @@ const TITLES: Record<string, string> = {
   faq: 'Pomoc',
   checkin: 'Mój kod wejścia',
   passes: 'Karnety',
-  payments: 'Płatności i faktury',
+  payments: 'Historia płatności',
   loyalty: 'Lojalność i odznaki',
   locker: 'Moja szafka',
   journal: 'Dziennik',

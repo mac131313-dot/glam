@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { addDaysStr, api, ApiError, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
 import { Empty, Field, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
+import { ClassHistory } from './ClassHistory.tsx';
 import { useClient } from './ClientApp.tsx';
 
 type Session = {
@@ -124,7 +125,10 @@ export function Schedule() {
           {days.map((d) => {
             const date = new Date(`${d}T12:00:00Z`);
             return (
-              <button key={d} className="day" style={{ flex: 'none', width: 52 }} aria-pressed={d === day} onClick={() => setDay(d)}>
+              <button key={d} className="day ring" aria-pressed={d === day} onClick={() => setDay(d)}>
+                <svg viewBox="0 0 56 56" aria-hidden="true">
+                  <circle cx="28" cy="28" r="26" pathLength={24} />
+                </svg>
                 {d === today ? 'dziś' : DOW[date.getUTCDay()]}
                 <b>{date.getUTCDate()}</b>
               </button>
@@ -316,6 +320,9 @@ export function Schedule() {
           </div>
         </Sheet>
       )}
+
+      {/* Historia zajęć (przeniesiona z Profilu) – na samym dole Grafiku. */}
+      <ClassHistory />
     </div>
   );
 }

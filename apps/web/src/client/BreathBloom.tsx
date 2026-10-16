@@ -67,7 +67,7 @@ const BOKEH = [
   [90, 86, 4, 18, 24], [8, 46, 9, 20, 30], [60, 88, 2, 14, 16],
 ];
 
-export function BreathBloom({ level, hold, variant = 'card', className = '', style }: { level?: () => number; hold?: boolean; variant?: 'full' | 'card'; className?: string; style?: React.CSSProperties }) {
+export function BreathBloom({ level, hold, variant = 'card', className = '', style, behind }: { level?: () => number; hold?: boolean; variant?: 'full' | 'card'; className?: string; style?: React.CSSProperties; behind?: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const swayRef = useRef<HTMLDivElement>(null);
   const id = useId().replace(/:/g, '');
@@ -121,6 +121,8 @@ export function BreathBloom({ level, hold, variant = 'card', className = '', sty
       </span>
       <div className="peony-stage">
         <span className="peony-glow" />
+        {/* Np. koła oddechu – stoją za kwiatem, wyśrodkowane na jego głowie, i nie kołyszą się razem z nim. */}
+        {behind}
         <div ref={swayRef} className="peony-sway">
           <svg className="peony-flower" viewBox="0 0 200 260">
             <defs>

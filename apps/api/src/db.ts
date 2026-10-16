@@ -697,6 +697,8 @@ CREATE TABLE IF NOT EXISTS groups (
   studio_id TEXT NOT NULL REFERENCES studios(id),
   name TEXT NOT NULL,
   description TEXT,
+  -- 1 = dołączenie przez prośbę, którą studio akceptuje w panelu (Społeczność → Grupy)
+  approval INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 
@@ -705,6 +707,19 @@ CREATE TABLE IF NOT EXISTS group_members (
   group_id TEXT NOT NULL REFERENCES groups(id),
   user_id TEXT NOT NULL REFERENCES users(id),
   joined_at TEXT NOT NULL,
+  PRIMARY KEY (group_id, user_id)
+);
+
+-- Prośby o dołączenie do grupy z akceptacją (groups.approval = 1)
+CREATE TABLE IF NOT EXISTS group_requests (
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  group_id TEXT NOT NULL REFERENCES groups(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  message TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'declined')),
+  created_at TEXT NOT NULL,
+  decided_at TEXT,
+  decided_by TEXT REFERENCES users(id),
   PRIMARY KEY (group_id, user_id)
 );
 
@@ -763,6 +778,9 @@ CREATE TABLE IF NOT EXISTS challenges (
   ends_on TEXT NOT NULL,
   badge_code TEXT,
   theme_id TEXT,
+  -- wyzwanie od trenerki (NULL = od studia) i dla uczestniczek konkretnych zajęć (NULL = dla wszystkich)
+  author_id TEXT REFERENCES users(id),
+  class_type_id TEXT REFERENCES class_types(id),
   created_at TEXT NOT NULL
 );
 
@@ -854,6 +872,8 @@ CREATE TABLE IF NOT EXISTS card_tasks (
   due_on TEXT NOT NULL,
   delivery TEXT NOT NULL CHECK (delivery IN ('post', 'pickup')),
   status TEXT NOT NULL CHECK (status IN ('todo', 'written', 'sent', 'collected')),
+  -- propozycja treści do przepisania odręcznie (opcjonalna); kartka i tak jest pisana ręcznie
+  draft TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (studio_id, client_id)
