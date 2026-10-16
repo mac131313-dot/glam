@@ -3,7 +3,7 @@
 // Kierunek: minimalizm na maksa (Isola / Unbound) – dużo powietrza, zdjęcia, jedno kursywne słowo, cienkie linie, bez cieni.
 // Kontrakt z edytorem: każda sekcja to bezpośrednie dziecko <main> z id i data-section-name (most szuka `main > section[id]`).
 //   ?podglad=1 – szkic zamiast wersji publicznej (wymaga sesji panelu), ?edytor=1 – most do edytora w ramce.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { isNewClass, siteImageUrl, siteLook, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
@@ -581,36 +581,19 @@ function ClassesSection({ studio, v, attrs, news }: { studio: PublicStudio; v: V
  */
 function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   const open = studio.trainers.find((t) => t.id === openId) ?? null;
-  useEffect(() => {
-    if (!open || !panelRef.current) return;
-    const r = panelRef.current.getBoundingClientRect();
-    // Panel poza ekranem (np. na telefonie pod długą siatką) – przewijamy do niego łagodnie.
-    if (r.top > window.innerHeight * 0.75 || r.bottom < 0) panelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [open]);
   if (studio.trainers.length === 0) return null;
   const className = (id: string) => studio.classes.find((c) => c.id === id)?.name;
-  const panelId = `${attrs.id}-panel`;
   return (
     <section {...attrs}>
       <Head v={v} />
       <Reveal>
-      <Carousel label="Trenerki" className="site-people" trackProps={{ role: 'tablist' }}>
+      <Carousel label="Trenerki" className="site-people">
         {studio.trainers.map((t) => {
           const names = [...new Set(t.classes.map(className).filter(Boolean))];
           const photo = trainerPhoto(studio, t);
-          const selected = t.id === openId;
           return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-controls={panelId}
-              className="site-person"
-              onClick={() => setOpenId(selected ? null : t.id)}
-            >
+            <button key={t.id} type="button" aria-haspopup="dialog" className="site-person" onClick={() => setOpenId(t.id)}>
               {photo ? (
                 <Photo src={photo} className="portrait" />
               ) : (
@@ -621,13 +604,13 @@ function TrainersSection({ studio, v, attrs }: { studio: PublicStudio; v: Values
               <h3>{t.name}</h3>
               {b(v, 'showBio') && t.bio && <p className="site-desc">{t.bio}</p>}
               {b(v, 'showClasses') && names.length > 0 && <p className="site-quiet">{names.slice(0, 3).join(' · ')}</p>}
-              {(t.bio || t.about) && <span className="site-person-more">{selected ? 'zwiń' : 'poznaj'}</span>}
+              {(t.bio || t.about) && <span className="site-person-more">poznaj</span>}
             </button>
           );
         })}
       </Carousel>
       </Reveal>
-      {open && <TrainerPanel key={open.id} studio={studio} t={open} id={panelId} panelRef={panelRef} names={[...new Set(open.classes.map(className).filter(Boolean))] as string[]} />}
+      {open && <TrainerDialog key={open.id} studio={studio} t={open} names={[...new Set(open.classes.map(className).filter(Boolean))] as string[]} onClose={() => setOpenId(null)} />}
     </section>
   );
 }
@@ -666,11 +649,32 @@ function ShopSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; at
   );
 }
 
-function TrainerPanel({ studio, t, id, names, panelRef }: { studio: PublicStudio; t: PublicTrainer; id: string; names: string[]; panelRef: RefObject<HTMLDivElement | null> }) {
+/**
+ * Okno trenerki (natywny <dialog> w trybie modalnym): przeglądarka sama trzyma w nim fokus, zamyka na Esc
+ * i oddaje fokus karcie, z której przyszłyśmy. Zamyka też krzyżyk i kliknięcie w tło. Na telefonie wysuwa się od dołu.
+ */
+function TrainerDialog({ studio, t, names, onClose }: { studio: PublicStudio; t: PublicTrainer; names: string[]; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
   const photo = trainerPhoto(studio, t);
   const paragraphs = (t.about ?? '').split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const titleId = `trainer-${t.id}-name`;
   return (
-    <div ref={panelRef} id={id} role="tabpanel" aria-label={t.name} className="site-trainer site-split">
+    <dialog
+      ref={ref}
+      className="site-dialog"
+      aria-labelledby={titleId}
+      onClose={onClose}
+      // Kliknięcie w samo tło (poza treścią okna) trafia w element <dialog> – wtedy zamykamy.
+      onClick={(e) => e.target === e.currentTarget && ref.current?.close()}
+    >
+      <button type="button" className="site-dialog-close" onClick={() => ref.current?.close()} aria-label="Zamknij">
+        ×
+      </button>
+      <div className="site-trainer">
       {photo ? (
         <Photo src={photo} className="tall" alt={t.name} />
       ) : (
@@ -679,7 +683,7 @@ function TrainerPanel({ studio, t, id, names, panelRef }: { studio: PublicStudio
         </div>
       )}
       <div className="site-trainer-text">
-        <h3 className="site-trainer-name serif">{t.name}</h3>
+        <h3 id={titleId} className="site-trainer-name serif">{t.name}</h3>
         {t.bio && <p className="site-lead">{t.bio}</p>}
         {paragraphs.map((p, i) => (
           <p key={i} className="site-prose">
@@ -687,11 +691,12 @@ function TrainerPanel({ studio, t, id, names, panelRef }: { studio: PublicStudio
           </p>
         ))}
         {names.length > 0 && <p className="site-quiet">prowadzi {names.join(' · ')}</p>}
-        <a className="site-link" href={APP_URL}>
+        <a className="btn" href={APP_URL}>
           Zapisz się na zajęcia
         </a>
       </div>
-    </div>
+      </div>
+    </dialog>
   );
 }
 
