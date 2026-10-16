@@ -282,8 +282,13 @@ const pathFromUrl = () => {
   return m ? decodeURIComponent(m[1]) : null;
 };
 
+/** Układ zdjęcia w nagłówku – ta sama reguła co w Hero (bez zdjęcia zawsze sam tekst). */
+const heroLayout = (studio: PublicStudio) => (img(studio.site.hero.values, 'image') ? s(studio.site.hero.values, 'imageLayout') || 'full' : 'text');
+
 function StudioNav({ studio, current, onNavigate }: { studio: PublicStudio; current: string | null; onNavigate: (path: string | null) => void }) {
   const doc = studio.site;
+  // Zdjęcie na cały ekran: menu leży na zdjęciu (przezroczyste, jasne), dopóki nie przewiniemy dalej.
+  const overPhoto = !current && doc.hero.visible && heroLayout(studio) === 'screen';
   return (
     <SiteNav
       slug={studio.slug}
@@ -296,6 +301,7 @@ function StudioNav({ studio, current, onNavigate }: { studio: PublicStudio; curr
       // W edytorze cała strona jest jedną kartką – zakładki przewijają do sekcji zamiast zmieniać adres ramki.
       hrefOf={IN_EDITOR ? (p) => `#${p.key}` : undefined}
       editTarget={HERO_ID}
+      overlay={overPhoto}
     />
   );
 }
@@ -309,7 +315,7 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
   const title = s(v, 'title') || studio.name;
   const serif = s(v, 'serif') || (studio.tagline ? lowerFirst(studio.tagline) : '');
   const photo = img(v, 'image');
-  const layout = photo ? s(v, 'imageLayout') || 'full' : 'text';
+  const layout = heroLayout(studio);
   // Przewinięcie nagłówka (0–1) jako --hero-p: zdjęcie zostaje w tyle (parallax), tekst odpływa w górę i blednie.
   const ref = useRef<HTMLElement>(null);
   useScrollVar(ref, '--hero-p');
@@ -357,7 +363,7 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
 
   return (
     <section ref={ref} id={HERO_ID} data-section-name="Nagłówek strony" className={`site-hero layout-${layout}${MOTION ? ' has-motion' : ''}`}>
-      {layout === 'cover' && photo ? (
+      {(layout === 'cover' || layout === 'screen') && photo ? (
         <div className="site-hero-cover">
           <MediaEl src={photo} />
           <SideRays className="site-hero-rays" rayColor1="#FFD9A0" rayColor2="#FFF4E2" intensity={1.6} speed={1.6} dust={0.3} />

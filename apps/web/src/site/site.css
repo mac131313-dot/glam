@@ -52,8 +52,9 @@
 .site { overflow-x: clip; }
 .site-hero { position: relative; }
 .site-hero .site-hero-text { position: relative; z-index: 1; }
-.site-hero-rays { position: absolute; inset: 0; width: auto; height: auto; z-index: 0; }
-.site-hero-rays.bleed { inset: -96px auto 0 calc(50% - 50vw); width: 100vw; -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent); mask-image: linear-gradient(to bottom, #000 55%, transparent); }
+/* .site-hero przed klasą: SideRays.css (ładowany później) ustawia .side-rays na position: relative – tu musi wygrać absolute. */
+.site-hero .site-hero-rays { position: absolute; inset: 0; width: auto; height: auto; z-index: 0; }
+.site-hero .site-hero-rays.bleed { inset: -96px auto 0 calc(50% - 50vw); width: 100vw; -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent); mask-image: linear-gradient(to bottom, #000 55%, transparent); }
 .site-actions { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; margin-top: 36px; }
 .site-news { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 28px; text-decoration: none; color: var(--muted); font-size: 0.9rem; }
 .site-news .site-new { margin: 0 8px 0 0; }
@@ -444,3 +445,25 @@ html:has(.site-menu[open]) { overflow: hidden; }
 
 /* Podstrona: jedna sekcja pod menu, z oddechem od góry. */
 .site-subpage > .site-section:first-child { padding-top: clamp(48px, 8vw, 112px); min-height: 50vh; }
+
+/* ——— Nagłówek: zdjęcie na cały ekran z napisem na nim (układ „screen”). Menu leży na zdjęciu, po przewinięciu
+   wraca do zwykłego wyglądu. Zdjęcie od krawędzi do krawędzi, bez zaokrągleń. ——— */
+.site-nav { transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out); }
+.site-nav.overlay { position: fixed; inset: 0 0 auto; }
+.site-nav.over-photo { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; color: #fbfaf7; }
+.site-nav.over-photo .site-wordmark, .site-nav.over-photo .site-brand { color: #fbfaf7; }
+.site-nav.over-photo .site-links a { color: rgb(251 250 247 / 0.82); }
+.site-nav.over-photo .site-links a:hover, .site-nav.over-photo .site-links a[aria-current='page'] { color: #fbfaf7; }
+.site-nav.over-photo .btn { background: #fbfaf7; color: #1b1715; }
+.site-nav.over-photo .site-menu-btn { color: #fbfaf7; border-color: rgb(251 250 247 / 0.5); }
+
+.site main > section.site-hero.layout-screen { width: 100%; padding: 0; }
+.site-hero.layout-screen .site-hero-cover { min-height: 100svh; border-radius: 0; }
+/* ciemniej przy dole (napis) i lekko u góry (menu) – środek zdjęcia zostaje czysty */
+.site-hero.layout-screen .site-hero-cover::after { background: linear-gradient(to top, rgb(18 16 14 / 0.62), rgb(18 16 14 / 0.12) 55%, rgb(18 16 14 / 0.28)); }
+.site-hero.layout-screen .site-hero-text {
+  width: 100%; padding-block: 0 clamp(36px, 7vh, 88px);
+  padding-inline: max(var(--gutter), calc((100vw - var(--site-w)) / 2 + var(--gutter)));
+}
+.site-hero.layout-screen .site-title { font-size: clamp(3.2rem, 10.5vw, 9.5rem); line-height: 0.92; }
+.site-hero.layout-screen .site-title .serif { font-size: 0.5em; }

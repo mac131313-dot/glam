@@ -70,6 +70,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
               ['full', 'Zdjęcie na całą szerokość, tekst pod nim'],
               ['side', 'Tekst obok zdjęcia'],
               ['cover', 'Tekst na zdjęciu'],
+              ['screen', 'Zdjęcie na cały ekran, napis na nim'],
             ],
           },
         ],

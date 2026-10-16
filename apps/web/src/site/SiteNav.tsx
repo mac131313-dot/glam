@@ -19,12 +19,30 @@ type Props = {
   hrefOf?: (page: SitePage) => string;
   /** atrybuty dla edytora strony */
   editTarget?: string;
+  /** menu na zdjęciu nagłówka (na cały ekran): przezroczyste i jasne, dopóki zdjęcie jest pod nim */
+  overlay?: boolean;
 };
 
 export const pageHref = (slug: string, path: string | null) => `/s/${encodeURIComponent(slug)}${path ? `/${path}` : ''}`;
 
-export function SiteNav({ slug, brand, brandLabel, pages, current, button, onNavigate, hrefOf, editTarget }: Props) {
+export function SiteNav({ slug, brand, brandLabel, pages, current, button, onNavigate, hrefOf, editTarget, overlay = false }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [overPhoto, setOverPhoto] = useState(overlay);
+  useEffect(() => {
+    if (!overlay) {
+      setOverPhoto(false);
+      return;
+    }
+    // Zdjęcie ma wysokość ekranu – menu jest „na zdjęciu”, póki nie przewiniemy prawie do jego końca.
+    const check = () => setOverPhoto(window.scrollY < window.innerHeight - 96);
+    check();
+    window.addEventListener('scroll', check, { passive: true });
+    window.addEventListener('resize', check);
+    return () => {
+      window.removeEventListener('scroll', check);
+      window.removeEventListener('resize', check);
+    };
+  }, [overlay]);
   const href = (p: SitePage) => hrefOf?.(p) ?? pageHref(slug, p.path);
 
   /** Zwykłe kliknięcie zostaje w aplikacji strony; Ctrl/Cmd/środkowy przycisk otwiera nową kartę jak zawsze. */
@@ -37,7 +55,7 @@ export function SiteNav({ slug, brand, brandLabel, pages, current, button, onNav
   };
 
   return (
-    <header className="site-nav" data-edit-target={editTarget}>
+    <header className={`site-nav${overlay ? ' overlay' : ''}${overPhoto ? ' over-photo' : ''}`} data-edit-target={editTarget}>
       <a className="site-brand" href={pageHref(slug, null)} onClick={follow(null)} aria-label={brandLabel}>
         {brand}
       </a>
