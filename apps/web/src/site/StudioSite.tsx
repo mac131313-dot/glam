@@ -9,8 +9,11 @@ import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { Spinner, Watermark } from '../ui.tsx';
 import { EditorBridge } from './EditorBridge.tsx';
+import { MOTION, useScrollVar } from './motion.ts';
 import { FOOTER_ID, HERO_ID } from './protocol.ts';
+import { Reveal } from './Reveal.tsx';
 import { SideRays } from './SideRays.tsx';
+import { SplitHeading } from './SplitHeading.tsx';
 import './site.css';
 
 type PublicSession = { id: string; startsAt: string; endsAt: string; classTypeId: string; className: string; trainer: string; zone: string; kind: string; spotsLeft: number };
@@ -165,14 +168,8 @@ const img = (v: Values, k: string) => (s(v, k) ? siteImageUrl(s(v, k)) : null);
 
 /** Tytuł z dopiskiem w kursywie – jedyny ozdobnik strony. */
 function Title({ v, as = 'h2', className = 'site-h2' }: { v: Values; as?: 'h1' | 'h2'; className?: string }) {
-  const Tag = as;
   if (!s(v, 'title') && !s(v, 'serif')) return null;
-  return (
-    <Tag className={className}>
-      {s(v, 'title')}
-      {s(v, 'serif') && <span className="serif"> {s(v, 'serif')}</span>}
-    </Tag>
-  );
+  return <SplitHeading as={as} className={className} title={s(v, 'title')} serif={s(v, 'serif')} />;
 }
 
 function Head({ v, children }: { v: Values; children?: ReactNode }) {
@@ -180,10 +177,10 @@ function Head({ v, children }: { v: Values; children?: ReactNode }) {
   return (
     <div className="site-head">
       <div>
-        {s(v, 'eyebrow') && <div className="site-eyebrow">{s(v, 'eyebrow')}</div>}
+        {s(v, 'eyebrow') && <Reveal className="site-eyebrow">{s(v, 'eyebrow')}</Reveal>}
         <Title v={v} />
       </div>
-      {children}
+      {children && <Reveal delay={0.2}>{children}</Reveal>}
     </div>
   );
 }
@@ -281,6 +278,9 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
   const serif = s(v, 'serif') || (studio.tagline ? lowerFirst(studio.tagline) : '');
   const photo = img(v, 'image');
   const layout = photo ? s(v, 'imageLayout') || 'full' : 'text';
+  // Przewinięcie nagłówka (0–1) jako --hero-p: zdjęcie zostaje w tyle (parallax), tekst odpływa w górę i blednie.
+  const ref = useRef<HTMLElement>(null);
+  useScrollVar(ref, '--hero-p');
 
   const text = (
     <div className="site-hero-text">
@@ -290,10 +290,7 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
         </a>
       )}
       {s(v, 'eyebrow') && <div className="site-eyebrow">{s(v, 'eyebrow')}</div>}
-      <h1 className="site-title">
-        {title}
-        {serif && <span className="serif"> {serif}</span>}
-      </h1>
+      <SplitHeading as="h1" className="site-title" title={title} serif={serif} delay={0.3} immediate />
       {s(v, 'text') && <p className="site-lead">{s(v, 'text')}</p>}
       {(s(v, 'button') || s(v, 'button2')) && (
         <div className="site-actions">
@@ -327,7 +324,7 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
   );
 
   return (
-    <section id={HERO_ID} data-section-name="Nagłówek strony" className={`site-hero layout-${layout}`}>
+    <section ref={ref} id={HERO_ID} data-section-name="Nagłówek strony" className={`site-hero layout-${layout}${MOTION ? ' has-motion' : ''}`}>
       {layout === 'cover' && photo ? (
         <div className="site-hero-cover">
           <MediaEl src={photo} />

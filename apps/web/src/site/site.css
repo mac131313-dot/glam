@@ -307,3 +307,38 @@
 }
 .eb-plus-bottom { bottom: -13px; }
 .site-product .btn { margin-top: 16px; }
+
+/* ——— Ruch (docs/strona-studia-spec.md 3.2–3.3, 4.2; logika w motion.ts). Klasy rv / split / has-motion nadaje tylko JS,
+   gdy animujemy – bez JS, w edytorze i przy ograniczeniu ruchu treść jest od razu widoczna. ——— */
+.site { --ease-out: cubic-bezier(0.22, 1, 0.36, 1); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); }
+
+/* Reveal: opacity + 40 px w górę + rozmycie 8 px, 0.8 s */
+.rv { opacity: 0; transform: translateY(40px); filter: blur(8px); transition: opacity 0.8s var(--ease-out) var(--rv-delay, 0s), transform 0.8s var(--ease-out) var(--rv-delay, 0s), filter 0.8s var(--ease-out) var(--rv-delay, 0s); }
+.rv.is-in { opacity: 1; transform: none; filter: none; }
+
+/* SplitHeading: każde słowo pod maską. Maska ma zapas na ogonki liter i pochyłość kursywy. */
+.site-split-h .sw { display: inline-block; overflow: hidden; vertical-align: top; padding: 0 0.06em 0.14em; margin: 0 -0.06em -0.14em; }
+.site-split-h .sw-i { display: inline-block; transform: translateY(110%); transition: transform 0.9s var(--ease-out) var(--sw-delay, 0s); }
+.site-split-h .serif .sw-i { transform: translateY(110%) rotate(4deg); transform-origin: left bottom; }
+.site-split-h.is-in .sw-i { transform: none; }
+
+/* Hero: wejście po załadowaniu. Zdjęcie 1.15 → 1 i z przezroczystości (1.6 s), tekst pod tytułem od 0.9 s. */
+@keyframes site-hero-photo { from { opacity: 0; scale: 1.15; } }
+@keyframes site-hero-rise { from { opacity: 0; translate: 0 20px; } }
+.site-hero.has-motion .site-photo img, .site-hero.has-motion .site-photo video,
+.site-hero.has-motion .site-hero-cover > img, .site-hero.has-motion .site-hero-cover > video { animation: site-hero-photo 1.6s var(--ease-out) both; }
+.site-hero.has-motion .site-hero-text > :not(.site-title) { animation: site-hero-rise 0.8s var(--ease-out) 0.9s both; }
+.site-hero.has-motion .site-hero-text > .site-news { animation-delay: 0.15s; }
+
+/* Hero przy przewijaniu (--hero-p 0–1): zdjęcie przesuwa się wolniej niż strona, tekst odpływa i blednie.
+   Kadr jest o 10% wyższy od ramki, żeby przesunięcie nie odsłoniło krawędzi. */
+.site-hero.has-motion .site-photo img, .site-hero.has-motion .site-photo video,
+.site-hero.has-motion .site-hero-cover > img, .site-hero.has-motion .site-hero-cover > video {
+  top: -10%; height: 110%; translate: 0 calc(var(--hero-p, 0) * 9%); will-change: translate;
+}
+.site-hero.has-motion .site-hero-text { translate: 0 calc(var(--hero-p, 0) * -64px); opacity: calc(1 - var(--hero-p, 0) * 0.7); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rv, .site-split-h .sw-i { transition: none; opacity: 1; transform: none; filter: none; }
+  .site-hero.has-motion * { animation: none !important; translate: none !important; }
+}
