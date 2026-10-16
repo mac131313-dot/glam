@@ -5,6 +5,7 @@ import { TenantViolation } from './scope.ts';
 import { accountRoutes } from './routes/account.ts';
 import { clientRoutes } from './routes/client.ts';
 import { communityRoutes } from './routes/community.ts';
+import { dmRoutes } from './routes/dm.ts';
 import { configRoutes } from './routes/config.ts';
 import { coursePageRoutes } from './routes/coursePage.ts';
 import { courseRoutes } from './routes/courses.ts';
@@ -61,6 +62,7 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   configRoutes(app, deps);
   marketingRoutes(app, deps);
   communityRoutes(app, deps);
+  dmRoutes(app, deps);
   healthRoutes(app, deps);
   courseRoutes(app, deps);
   uploadRoutes(app, deps);

@@ -177,28 +177,31 @@ export function ReportSheet({ target, onClose }: { target: { kind: string; id: s
   );
 }
 
-type GroupItem = ThreadItem & { description: string | null; approval: number; joined: number; requested: number };
+type GroupItem = ThreadItem & { members: number; description: string | null; approval: number; joined: number; requested: number };
 
 // Rozmowę (także z powiadomienia „community/groups/<id>”) otwiera RouteView jako osobny ekran – GroupChatPage.
 function Groups() {
   const groups = useApi<GroupItem[]>('/groups');
+  // Prywatne rozmowy z trenerkami – na tej samej liście co grupy, jak w komunikatorze.
+  const dms = useApi<ThreadItem[]>('/dm');
   const { open } = useClient();
   const { run } = useAction();
   // Po powrocie z rozmowy odświeżamy liczniki.
   useEffect(() => {
-    const t = setInterval(() => document.visibilityState === 'visible' && groups.reload(), 15_000);
+    const t = setInterval(() => document.visibilityState === 'visible' && (groups.reload(), dms.reload()), 15_000);
     return () => clearInterval(t);
-  }, [groups.reload]);
+  }, [groups.reload, dms.reload]);
   if (!groups.data) return <Spinner />;
-  if (groups.data.length === 0) return <Empty icon="🌸">Studio nie założyło jeszcze grup.</Empty>;
-  const mine = groups.data.filter((g) => g.joined).sort((a, b) => (b.last?.at ?? '').localeCompare(a.last?.at ?? ''));
+  const direct = (dms.data ?? []).map((d) => ({ ...d, route: `dm/${d.id}` }));
+  if (groups.data.length === 0 && direct.length === 0) return <Empty icon="🌸">Studio nie założyło jeszcze grup.</Empty>;
+  const mine = [...groups.data.filter((g) => g.joined).map((g) => ({ ...g, route: `groups/${g.id}` })), ...direct].sort((a, b) => (b.last?.at ?? '').localeCompare(a.last?.at ?? ''));
   const others = groups.data.filter((g) => !g.joined);
   return (
     <div className="stack">
       {mine.length > 0 && (
         <ul className="thread-list">
           {mine.map((g) => (
-            <ThreadRow key={g.id} g={g} onOpen={() => open(`groups/${g.id}`)} />
+            <ThreadRow key={g.route} g={g} onOpen={() => open(g.route)} />
           ))}
         </ul>
       )}

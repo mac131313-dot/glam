@@ -1,5 +1,5 @@
 // Panele ról (3, 2.1): menu budowane z siatki uprawnień (core/roles.ts) – to samo, co sprawdza serwer.
-// Trenerka: Dziś · Grupy (czat jak w komunikatorze) · Klientki · Wiadomości · Powitania · Mój profil · Kursy · Kartki · Mój grafik.
+// Trenerka: Dziś · Rozmowy (grupy i wiadomości od klientek) · Klientki · Wiadomości · Powitania · Mój profil · Kursy · Kartki · Mój grafik.
 // Recepcja: Wejście · Dziś · Klientki · Grafik · Wiadomości · Kasa · Sklep · Wydarzenia.
 // Koordynatorka: Społeczność · Edycje sezonowe · Muzyka. Właścicielka: wszystko (panel w stylu Shopify).
 import { lazy, Suspense, useEffect, useState } from 'react';
@@ -43,7 +43,7 @@ const SECTIONS: Section[] = [
   { id: 'analytics', label: 'Analityka i KPI', icon: 'chart', perms: ['finance.view'], group: 'Studio' },
   { id: 'entrance', label: 'Wejście', icon: 'ticket', perms: ['participants.manage'], group: 'Codziennie' },
   { id: 'today', label: 'Dziś', icon: 'sun', perms: ['day.own', 'day.all'], group: 'Codziennie' },
-  { id: 'groups', label: 'Grupy', icon: 'people', perms: ['messages.group.own', 'community.moderate'], group: 'Codziennie' },
+  { id: 'groups', label: 'Rozmowy', icon: 'chat', perms: ['messages.group.own', 'community.moderate'], group: 'Codziennie' },
   { id: 'clients', label: 'Klientki', icon: 'people', perms: ['clients.view', 'notes.write'], group: 'Codziennie' },
   { id: 'messages', label: 'Wiadomości', icon: 'chat', perms: ['messages.group.own', 'messages.group.all', 'chat.answer'], group: 'Codziennie' },
   { id: 'desk', label: 'Kasa i wejściówki', icon: 'gift', perms: ['desk.sell'], group: 'Codziennie' },

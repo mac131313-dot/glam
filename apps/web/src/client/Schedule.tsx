@@ -228,6 +228,9 @@ export function Schedule() {
               <button className="badge" style={{ border: 0, cursor: 'pointer', font: 'inherit' }} onClick={() => (setDetail(null), open(`trainer/${detail.trainer_id}`))}>
                 prowadzi {detail.trainer_name} ›
               </button>
+              <button className="badge" style={{ border: 0, cursor: 'pointer', font: 'inherit' }} onClick={() => (setDetail(null), open(`dm/${detail.trainer_id}`))} aria-label={`Napisz wiadomość – prowadzi ${detail.trainer_name}`}>
+                napisz ›
+              </button>
               <span className="badge">{detail.zone_name}</span>
             </div>
             {detail.playlist_url && (

@@ -135,6 +135,9 @@ export function healthRoutes(app: FastifyInstance, deps: Deps) {
     } else if (m.kind === 'chat') {
       // Załącznik z czatu: zespół studia i klientka, której rozmowy dotyczy.
       ok = staff || !!scope.get('SELECT 1 FROM chat_messages WHERE studio_id = $studio AND media_id = $m AND client_id = $u', { m: m.id, u: user.id });
+    } else if (m.kind === 'dm') {
+      // Załącznik z rozmowy z trenerką: tylko klientka i ta trenerka – reszta zespołu go nie widzi.
+      ok = !!scope.get('SELECT 1 FROM trainer_messages WHERE studio_id = $studio AND media_id = $m AND (client_id = $u OR trainer_id = $u)', { m: m.id, u: user.id });
     } else if (m.kind === 'group') {
       // Załącznik z czatu grupy: członkinie grupy, jej opiekunka i zespół studia.
       ok = staff || !!scope.get('SELECT 1 FROM group_chat c JOIN group_members gm ON gm.group_id = c.group_id AND gm.user_id = $u WHERE c.studio_id = $studio AND c.media_id = $m', { m: m.id, u: user.id });

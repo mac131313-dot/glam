@@ -183,7 +183,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
         // Warstwa musi być prawdziwym pudełkiem. `display: contents` przepuszczało kliknięcia –
         // katalog było widać, ale karta produktu nie dostawała zdarzenia.
         <div key={`${route}-${i}`} className="route-layer" style={{ display: i === stack.length - 1 ? 'flex' : 'none', zIndex: 40 + i }}>
-          <RouteView route={route} close={() => setStack((st) => st.slice(0, i))} />
+          <RouteView route={route} close={() => setStack((st) => st.slice(0, i))} open={ctx.open} />
         </div>
       ))}
       {breath && <BreathPlayer request={breath} onClose={() => setBreath(null)} />}

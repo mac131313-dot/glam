@@ -1,6 +1,6 @@
-// Czat grupy jak w komunikatorze: dymki po lewej (inne osoby) i prawej (ja), podpis autorki nad serią,
-// separatory dni, pole wiadomości przypięte na dole. Ten sam widok w aplikacji klientki (Razem → Grupy)
-// i w aplikacji trenerki (Grupy) – różni się tylko tym, kto może ukrywać wiadomości (canModerate z API).
+// Rozmowy jak w komunikatorze: dymki po lewej (inne osoby) i prawej (ja), podpis autorki nad serią,
+// separatory dni, pole wiadomości przypięte na dole. Jeden widok (Conversation) dla czatu grupy
+// (Razem → Grupy, aplikacja trenerki → Grupy) i prywatnej rozmowy z trenerką („Napisz do trenerki”).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, fmtDay, fmtLongDay, fmtTime, localDate, useApi } from './api.ts';
 import { AttachmentView, ChatComposer, type ChatAttachment } from './chat.tsx';
@@ -15,9 +15,11 @@ export type GroupChatMessage = {
   trainer: boolean;
   author: { id: string; name: string; staff: boolean };
   attachment: ChatAttachment | null;
+  /** Rozmowa prywatna: druga strona przeczytała moją wiadomość. */
+  seen?: boolean;
 };
 type GroupChatData = {
-  group: { id: string; name: string; description: string | null; members: number; trainer: { name: string } | null; canModerate: boolean; member: boolean };
+  group: { id: string; name: string; description: string | null; members: number; trainer: { id: string; name: string } | null; canModerate: boolean; member: boolean };
   messages: GroupChatMessage[];
 };
 
@@ -44,7 +46,7 @@ const dayLabel = (iso: string) => {
 };
 
 /** Pełnoekranowa rozmowa grupy z nagłówkiem (nazwa, opiekunka, liczba osób) i przypiętym polem wiadomości. */
-export function GroupChatPage({ groupId, onBack }: { groupId: string; onBack: () => void }) {
+export function GroupChatPage({ groupId, onBack, onWriteTrainer }: { groupId: string; onBack: () => void; onWriteTrainer?: (trainerId: string) => void }) {
   const chat = useApi<GroupChatData>(`/groups/${groupId}/chat`, [groupId]);
   const { run } = useAction();
   const g = chat.data?.group;
@@ -59,31 +61,95 @@ export function GroupChatPage({ groupId, onBack }: { groupId: string; onBack: ()
           <span>{g?.name ?? 'Grupa'}</span>
           {g && (
             <span className="tiny muted">
-              {g.trainer ? `prowadzi ${g.trainer.name} · ` : ''}
+              {g.trainer && onWriteTrainer && !g.canModerate ? (
+                <>
+                  <button className="link tiny" onClick={() => onWriteTrainer(g.trainer!.id)} title="Prywatna wiadomość do trenerki">
+                    prowadzi {g.trainer.name} · napisz
+                  </button>{' '}
+                  ·{' '}
+                </>
+              ) : g.trainer ? (
+                `prowadzi ${g.trainer.name} · `
+              ) : (
+                ''
+              )}
               {g.members} {osoby(g.members)}
             </span>
           )}
         </span>
       }
     >
-      {chat.error ? <Empty>{chat.error.message ?? 'Nie udało się otworzyć rozmowy.'}</Empty> : !chat.data ? <Spinner /> : <GroupChat groupId={groupId} initial={chat.data} />}
+      {chat.error ? <Empty>{chat.error.message ?? 'Nie udało się otworzyć rozmowy.'}</Empty> : !chat.data ? (
+        <Spinner />
+      ) : (
+        <Conversation
+          base={`/groups/${groupId}/chat`}
+          initialMessages={chat.data.messages}
+          canModerate={chat.data.group.canModerate}
+          reportKind="group_chat"
+          placeholder={chat.data.group.canModerate && !chat.data.group.member ? 'Napisz do grupy…' : 'Wiadomość…'}
+        />
+      )}
     </Page>
   );
 }
 
-function GroupChat({ groupId, initial }: { groupId: string; initial: GroupChatData }) {
-  const [messages, setMessages] = useState(initial.messages);
+/** Prywatna rozmowa klientka ↔ trenerka. `path`: „/dm/<trenerka>” (klientka) albo „/staff/dm/<klientka>” (trenerka). */
+export function DirectChatPage({ path, onBack, hint }: { path: string; onBack: () => void; hint: string }) {
+  const chat = useApi<{ peer: { id: string; name: string }; messages: GroupChatMessage[] }>(path, [path]);
+  return (
+    <Page
+      onBack={onBack}
+      bodyClass="gchat-body"
+      title={
+        <span className="gchat-title">
+          <span>{chat.data?.peer.name ?? 'Rozmowa'}</span>
+          <span className="tiny muted">{hint}</span>
+        </span>
+      }
+    >
+      {chat.error ? (
+        <Empty>{chat.error.message ?? 'Nie udało się otworzyć rozmowy.'}</Empty>
+      ) : !chat.data ? (
+        <Spinner />
+      ) : (
+        <Conversation base={path} initialMessages={chat.data.messages} placeholder="Wiadomość…" empty="Napisz, w czym możemy pomóc – odpowiedź przyjdzie tutaj i w powiadomieniu." />
+      )}
+    </Page>
+  );
+}
+
+function Conversation({
+  base,
+  initialMessages,
+  canModerate = false,
+  reportKind,
+  placeholder,
+  empty = 'Tu zacznie się Wasza rozmowa. Napisz pierwsza',
+}: {
+  base: string;
+  initialMessages: GroupChatMessage[];
+  canModerate?: boolean;
+  reportKind?: 'group_chat';
+  placeholder: string;
+  empty?: string;
+}) {
+  const [messages, setMessages] = useState(initialMessages);
   const [picked, setPicked] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const { run } = useAction();
-  const { canModerate } = initial.group;
 
   // Dociąganie nowych wiadomości (tylko gdy karta jest widoczna) – bez przeładowania całej rozmowy.
   const lastAt = messages.at(-1)?.created_at;
   const pull = async () => {
-    const r = await api<GroupChatData>(`/groups/${groupId}/chat${lastAt ? `?after=${encodeURIComponent(lastAt)}` : ''}`);
-    if (r.messages.length) setMessages((m) => [...m, ...r.messages.filter((x) => !m.some((y) => y.id === x.id))]);
+    const r = await api<{ messages: GroupChatMessage[]; peerReadAt?: string | null }>(`${base}${lastAt ? `?after=${encodeURIComponent(lastAt)}` : ''}`);
+    setMessages((m) => {
+      const next = r.messages.length ? [...m, ...r.messages.filter((x) => !m.some((y) => y.id === x.id))] : m;
+      // Rozmowa prywatna: „przeczytane” pod moimi wiadomościami, do których druga strona doczytała.
+      const readAt = r.peerReadAt;
+      return readAt && next.some((x) => x.mine && !x.seen && x.created_at <= readAt) ? next.map((x) => (x.mine && x.created_at <= readAt ? { ...x, seen: true } : x)) : next;
+    });
   };
   useEffect(() => {
     const t = setInterval(() => document.visibilityState === 'visible' && pull().catch(() => {}), POLL_MS);
@@ -98,13 +164,13 @@ function GroupChat({ groupId, initial }: { groupId: string; initial: GroupChatDa
 
   const remove = (m: GroupChatMessage) =>
     run(async () => {
-      const r = await api<{ deleted?: boolean; hidden?: boolean }>(`/groups/${groupId}/chat/${m.id}`, { method: 'DELETE' });
+      const r = await api<{ deleted?: boolean; hidden?: boolean }>(`${base}/${m.id}`, { method: 'DELETE' });
       setMessages((all) => (r.deleted ? all.filter((x) => x.id !== m.id) : all.map((x) => (x.id === m.id ? { ...x, hidden: Number(!!r.hidden) } : x))));
       setPicked(null);
     }, m.mine ? 'Usunięte' : undefined);
 
   const report = (m: GroupChatMessage) =>
-    run(() => api<{ message: string }>('/reports', { method: 'POST', body: { targetKind: 'group_chat', targetId: m.id, reason: 'czat grupy' } }).then((r) => (setPicked(null), r)), (r) => r.message);
+    run(() => api<{ message: string }>('/reports', { method: 'POST', body: { targetKind: reportKind, targetId: m.id, reason: 'czat grupy' } }).then((r) => (setPicked(null), r)), (r) => r.message);
 
   return (
     <>
@@ -116,7 +182,7 @@ function GroupChat({ groupId, initial }: { groupId: string; initial: GroupChatDa
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
       >
-        {messages.length === 0 && <Empty>Tu zacznie się Wasza rozmowa. Napisz pierwsza</Empty>}
+        {messages.length === 0 && <Empty>{empty}</Empty>}
         {messages.map((m, i) => {
           const prev = messages[i - 1];
           const newDay = !prev || localDate(new Date(prev.created_at)) !== localDate(new Date(m.created_at));
@@ -147,15 +213,16 @@ function GroupChat({ groupId, initial }: { groupId: string; initial: GroupChatDa
                     <span className="gchat-meta tiny muted">
                       {m.hidden ? 'ukryta · ' : ''}
                       {fmtTime(m.created_at)}
+                      {m.seen && i === messages.length - 1 ? ' · przeczytane' : ''}
                       {picked === m.id && (
                         <>
                           {m.mine ? (
                             <button className="link tiny" onClick={() => remove(m)}>usuń</button>
                           ) : canModerate ? (
                             <button className="link tiny" onClick={() => remove(m)}>{m.hidden ? 'przywróć' : 'ukryj'}</button>
-                          ) : (
+                          ) : reportKind ? (
                             <button className="link tiny" onClick={() => report(m)}>zgłoś</button>
-                          )}
+                          ) : null}
                         </>
                       )}
                     </span>
@@ -169,10 +236,10 @@ function GroupChat({ groupId, initial }: { groupId: string; initial: GroupChatDa
       <div className="gchat-composer">
         <ChatComposer
           variant="bar"
-          placeholder={canModerate && !initial.group.member ? 'Napisz do grupy…' : 'Wiadomość…'}
+          placeholder={placeholder}
           onSend={async (msg) => {
             stick.current = true;
-            await api(`/groups/${groupId}/chat`, { method: 'POST', body: msg });
+            await api(base, { method: 'POST', body: msg });
             await pull();
           }}
         />
@@ -183,7 +250,7 @@ function GroupChat({ groupId, initial }: { groupId: string; initial: GroupChatDa
 
 // ——— Lista rozmów (Razem → Grupy i aplikacja trenerki) ———
 
-export type ThreadItem = { id: string; name: string; members: number; trainer: string | null; unread: number; last: { body: string; author: string | null; at: string } | null };
+export type ThreadItem = { id: string; name: string; members?: number; trainer?: string | null; unread: number; last: { body: string; author: string | null; at: string } | null };
 
 const osoby = (n: number) => (n === 1 ? 'osoba' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'osoby' : 'osób');
 
@@ -206,7 +273,7 @@ export function ThreadRow({ g, onOpen }: { g: ThreadItem; onOpen: () => void }) 
             {g.last && <span className="tiny muted">{threadTime(g.last.at)}</span>}
           </span>
           <span className="row" style={{ gap: 8 }}>
-            <span className="thread-preview grow">{g.last ? `${g.last.author ? `${g.last.author}: ` : ''}${g.last.body}` : g.trainer ? `prowadzi ${g.trainer}` : `${g.members} ${osoby(g.members)}`}</span>
+            <span className="thread-preview grow">{g.last ? `${g.last.author ? `${g.last.author}: ` : ''}${g.last.body}` : g.trainer ? `prowadzi ${g.trainer}` : g.members != null ? `${g.members} ${osoby(g.members)}` : ''}</span>
             {g.unread > 0 && <span className="thread-dot">{g.unread > 99 ? '99+' : g.unread}</span>}
           </span>
         </span>

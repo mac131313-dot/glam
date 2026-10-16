@@ -307,6 +307,8 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
       loyalty: q('SELECT studio_id, points, reason, created_at FROM loyalty_ledger WHERE user_id = ?'),
       notifications: q('SELECT studio_id, category, body, deliver_at FROM notifications WHERE user_id = ?'),
       chat: q('SELECT studio_id, body, from_staff, created_at FROM chat_messages WHERE client_id = ?'),
+      groupChat: q('SELECT studio_id, group_id, body, created_at FROM group_chat WHERE author_id = ?'),
+      trainerMessages: q('SELECT studio_id, trainer_id, body, author_id = client_id AS from_me, created_at FROM trainer_messages WHERE client_id = ?'),
     };
     return reply
       .header('content-type', 'application/json; charset=utf-8')
@@ -340,6 +342,9 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
         'UPDATE post_comments SET hidden = 1, body = \'[treść usunięta]\' WHERE author_id = ?',
         'DELETE FROM trainer_notes WHERE client_id = ?',
         'DELETE FROM chat_messages WHERE client_id = ?',
+        'UPDATE group_chat SET hidden = 1, body = \'[treść usunięta]\', media_id = NULL WHERE author_id = ?',
+        'DELETE FROM group_chat_reads WHERE user_id = ?',
+        'DELETE FROM trainer_messages WHERE client_id = ?',
         "UPDATE bookings SET status = 'cancelled' WHERE user_id = ? AND status IN ('booked', 'waitlist')",
       ])
         db.prepare(sql).run(u.id);

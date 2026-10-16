@@ -1,7 +1,7 @@
 // Podstrony aplikacji klientki: stos „otwórz → wróć” nad pięcioma zakładkami. Trasa to krótki tekst,
 // np. „passes”, „course/co1”, „survey/abc” – te same, które przychodzą w powiadomieniach (pole action).
 import { lazy, Suspense, type ComponentType } from 'react';
-import { GroupChatPage } from '../groupChat.tsx';
+import { DirectChatPage, GroupChatPage } from '../groupChat.tsx';
 import { Page, Spinner } from '../ui.tsx';
 
 const AccountPages = lazy(() => import('./AccountPages.tsx'));
@@ -56,6 +56,7 @@ const TITLES: Record<string, string> = {
   survey: 'Co się stało?',
   wellbeing: 'Dla mnie',
   trainer: 'Trenerka',
+  dm: 'Wiadomość do trenerki',
 };
 
 const GROUP: Record<string, ComponentType<RouteProps>> = {
@@ -111,12 +112,14 @@ export function normalizeRoute(action: string): { tab?: string; route?: string }
   return TITLES[head] ? { route: a } : { tab: 'start' };
 }
 
-export function RouteView({ route, close }: { route: string; close: () => void }) {
+export function RouteView({ route, close, open }: { route: string; close: () => void; open: (route: string) => void }) {
   const [head, ...rest] = route.split('/');
   const arg = rest.join('/') || null;
   const Group = GROUP[head];
   // Rozmowa grupy ma własny pełny ekran (nagłówek z grupą, pole wiadomości na dole).
-  if (head === 'groups' && arg) return <GroupChatPage groupId={arg} onBack={close} />;
+  if (head === 'groups' && arg) return <GroupChatPage groupId={arg} onBack={close} onWriteTrainer={(t) => open(`dm/${t}`)} />;
+  // „Napisz do trenerki” – prywatna rozmowa (także z powiadomienia „dm/<trenerka>”).
+  if (head === 'dm' && arg) return <DirectChatPage path={`/dm/${arg}`} onBack={close} hint="prywatnie · widzicie to tylko Wy dwie" />;
   return (
     <Page title={TITLES[head] ?? ''} onBack={close}>
       <Suspense fallback={<Spinner />}>{Group ? <Group route={head} arg={arg} close={close} /> : <p className="muted">Nie ma takiej strony.</p>}</Suspense>

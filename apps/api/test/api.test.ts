@@ -705,6 +705,48 @@ test('czat grupy: opiekunka pisze z aplikacji trenerki, członkinie odpowiadają
   assert.equal((await call(owner, SSG_STUDIO, 'PUT', '/api/staff/groups/ss_g_split/trainer', { trainerId: uid(SSG.karolina) })).statusCode, 400);
 });
 
+test('napisz do trenerki: prywatna rozmowa, trenerka tylko odpowiada, recepcja i inne trenerki nie widzą', async () => {
+  const julia = await login(SSG.julia);
+  const basia = await login(SSG.basia);
+  const weronika = await login(SSG.weronika);
+  const reception = await login(SSG.reception);
+  const uid = (phone: string) => (db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string }).id;
+  const [basiaId, juliaId] = [uid(SSG.basia), uid(SSG.julia)];
+
+  // Trenerka nie zaczyna rozmowy sama.
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', `/api/staff/dm/${juliaId}`, { body: 'Hej!' })).statusCode, 404);
+  // Do klientki nie da się „napisać jak do trenerki”.
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', `/api/dm/${juliaId}`, { body: 'Hej!' })).statusCode, 404);
+
+  const sent = await call(julia, SSG_STUDIO, 'POST', `/api/dm/${basiaId}`, { body: 'Czy mogę przyjść z lekkim bólem kolana?' });
+  assert.equal(sent.statusCode, 200, sent.body);
+  await call(julia, SSG_STUDIO, 'POST', `/api/dm/${basiaId}`, { body: 'Chodzi o jutrzejszy Pilates' });
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND action = ?").get(basiaId, `staff/dm/${juliaId}`) as { n: number }).n, 1, 'jedno zbiorcze powiadomienie');
+
+  const inbox = (await call(basia, SSG_STUDIO, 'GET', '/api/staff/dm')).json();
+  assert.equal(inbox[0].id, juliaId);
+  assert.equal(inbox[0].unread, 2);
+  assert.equal((await call(weronika, SSG_STUDIO, 'GET', '/api/staff/dm')).json().length, 0, 'inna trenerka nie widzi');
+  assert.equal((await call(reception, SSG_STUDIO, 'GET', `/api/staff/dm/${juliaId}`)).statusCode, 403, 'recepcja nie czyta');
+
+  const conv = (await call(basia, SSG_STUDIO, 'GET', `/api/staff/dm/${juliaId}`)).json();
+  assert.equal(conv.messages.length, 2);
+  assert.equal((await call(basia, SSG_STUDIO, 'GET', '/api/staff/dm')).json()[0].unread, 0);
+  const mine = (await call(julia, SSG_STUDIO, 'GET', `/api/dm/${basiaId}`)).json();
+  assert.equal(mine.messages.at(-1).seen, true, 'klientka widzi, że przeczytane');
+
+  // Odpowiedź trenerki → powiadomienie do klientki prowadzące do rozmowy.
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', `/api/staff/dm/${juliaId}`, { body: 'Jasne, pokażę Ci wersję bez obciążania kolana.' })).statusCode, 200);
+  assert.ok(db.prepare('SELECT 1 FROM notifications WHERE user_id = ? AND action = ?').get(juliaId, `dm/${basiaId}`));
+  const threads = (await call(julia, SSG_STUDIO, 'GET', '/api/dm')).json();
+  assert.equal(threads[0].name, 'Basia');
+  assert.equal(threads[0].unread, 1);
+
+  // Usuwa się tylko własne wiadomości.
+  assert.equal((await call(basia, SSG_STUDIO, 'DELETE', `/api/staff/dm/${juliaId}/${sent.json().id}`)).statusCode, 404);
+  assert.equal((await call(julia, SSG_STUDIO, 'DELETE', `/api/dm/${basiaId}/${sent.json().id}`)).statusCode, 200);
+});
+
 test('grupy za zgodą: prośba czeka w panelu, akceptacja dodaje do grupy, a klientka dopiero wtedy widzi wpisy', async () => {
   const owner = await login(SSG.owner);
   const julia = await login(SSG.julia);

@@ -1233,6 +1233,22 @@ CREATE TABLE IF NOT EXISTS campaigns (
   created_at TEXT NOT NULL
 );
 
+-- Prywatna rozmowa klientka ↔ trenerka („Napisz do trenerki”): widzą ją tylko te dwie osoby. Zaczyna klientka,
+-- trenerka odpowiada. Załącznik – prywatny plik „dm”. read_at – kiedy druga strona przeczytała.
+CREATE TABLE IF NOT EXISTS trainer_messages (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  client_id TEXT NOT NULL REFERENCES users(id),
+  trainer_id TEXT NOT NULL REFERENCES users(id),
+  author_id TEXT NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL,
+  media_id TEXT,
+  attachment_name TEXT,
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trainer_messages ON trainer_messages (studio_id, trainer_id, client_id, created_at);
+
 CREATE TABLE IF NOT EXISTS chat_messages (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
