@@ -6,6 +6,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { isNewClass, siteImageUrl, siteLook, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
+import { Icon } from '../icons.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { Spinner, Watermark } from '../ui.tsx';
 import { Carousel } from './Carousel.tsx';
@@ -672,7 +673,7 @@ function TrainerDialog({ studio, t, names, onClose }: { studio: PublicStudio; t:
       onClick={(e) => e.target === e.currentTarget && ref.current?.close()}
     >
       <button type="button" className="site-dialog-close" onClick={() => ref.current?.close()} aria-label="Zamknij">
-        ×
+        <Icon name="close" size={18} />
       </button>
       <div className="site-trainer">
       {photo ? (

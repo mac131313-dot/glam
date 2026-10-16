@@ -163,10 +163,11 @@ html:has(.site-dialog[open]) { overflow: hidden; }
 @keyframes site-fade-in { from { opacity: 0; } }
 .site-dialog-close {
   position: sticky; top: 0; float: right; z-index: 2; margin: -8px -8px 0 12px; width: 44px; height: 44px; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 1.5rem; line-height: 1; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 0; cursor: pointer;
   display: grid; place-items: center; transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out);
 }
 @media (hover: hover) { .site-dialog-close:hover { background: var(--ink); color: var(--bg); } }
+.site-dialog-close svg { display: block; }
 .site-dialog-close:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .site-dialog .site-trainer-text .btn { margin-top: 8px; }
 @media (max-width: 700px) {
