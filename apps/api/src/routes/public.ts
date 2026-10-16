@@ -105,7 +105,7 @@ const json = (s: string | null) => {
   }
 };
 
-function readSite(db: Db, studioId: string) {
+export function readSite(db: Db, studioId: string) {
   const row = db.prepare('SELECT site_draft_json, site_draft_updated_at, site_json, site_published_at FROM studios WHERE id = ?').get(studioId) as {
     site_draft_json: string | null;
     site_draft_updated_at: string | null;

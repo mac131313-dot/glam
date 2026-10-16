@@ -16,6 +16,7 @@ import {
   priceRange,
   reservationExpiry,
   returnStock,
+  sitePages,
   SIZE_SCALES,
   sortVariants,
   stockHint,
@@ -29,6 +30,7 @@ import {
   type SizeScale,
   type Variant,
 } from '@glam/core';
+import { readSite } from './public.ts';
 import { assertFeature, ctx, requirePerm, requireStudio, type Deps } from '../context.ts';
 import { unseal } from '../crypto.ts';
 import { id, nowIso, type Db } from '../db.ts';
@@ -242,6 +244,8 @@ export function shopRoutes(app: FastifyInstance, deps: Deps) {
       studio: publicStudio(studio),
       settings: shopSettings(studio.settings.shop),
       products: scope.all<ProductRow>(`SELECT * FROM shop_products WHERE studio_id = $studio AND status != 'hidden' ${CATALOG_ORDER}`).map(publicView),
+      // zakładki menu strony studia – sklep pokazuje to samo menu co reszta strony
+      menu: sitePages(readSite(db, studio.id).published, { shop: true }),
     };
   });
 

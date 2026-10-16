@@ -139,7 +139,8 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
     groups: [
       heading('Sklep', 'studia'),
       { label: 'Przycisk', fields: [text('buyLabel', 'Przycisk przy produkcie', 'Kup teraz', 24)] },
-      { label: 'Elementy', fields: [toggle('showDescription', 'Opisy', true), toggle('showSoldOut', 'Wyprzedane produkty', false)] },
+      // Opisy produktów są na podstronie sklepu – na stronie głównej tylko zdjęcie, nazwa i cena.
+      { label: 'Elementy', fields: [toggle('showSoldOut', 'Wyprzedane produkty', false)] },
     ],
   },
   more: {
@@ -242,6 +243,45 @@ export type SiteDoc = {
 export const SYSTEM_SECTIONS: SystemSectionType[] = ['about', 'schedule', 'classes', 'trainers', 'shop', 'more'];
 const CUSTOM_PREFIX: Record<CustomSectionType, string> = { article: 'a', gallery: 'g' };
 export const MAX_SECTIONS = 30;
+
+/** Adresy podstron sekcji systemowych: /s/:slug/grafik itd. Sklep ma własną podstronę z katalogiem (ShopSite). */
+const SYSTEM_PATHS: Record<SystemSectionType, string> = { about: 'studio', schedule: 'grafik', classes: 'zajecia', trainers: 'trenerki', shop: 'sklep', more: 'wiecej' };
+/** Adresy zajęte przez inne strony studia – sekcja z własnym tekstem nie może ich przejąć. */
+const RESERVED_PATHS = new Set([...Object.values(SYSTEM_PATHS), 'kurs']);
+
+/** „Zajęcia dla Ciebie” → „zajecia-dla-ciebie” (adres podstrony z etykiety w menu). */
+export function pathSlug(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/ł/g, 'l')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+export type SitePage = { key: string; type: SystemSectionType | CustomSectionType; label: string; path: string };
+
+/**
+ * Zakładki menu strony studia: widoczne sekcje z etykietą w menu, każda z własnym adresem podstrony.
+ * Sklep tylko wtedy, gdy studio ma moduł sklepu i produkty (inaczej podstrona byłaby pusta).
+ */
+export function sitePages(doc: SiteDoc, opts: { shop: boolean }): SitePage[] {
+  const used = new Set<string>();
+  const pages: SitePage[] = [];
+  for (const s of doc.sections) {
+    const label = s.nav.trim();
+    if (!s.visible || !label || (s.type === 'shop' && !opts.shop)) continue;
+    let path = s.type === 'article' || s.type === 'gallery' ? pathSlug(label) : SYSTEM_PATHS[s.type];
+    // Własna sekcja o nazwie jak systemowa („Grafik”) albo dwie o tej samej nazwie – dopisujemy klucz sekcji.
+    if (!path || used.has(path) || (RESERVED_PATHS.has(path) && path !== SYSTEM_PATHS[s.type as SystemSectionType])) path = `${path || 'strona'}-${s.key}`;
+    used.add(path);
+    pages.push({ key: s.key, type: s.type, label, path });
+  }
+  return pages;
+}
+
 const MAX_PHOTOS = 200;
 
 /** Id pliku w bibliotece studia (UUID). Wszystko inne – np. adres z zewnątrz – odpada. */

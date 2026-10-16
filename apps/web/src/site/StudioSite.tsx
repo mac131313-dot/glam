@@ -4,7 +4,7 @@
 // Kontrakt z edytorem: każda sekcja to bezpośrednie dziecko <main> z id i data-section-name (most szuka `main > section[id]`).
 //   ?podglad=1 – szkic zamiast wersji publicznej (wymaga sesji panelu), ?edytor=1 – most do edytora w ramce.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { isNewClass, siteImageUrl, siteLook, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
+import { isNewClass, siteImageUrl, siteLook, sitePages, specOf, type FieldValue, type Look, type SiteDoc, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { Icon } from '../icons.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
@@ -15,6 +15,7 @@ import { MOTION, useScrollVar } from './motion.ts';
 import { FOOTER_ID, HERO_ID } from './protocol.ts';
 import { Reveal } from './Reveal.tsx';
 import { SideRays } from './SideRays.tsx';
+import { pageHref, SiteNav } from './SiteNav.tsx';
 import { SplitHeading } from './SplitHeading.tsx';
 import './site.css';
 
@@ -89,6 +90,22 @@ export function StudioSite({ slug }: { slug: string }) {
   const [studio, setStudio] = useState<PublicStudio | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Podstrona = jedna zakładka menu pod własnym adresem. Przejścia bez przeładowania; Wstecz w przeglądarce działa.
+  const [path, setPath] = useState(pathFromUrl);
+  useEffect(() => {
+    const sync = () => setPath(pathFromUrl());
+    window.addEventListener('popstate', sync);
+    return () => window.removeEventListener('popstate', sync);
+  }, []);
+  const navigate = useCallback(
+    (next: string | null) => {
+      if (next !== path) history.pushState(null, '', pageHref(slug, next));
+      setPath(next);
+      window.scrollTo({ top: 0 });
+    },
+    [path, slug],
+  );
+
   const reload = useCallback(() => {
     loadStudio(slug)
       .then(setStudio)
@@ -106,12 +123,14 @@ export function StudioSite({ slug }: { slug: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studio?.id, themeKey]);
 
+  const page = studio && !IN_EDITOR && path ? (pagesOf(studio).find((p) => p.path === path) ?? null) : null;
   useEffect(() => {
     if (!studio || !doc) return;
-    document.title = doc.seo.title || (studio.tagline ? `${studio.name} – ${studio.tagline}` : studio.name);
+    const home = doc.seo.title || (studio.tagline ? `${studio.name} – ${studio.tagline}` : studio.name);
+    document.title = page ? `${page.label} – ${studio.name}` : home;
     setMeta('description', doc.seo.description || studio.tagline || '');
     if (PREVIEW) setMeta('robots', 'noindex');
-  }, [studio, doc]);
+  }, [studio, doc, page]);
 
   if (error)
     return (
@@ -135,14 +154,23 @@ export function StudioSite({ slug }: { slug: string }) {
     <VideoIds.Provider value={doc.media}>
     <div className="site with-watermark">
       <Watermark src={studio.look.watermark} />
-      <SiteNav studio={studio} />
-      <main>
-        {doc.hero.visible && <Hero studio={studio} news={news} />}
-        {doc.sections
-          .filter((s) => s.visible)
-          .map((s) => (
-            <SectionView key={s.key} studio={studio} section={s} news={news} />
-          ))}
+      <StudioNav studio={studio} current={page?.path ?? null} onNavigate={navigate} />
+      {/* key: przy zmianie podstrony React buduje treść od nowa – nagłówki i karty wjeżdżają jeszcze raz. */}
+      <main key={page?.key ?? 'home'} className={page ? 'site-subpage' : undefined}>
+        {page ? (
+          doc.sections
+            .filter((s) => s.key === page.key)
+            .map((s) => <SectionView key={s.key} studio={studio} section={s} news={news} />)
+        ) : (
+          <>
+            {doc.hero.visible && <Hero studio={studio} news={news} />}
+            {doc.sections
+              .filter((s) => s.visible)
+              .map((s) => (
+                <SectionView key={s.key} studio={studio} section={s} news={news} />
+              ))}
+          </>
+        )}
         {doc.footer.visible && <Footer studio={studio} />}
       </main>
       {IN_EDITOR && <EditorBridge onDoc={onDoc} onRefresh={reload} />}
@@ -245,28 +273,30 @@ const sectionKey = (studio: PublicStudio, type: SiteSection['type']) => studio.s
 
 // ——— sekcje ———
 
-function SiteNav({ studio }: { studio: PublicStudio }) {
+/** Zakładki menu tego studia (sklep tylko z produktami – inaczej podstrona byłaby pusta). */
+const pagesOf = (studio: PublicStudio) => sitePages(studio.site, { shop: studio.modules.shop && studio.products.length > 0 });
+
+/** Adres podstrony z paska adresu: /s/:slug/:path → path (null = strona główna). */
+const pathFromUrl = () => {
+  const m = /^\/s\/[^/]+\/([^/?#]+)/.exec(location.pathname);
+  return m ? decodeURIComponent(m[1]) : null;
+};
+
+function StudioNav({ studio, current, onNavigate }: { studio: PublicStudio; current: string | null; onNavigate: (path: string | null) => void }) {
   const doc = studio.site;
-  // Sklep bez produktów (albo wyłączony) nie ma sekcji na stronie – więc i odnośnika w menu.
-  const links = doc.sections.filter((x) => x.visible && x.nav.trim() && (x.type !== 'shop' || (studio.modules.shop && studio.products.length > 0)));
   return (
-    <header className="site-nav" data-edit-target={HERO_ID}>
-      <a className="site-brand" href={`#${HERO_ID}`} aria-label={`${studio.name} – początek strony`}>
-        {studio.logoUrl ? <StudioBrand studio={studio} scale={1} /> : <span className="site-wordmark">{studio.name}</span>}
-      </a>
-      {doc.nav.showLinks && links.length > 0 && (
-        <nav className="site-links" aria-label="Sekcje strony">
-          {links.map((l) => (
-            <a key={l.key} href={`#${l.key}`}>
-              {l.nav}
-            </a>
-          ))}
-        </nav>
-      )}
-      <a className="btn sm" href={APP_URL}>
-        {doc.nav.button}
-      </a>
-    </header>
+    <SiteNav
+      slug={studio.slug}
+      brand={studio.logoUrl ? <StudioBrand studio={studio} scale={1} /> : <span className="site-wordmark">{studio.name}</span>}
+      brandLabel={`${studio.name} – strona główna`}
+      pages={doc.nav.showLinks ? pagesOf(studio) : []}
+      current={current}
+      button={{ label: doc.nav.button, href: APP_URL }}
+      onNavigate={onNavigate}
+      // W edytorze cała strona jest jedną kartką – zakładki przewijają do sekcji zamiast zmieniać adres ramki.
+      hrefOf={IN_EDITOR ? (p) => `#${p.key}` : undefined}
+      editTarget={HERO_ID}
+    />
   );
 }
 
@@ -637,7 +667,6 @@ function ShopSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; at
             {p.photoUrl ? <Photo src={p.photoUrl} className="card" alt={p.name} /> : <div className="site-photo card empty" aria-hidden="true" />}
             <h3>{p.name}</h3>
             <p className="site-quiet">{p.soldOut ? 'Wyprzedane' : p.price}</p>
-            {b(v, 'showDescription') && p.description && <p className="site-desc">{p.description}</p>}
             {!p.soldOut && (
               <a className="btn sm" href={`${APP_URL}?go=${encodeURIComponent(`shop/${p.id}`)}`} aria-label={`${buy}: ${p.name}, ${p.price}`}>
                 {buy}

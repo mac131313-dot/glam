@@ -1,10 +1,11 @@
 // Publiczny sklep studia: /s/:slug/sklep i /s/:slug/sklep/:id. Katalog i strona produktu – ten sam wygląd
 // co strona studia (site.css). Zakupy tylko w aplikacji; tu jest oferta, galeria i makro napojów.
 import { useEffect, useMemo, useState } from 'react';
-import { nutritionHighlight, nutritionRows, SHOP_CATEGORIES, type Look, type Nutrition } from '@glam/core';
+import { nutritionHighlight, nutritionRows, SHOP_CATEGORIES, type Look, type Nutrition, type SitePage } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { Spinner } from '../ui.tsx';
+import { SiteNav } from './SiteNav.tsx';
 import './site.css';
 
 type Photo = { id: string; url: string };
@@ -25,7 +26,7 @@ type Product = {
   featured: boolean;
 };
 type Studio = { slug: string; name: string; city: string | null; look: Look; logo: string; logoUrl: string | null; logoWide: boolean; address: string | null; phone: string | null; email: string | null };
-type Catalog = { studio: Studio; products: Product[] };
+type Catalog = { studio: Studio; products: Product[]; menu?: SitePage[] };
 
 const APP = '/app';
 const CATS = [{ id: 'all', label: 'Wszystko' }, { id: 'featured', label: 'Wyróżnione' }, ...SHOP_CATEGORIES.map((c) => ({ id: c.id, label: c.label }))];
@@ -103,17 +104,15 @@ export function ShopSite({ slug, productId }: { slug: string; productId: string 
 
   return (
     <div className="site shop-site">
-      <header className="site-nav">
-        <a className="site-brand" href={`/s/${encodeURIComponent(data.studio.slug)}`} aria-label={`${data.studio.name} – strona studia`}>
-          {data.studio.logoUrl ? <StudioBrand studio={data.studio} scale={1} /> : <span className="site-wordmark">{data.studio.name}</span>}
-        </a>
-        <nav className="site-links" aria-label="Sklep">
-          <a href={`/s/${encodeURIComponent(slug)}/sklep`}>Sklep</a>
-        </nav>
-        <a className="btn sm" href={`${APP}?go=shop${product ? `/${product.id}` : ''}`}>
-          {product ? 'Kup w aplikacji' : 'Aplikacja'}
-        </a>
-      </header>
+      {/* To samo menu co na stronie studia – tu zakładka „Sklep” jest bieżąca. */}
+      <SiteNav
+        slug={data.studio.slug}
+        brand={data.studio.logoUrl ? <StudioBrand studio={data.studio} scale={1} /> : <span className="site-wordmark">{data.studio.name}</span>}
+        brandLabel={`${data.studio.name} – strona główna`}
+        pages={data.menu ?? []}
+        current="sklep"
+        button={{ label: product ? 'Kup w aplikacji' : 'Aplikacja', href: `${APP}?go=shop${product ? `/${product.id}` : ''}` }}
+      />
       <main>{product ? <ProductView studio={data.studio} product={product} slug={slug} onBack={closeProduct} /> : <CatalogView studio={data.studio} products={data.products} slug={slug} onOpen={openProduct} />}</main>
     </div>
   );
