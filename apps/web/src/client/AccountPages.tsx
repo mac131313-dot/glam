@@ -166,7 +166,7 @@ function Settings() {
       <section>
         <ListRow title="Powiadomienia" hint="Rodzaje, ciche godziny, życzenia" onClick={() => open('notifications')} />
         <ListRow title="Prywatność i zgody" hint="Widoczność profilu, zgody, Twoje dane" onClick={() => open('privacy')} />
-        <ListRow title="Logowanie i urządzenia" hint="Face ID / odcisk palca, numer telefonu" onClick={() => open('security')} />
+        <ListRow title="Logowanie i urządzenia" hint="Face ID, numer telefonu, kalendarz telefonu" onClick={() => open('security')} />
         <ListRow title="Dostępność" hint="Większy tekst, kontrast, mniej ruchu" onClick={() => open('a11y')} />
       </section>
     </div>

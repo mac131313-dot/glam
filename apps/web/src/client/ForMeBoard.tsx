@@ -62,8 +62,8 @@ export function ForMeBoard() {
   const ratio = (done = 0, goal = 0) => (goal > 0 ? Math.min(1, done / goal) : done > 0 ? 1 : 0);
 
   const rings = [
-    { id: 'move', label: 'Ruch', color: 'var(--brand)', value: ratio(week?.done.trainings, week?.goal.trainings), text: week ? `${week.done.trainings}/${week.goal.trainings}` : '–', onClick: () => open('goal') },
-    { id: 'breath', label: 'Oddech', color: '#e9a3b8', value: ratio(week?.done.mindful, week?.goal.mindful), text: week ? `${week.done.mindful}/${week.goal.mindful}` : '–', onClick: () => open('goal') },
+    { id: 'move', label: 'Ruch', color: 'var(--ink)', value: ratio(week?.done.trainings, week?.goal.trainings), text: week ? `${week.done.trainings}/${week.goal.trainings}` : '–', onClick: () => open('goal') },
+    { id: 'breath', label: 'Oddech', color: 'var(--ink)', value: ratio(week?.done.mindful, week?.goal.mindful), text: week ? `${week.done.mindful}/${week.goal.mindful}` : '–', onClick: () => open('goal') },
     {
       id: 'mood',
       label: 'Samopoczucie',
@@ -94,12 +94,10 @@ export function ForMeBoard() {
       <div ref={ringsRef} className="board-rings" role="group" aria-label="Twój tydzień">
         {rings.map((r) => (
           <button key={r.id} className="board-ring" onClick={r.onClick} aria-label={`${r.label}: ${r.text}`}>
-            <Ring value={r.value} color={r.color} size={92} stroke={6}>
+            <Ring value={r.value} color={r.color} size={84} stroke={3}>
               <span className={r.text === 'Zapisz' ? 'board-ring-cta' : 'board-ring-num'}>{r.text}</span>
             </Ring>
-            <span className="board-ring-label">
-              {r.label} <Icon name="chevron" size={12} />
-            </span>
+            <span className="board-ring-label">{r.label}</span>
           </button>
         ))}
       </div>
@@ -129,7 +127,7 @@ export function ForMeBoard() {
 
       {/* Mój dzień: zajęcia na dziś i dzisiejszy oddech, z dwiema szybkimi akcjami jak w pulpicie. */}
       <section className="forme-list">
-        <h2 className="forme-h serif">Mój dzień</h2>
+        <h2 className="forme-h">Mój dzień</h2>
         <div className="card board-day">
           {todayClasses.map((c) => (
             <button key={c.booking_id} className="board-act" onClick={() => go('start')}>
@@ -148,21 +146,21 @@ export function ForMeBoard() {
               <span className="session-title grow">Oddech</span>
             </div>
           )}
-          {!todayClasses.length && !ritual?.today && <p className="small muted board-empty">Dziś nic zaplanowanego – to też jest plan.</p>}
-          <div className="board-actions">
-            <button className="board-pill" onClick={() => go('schedule')}>
-              <Icon name="plus" size={14} /> Zapisz się
-            </button>
-            <button className="board-pill" onClick={() => openBreath({ patternId: 'calm', minutes: 3 })}>
-              <Icon name="play" size={14} /> Oddech
-            </button>
-          </div>
+          {/* Oddech startuje przyciskiem u góry zakładki – tu tylko jedno ciche wejście do grafiku. */}
+          {!todayClasses.length && !ritual?.today && (
+            <p className="small muted board-empty">
+              Dziś nic zaplanowanego – to też jest plan.{' '}
+              <button className="link" onClick={() => go('schedule')}>
+                Zapisz się
+              </button>
+            </p>
+          )}
         </div>
       </section>
 
       {/* Dwie sesje na teraz – odpowiednik „zwiększ relaks / zwiększ czujność”. */}
       <section className="forme-list">
-        <h2 className="forme-h serif">Sesje na teraz</h2>
+        <h2 className="forme-h">Sesje na teraz</h2>
         <div className="board-sessions">
           {[
             { s: calm, tone: 'calm', kicker: evening ? 'Wycisz się' : 'Zwolnij' },
@@ -228,7 +226,7 @@ function WeekChart({ entries, breath, onOpen }: { entries: Entry[]; breath: bool
   return (
     <section className="forme-list">
       <div className="row between">
-        <h2 className="forme-h serif">Twój tydzień</h2>
+        <h2 className="forme-h">Twój tydzień</h2>
         <span className="board-legend tiny muted">
           <i style={{ background: 'var(--ink)' }} /> nastrój <i style={{ background: 'var(--brand)' }} /> energia
         </span>

@@ -137,12 +137,10 @@ export function Schedule() {
         </div>
       )}
 
-      <div className="row between">
+      {/* Kalendarz telefonu jest w Profilu (Logowanie i urządzenia) – w grafiku tylko filtry. */}
+      <div className="row">
         <button className="chip" aria-pressed={showFilters || activeFilters > 0} onClick={() => setShowFilters(!showFilters)}>
           Filtry{activeFilters ? ` (${activeFilters})` : ''}
-        </button>
-        <button className="link small" onClick={() => open('security')}>
-          Dodaj do kalendarza telefonu
         </button>
       </div>
       {showFilters && (
@@ -362,7 +360,7 @@ function MonthGrid({ today, sessions, selected, onPick }: { today: string; sessi
           );
         })}
       </div>
-      <p className="tiny muted">● – masz zapis tego dnia. Liczba – ile zajęć pasuje do filtrów.</p>
+      <p className="tiny muted">● – Twój zapis. Liczba – zajęcia tego dnia.</p>
     </div>
   );
 }

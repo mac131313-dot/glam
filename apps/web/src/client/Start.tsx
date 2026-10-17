@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { rewardCounterCopy } from '@glam/core';
 import { api, fmtDay, fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
-import { Empty, Progress, QrCode, Sheet, Spinner, useAction } from '../ui.tsx';
+import { Empty, ListRow, Progress, QrCode, Sheet, Spinner, useAction } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { InviteCard, type TrainerInvite } from './TrainerInvite.tsx';
@@ -152,7 +152,7 @@ export function Start() {
         )}
         <div className="row between">
           <span className="muted small">{home.upcoming.length > 1 ? `i jeszcze ${home.upcoming.length - 1} w planie` : ''}</span>
-          <button className="btn ghost sm" onClick={() => go('schedule')}>
+          <button className="link small" onClick={() => go('schedule')}>
             {next ? 'Zobacz grafik' : 'Zarezerwuj zajęcia'}
           </button>
         </div>
@@ -197,15 +197,9 @@ export function Start() {
       </section>
 
       {hasFeature(studio, 'shop') && (
-        <button className="card flat row between" style={{ cursor: 'pointer', textAlign: 'left' }} onClick={() => open('shop')}>
-          <span>
-            <span className="card-title" style={{ display: 'block' }}>
-              Sklep studia
-            </span>
-            <span className="small muted">Maty, akcesoria i stroje do domu</span>
-          </span>
-          <Icon name="bag" size={18} />
-        </button>
+        <div className="list-rows">
+          <ListRow title="Sklep studia" hint="Maty, akcesoria i stroje do domu" onClick={() => open('shop')} />
+        </div>
       )}
 
       {home.trainerInvites.length > 0 && (
@@ -218,36 +212,12 @@ export function Start() {
       )}
 
       {(home.nps || home.survey || home.invites > 0 || home.quizDue || home.challenge) && (
-        <section className="stack" style={{ gap: 8 }}>
-          {home.survey && (
-            <button className="card soft" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open(`survey/${home.survey!.id}`)}>
-              <b>Dawno Cię nie widziałyśmy</b>
-              <div className="small muted">Co się stało? Jedno kliknięcie – bez presji.</div>
-            </button>
-          )}
-          {home.nps && (
-            <button className="card flat" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open(`nps/${home.nps!.id}`)}>
-              <b>Jak Ci u nas?</b>
-              <div className="small muted">Dwa kliknięcia, a bardzo nam pomogą.</div>
-            </button>
-          )}
-          {home.invites > 0 && (
-            <button className="card flat" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open('invites')}>
-              <b>Masz zaproszenie na wspólny trening</b>
-            </button>
-          )}
-          {home.challenge && (
-            <button className="card flat" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open(`challenges/${home.challenge!.id}`)}>
-              <b>Wyzwanie: {home.challenge.title}</b>
-              <div className="small muted">Dołącz, w swoim tempie</div>
-            </button>
-          )}
-          {home.quizDue && (
-            <button className="card flat" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open('quiz')}>
-              <b>Mój styl dnia</b>
-              <div className="small muted">5 pytań, żeby lepiej dopasować przypomnienia</div>
-            </button>
-          )}
+        <section className="list-rows">
+          {home.survey && <ListRow title="Dawno Cię nie widziałyśmy" hint="Co się stało? Jedno kliknięcie – bez presji." onClick={() => open(`survey/${home.survey!.id}`)} />}
+          {home.nps && <ListRow title="Jak Ci u nas?" hint="Dwa kliknięcia, a bardzo nam pomogą." onClick={() => open(`nps/${home.nps!.id}`)} />}
+          {home.invites > 0 && <ListRow title="Masz zaproszenie na wspólny trening" onClick={() => open('invites')} />}
+          {home.challenge && <ListRow title={`Wyzwanie: ${home.challenge!.title}`} hint="Dołącz, w swoim tempie" onClick={() => open(`challenges/${home.challenge!.id}`)} />}
+          {home.quizDue && <ListRow title="Mój styl dnia" hint="5 pytań, żeby lepiej dopasować przypomnienia" onClick={() => open('quiz')} />}
         </section>
       )}
 
@@ -262,7 +232,7 @@ export function Start() {
 
       <hr className="hairline" />
 
-      <div className="stack" style={{ gap: 0 }}>
+      <div className="list-rows">
         {/* Od najczęściej potrzebnego: kontakt (czat, telefon), potem dodatki. Kod wejścia – w Profilu i na karcie w dniu zajęć. */}
         {[
           // Rozmowy (z licznikiem) są pod ikoną Wiadomości u góry; Pomoc to pytania, regulamin i godziny recepcji.
@@ -270,12 +240,11 @@ export function Start() {
           ...(studio.phone ? [{ label: 'Zadzwoń do studia', hint: studio.phone, to: 'phone' as const }] : []),
           { label: 'Trzy minuty oddechu', hint: 'Rytm 4–6, prowadzi aplikacja', to: 'breath' as const },
           ...(home.eventsEnabled ? [{ label: 'Zorganizuj wydarzenie w naszym studiu', hint: 'Urodziny, babski wieczór, trening w prezencie', to: 'event-new' as const }] : []),
-        ].map((l, i, all) => (
+        ].map((l) => (
           <button
             key={l.label}
-            className="row between"
+            className="list-row"
             onClick={() => (l.to === 'breath' ? openBreath({ patternId: 'calm', minutes: 3 }) : l.to === 'phone' ? (location.href = `tel:${studio.phone!.replace(/\s/g, '')}`) : open(l.to))}
-            style={{ background: 'none', border: 0, borderBottom: i < all.length - 1 ? '1px solid var(--line)' : 0, padding: '18px 0', cursor: 'pointer', textAlign: 'left' }}
           >
             <span>
               <span className="card-title" style={{ display: 'block' }}>{l.label}</span>

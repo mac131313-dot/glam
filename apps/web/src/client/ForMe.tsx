@@ -73,7 +73,7 @@ export function ForMe() {
 
       {/* Ustawienia sesji jako dwie pigułki – bez długich opisów. */}
       <section className="forme-list">
-        <h2 className="forme-h serif">Podczas sesji</h2>
+        <h2 className="forme-h">Podczas sesji</h2>
         <div className="chips" role="group" aria-label="Podczas sesji">
           <button
             className="chip"
@@ -91,7 +91,7 @@ export function ForMe() {
 
       {/* Medytacje: tytuł, rytm i czas – bez powtarzania kategorii i bez przycisków; cały wiersz startuje sesję. */}
       <section className="forme-list">
-        <h2 className="forme-h serif">Medytacje</h2>
+        <h2 className="forme-h">Medytacje</h2>
         <div ref={catRow} className="chips scroll-row" role="group" aria-label="Kategoria medytacji">
           {['Wszystkie', ...new Set(SESSIONS.map((x) => x.category))].map((c) => (
             <button
@@ -138,7 +138,7 @@ export function ForMe() {
       />
 
       <section className="forme-list">
-        <h2 className="forme-h serif">Więcej dla Ciebie</h2>
+        <h2 className="forme-h">Więcej dla Ciebie</h2>
         {/* Zawijane pigułki zamiast długiej listy – wszystko na jednym ekranie. */}
         <nav className="more-pills" aria-label="Więcej dla Ciebie">
           {more.map(([title, route]) => (

@@ -221,16 +221,16 @@ function Groups() {
                   </span>
                 </span>
                 {g.requested ? (
-                  <button className="chip" title="Kliknij, żeby wycofać prośbę" onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(groups.reload), 'Prośba wycofana')}>
+                  <button className="link small muted" title="Kliknij, żeby wycofać prośbę" onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(groups.reload), 'Prośba wycofana')}>
                     Prośba wysłana
                   </button>
                 ) : (
                   <button
-                    className="chip"
+                    className="link small"
                     onClick={() =>
                       run(
                         () => api<{ requested?: boolean; message?: string }>(`/groups/${g.id}/join`, { method: 'POST' }).then((r) => (groups.reload(), r)),
-                        (r) => r?.message ?? 'Witaj w grupie 🌸',
+                        (r) => r?.message ?? 'Witaj w grupie',
                       )
                     }
                   >

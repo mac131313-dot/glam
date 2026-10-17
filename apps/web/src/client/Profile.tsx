@@ -33,21 +33,19 @@ export function Profile() {
       <section className="stack">
         <div className="row between">
           <h2 style={{ margin: 0 }}>Karnety</h2>
-          <button className="btn sm" onClick={() => openShop()}>
+          <button className="link small" onClick={() => openShop()}>
             Kup karnet
           </button>
         </div>
         {passes.data?.length === 0 && <Empty icon="🎟️">Nie masz jeszcze karnetu w tym studiu.</Empty>}
         {passes.data?.map((p) => (
           <div key={p.id} className={`card ${p.status === 'active' ? 'soft' : 'flat'}`}>
-            <div className="row between">
-              <span className="card-title">{p.productName}</span>
-              <span className={`badge ${p.status === 'active' ? 'ok' : ''}`}>
-                {{ active: 'aktywny', used: 'wykorzystany', expired: 'wygasł', frozen: 'zawieszony' }[p.status] ?? p.status}
-              </span>
-            </div>
-            <div className="small" style={{ marginTop: 4 }}>
-              {p.summary}
+            {/* Podsumowanie zaczyna się od nazwy karnetu – jedna linia; plakietka tylko, gdy karnet nie jest aktywny. */}
+            <div className="row between" style={{ alignItems: 'flex-start' }}>
+              <span className="card-title">{p.summary}</span>
+              {p.status !== 'active' && (
+                <span className="badge">{{ used: 'wykorzystany', expired: 'wygasł', frozen: 'zawieszony' }[p.status] ?? p.status}</span>
+              )}
             </div>
             {p.autoRenew && p.status === 'active' && (
               <div className="row between" style={{ marginTop: 10 }}>
@@ -86,28 +84,20 @@ export function Profile() {
         <ListRow title="Pomoc" hint="FAQ, czat z recepcją, regulamin" onClick={() => open('faq')} />
       </section>
 
-      <section className="stack">
-        <button className="btn ghost" onClick={onSwitchStudio}>
-          Moje studia
-        </button>
+      <section className="list-rows">
+        <ListRow title="Moje studia" hint="Przełącz albo dodaj studio" onClick={onSwitchStudio} />
         {DEMO_MODE ? (
-          <a className="btn quiet" href="/">
-            Tryb demo · zmień konto
-          </a>
+          <ListRow title="Tryb demo" hint="Zmień konto" onClick={() => (location.href = '/')} />
         ) : (
           <>
-            <button
-              className="btn ghost"
+            <ListRow title="Wyloguj" onClick={onLogout} />
+            <ListRow
+              title="Wyloguj ze wszystkich urządzeń"
               onClick={async () => {
                 await api('/auth/logout-all', { method: 'POST', global: true });
                 onLogout();
               }}
-            >
-              Wyloguj ze wszystkich urządzeń
-            </button>
-            <button className="btn quiet" onClick={onLogout}>
-              Wyloguj
-            </button>
+            />
           </>
         )}
       </section>
