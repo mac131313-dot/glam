@@ -509,6 +509,10 @@ label.btn { cursor: pointer; }
 .thread.unread .thread-preview { color: var(--ink); font-weight: 600; }
 .thread-dot { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 0.72rem; display: grid; place-items: center; font-weight: 600; }
 .thread-group-head { margin: 18px 4px 4px; }
+.thread-tag { font-weight: 400; margin-left: 8px; }
+/* Start: wejście do skrzynki Wiadomości (prawy górny róg powitania) z kropką nieprzeczytanych. */
+.inbox-btn { position: absolute; top: 4px; right: 0; width: 46px; height: 46px; color: var(--ink); }
+.inbox-dot { position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 2px var(--bg); }
 html.a11y-contrast { --muted: var(--ink); --line: color-mix(in srgb, var(--ink) 35%, transparent); }
 html.a11y-reduce *, html.a11y-reduce *::before, html.a11y-reduce *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 .cast-btn { gap: 6px; }

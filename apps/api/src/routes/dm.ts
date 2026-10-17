@@ -17,7 +17,7 @@ type Pair = { clientId: string; trainerId: string };
 
 const nameOf = (scope: StudioScope, userId: string) => scope.db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as { name: string | null } | undefined;
 
-function isTrainer(scope: StudioScope, userId: string) {
+export function isTrainer(scope: StudioScope, userId: string) {
   return !!scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'", { u: userId });
 }
 
@@ -89,7 +89,7 @@ function removeOwn(scope: StudioScope, pair: Pair, userId: string, messageId: st
 }
 
 /** Lista rozmów z ostatnią wiadomością i liczbą nieprzeczytanych – dla klientki (z trenerkami) albo trenerki (z klientkami). */
-function threads(scope: StudioScope, side: Side, userId: string) {
+export function dmThreads(scope: StudioScope, side: Side, userId: string) {
   const me = side === 'client' ? 'client_id' : 'trainer_id';
   const peer = side === 'client' ? 'trainer_id' : 'client_id';
   return scope
@@ -123,7 +123,7 @@ export function dmRoutes(app: FastifyInstance, deps: Deps) {
 
   app.get('/api/dm', member, async (req) => {
     const { scope, user } = ctx(req);
-    return threads(scope, 'client', user.id);
+    return dmThreads(scope, 'client', user.id);
   });
 
   app.get<{ Params: { trainerId: string }; Querystring: { after?: string } }>('/api/dm/:trainerId', member, async (req) => {
@@ -154,7 +154,7 @@ export function dmRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/staff/dm', member, async (req) => {
     const { scope, user } = ctx(req);
     if (!isTrainer(scope, user.id)) throw forbidden();
-    return threads(scope, 'trainer', user.id);
+    return dmThreads(scope, 'trainer', user.id);
   });
 
   app.get<{ Params: { clientId: string }; Querystring: { after?: string } }>('/api/staff/dm/:clientId', member, async (req) => {

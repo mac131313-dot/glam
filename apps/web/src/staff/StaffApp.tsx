@@ -1,5 +1,5 @@
 // Panele ról (3, 2.1): menu budowane z siatki uprawnień (core/roles.ts) – to samo, co sprawdza serwer.
-// Trenerka: Dziś · Rozmowy (grupy i wiadomości od klientek) · Klientki · Wiadomości · Powitania · Mój profil · Kursy · Kartki · Mój grafik.
+// Trenerka: Dziś · Klientki · Wiadomości (rozmowy z klientkami i grupami, wiadomość do grupy) · Powitania · Mój profil · Kursy · Kartki · Mój grafik.
 // Recepcja: Wejście · Dziś · Klientki · Grafik · Wiadomości · Kasa · Sklep · Wydarzenia.
 // Koordynatorka: Społeczność · Edycje sezonowe · Muzyka. Właścicielka: wszystko (panel w stylu Shopify).
 import { lazy, Suspense, useEffect, useState } from 'react';
@@ -22,7 +22,6 @@ import { SiteOverview } from './site-editor/SiteOverview.tsx';
 const Analytics = lazy(() => import('./Analytics.tsx'));
 const Clients = lazy(() => import('./Clients.tsx'));
 const Messages = lazy(() => import('./Messages.tsx'));
-const GroupChats = lazy(() => import('./GroupChats.tsx'));
 const ScheduleExtras = lazy(() => import('./ScheduleExtras.tsx'));
 const Gifts = lazy(() => import('./Gifts.tsx'));
 const ShopAdmin = lazy(() => import('./ShopAdmin.tsx'));
@@ -43,9 +42,8 @@ const SECTIONS: Section[] = [
   { id: 'analytics', label: 'Analityka i KPI', icon: 'chart', perms: ['finance.view'], group: 'Studio' },
   { id: 'entrance', label: 'Wejście', icon: 'ticket', perms: ['participants.manage'], group: 'Codziennie' },
   { id: 'today', label: 'Dziś', icon: 'sun', perms: ['day.own', 'day.all'], group: 'Codziennie' },
-  { id: 'groups', label: 'Rozmowy', icon: 'chat', perms: ['messages.group.own', 'community.moderate'], group: 'Codziennie' },
   { id: 'clients', label: 'Klientki', icon: 'people', perms: ['clients.view', 'notes.write'], group: 'Codziennie' },
-  { id: 'messages', label: 'Wiadomości', icon: 'chat', perms: ['messages.group.own', 'messages.group.all', 'chat.answer'], group: 'Codziennie' },
+  { id: 'messages', label: 'Wiadomości', icon: 'chat', perms: ['messages.group.own', 'messages.group.all', 'chat.answer', 'community.moderate'], group: 'Codziennie' },
   { id: 'desk', label: 'Kasa i wejściówki', icon: 'gift', perms: ['desk.sell'], group: 'Codziennie' },
   { id: 'welcomes', label: 'Powitania', icon: 'mail', perms: ['welcomes.write', 'welcomes.approve'], group: 'Relacje' },
   { id: 'profile', label: 'Mój profil', icon: 'user', perms: ['day.own'], group: 'Relacje', role: 'trainer' },
@@ -72,7 +70,8 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
   const visible = SECTIONS.filter((s) => s.perms.some((p) => can(roles, p)) && (!s.role || roles.includes(s.role)));
   const fallback = visible[0]?.id ?? 'today';
   const fromHash = () => {
-    const id = location.hash.slice(1);
+    // „#groups” – dawna osobna sekcja Rozmowy, dziś część Wiadomości (stare zakładki i linki dalej działają).
+    const id = location.hash.slice(1) === 'groups' ? 'messages' : location.hash.slice(1);
     return visible.some((s) => s.id === id) ? id : fallback;
   };
   const [section, setSectionState] = useState(fromHash);
@@ -166,7 +165,6 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
           {section === 'entrance' && <Entrance />}
           {section === 'today' && <Today roles={roles} />}
           {section === 'clients' && <Clients roles={roles} />}
-          {section === 'groups' && <GroupChats roles={roles} />}
           {section === 'messages' && <Messages roles={roles} />}
           {section === 'welcomes' && <Welcomes me={props.me} isOwner={roles.includes('owner')} />}
           {section === 'profile' && <TrainerProfile me={props.me} reloadMe={props.reloadMe} />}

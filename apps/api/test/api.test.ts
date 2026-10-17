@@ -747,6 +747,58 @@ test('napisz do trenerki: prywatna rozmowa, trenerka tylko odpowiada, recepcja i
   assert.equal((await call(julia, SSG_STUDIO, 'DELETE', `/api/dm/${basiaId}/${sent.json().id}`)).statusCode, 200);
 });
 
+test('jedna skrzynka Wiadomości: recepcja, trenerka i grupy na jednej liście; panel według uprawnień', async () => {
+  const natalia = await login(SSG.natalia);
+  const basia = await login(SSG.basia);
+  const weronika = await login(SSG.weronika);
+  const reception = await login(SSG.reception);
+  const uid = (phone: string) => (db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string }).id;
+  const [nataliaId, basiaId] = [uid(SSG.natalia), uid(SSG.basia)];
+  type T = { kind: string; id: string; unread: number; last: { body: string; at: string } | null; mine?: boolean };
+  const threads = async (token: string, url = '/api/threads') => (await call(token, SSG_STUDIO, 'GET', url)).json() as { threads: T[]; unread: number };
+
+  // Recepcja jest zawsze na liście – nawet bez rozmowy klientka ma gdzie napisać. Grupa: tylko ta, do której należy.
+  const before = await threads(natalia);
+  assert.ok(before.threads.some((t) => t.kind === 'reception' && t.id === 'reception'));
+  assert.ok(before.threads.some((t) => t.kind === 'group' && t.id === 'ss_g_morning'));
+  assert.ok(!before.threads.some((t) => t.id === 'ss_g_split'), 'grupa, do której nie należy – poza skrzynką');
+
+  // Trzy źródła: recepcja, prywatnie do trenerki, czat grupy.
+  assert.equal((await call(natalia, SSG_STUDIO, 'POST', '/api/chat', { body: 'Czy jutro jest parking?' })).statusCode, 200);
+  assert.equal((await call(natalia, SSG_STUDIO, 'POST', `/api/dm/${basiaId}`, { body: 'Czy mogę przyjść później?' })).statusCode, 200);
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', '/api/groups/ss_g_morning/chat', { body: 'Jutro zaczynamy 5 minut później' })).statusCode, 200);
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', `/api/staff/dm/${nataliaId}`, { body: 'Jasne, daj znać przy wejściu' })).statusCode, 200);
+
+  const after = await threads(natalia);
+  const kinds = after.threads.map((t) => t.kind);
+  assert.ok(kinds.includes('reception') && kinds.includes('dm') && kinds.includes('group'));
+  const at = after.threads.map((t) => t.last?.at ?? '');
+  assert.deepEqual(at, [...at].sort().reverse(), 'od najświeższej rozmowy');
+  assert.equal(after.threads.find((t) => t.kind === 'dm')!.unread, 1);
+  assert.ok(after.threads.find((t) => t.id === 'ss_g_morning')!.unread >= 1);
+  assert.equal(after.unread, after.threads.reduce((n, t) => n + t.unread, 0));
+  assert.equal((await call(natalia, SSG_STUDIO, 'GET', '/api/home')).json().messagesUnread, after.unread, 'kropka na Start = suma skrzynki');
+  // Otwarcie rozmowy z trenerką zdejmuje jej licznik.
+  await call(natalia, SSG_STUDIO, 'GET', `/api/dm/${basiaId}`);
+  assert.equal((await threads(natalia)).threads.find((t) => t.kind === 'dm')!.unread, 0);
+
+  // Panel: recepcja widzi rozmowę z recepcją, nie prywatną do trenerki.
+  const desk = await threads(reception, '/api/staff/threads');
+  const fromNatalia = desk.threads.find((t) => t.kind === 'reception' && t.id === nataliaId);
+  assert.ok(fromNatalia && fromNatalia.unread >= 1);
+  assert.ok(!desk.threads.some((t) => t.kind === 'dm'));
+  // Trenerka: swoja klientka prywatnie i swoja grupa; bez czatu recepcji.
+  const trainer = await threads(basia, '/api/staff/threads');
+  assert.ok(trainer.threads.some((t) => t.kind === 'dm' && t.id === nataliaId));
+  assert.ok(trainer.threads.some((t) => t.kind === 'group' && t.id === 'ss_g_morning'));
+  assert.ok(!trainer.threads.some((t) => t.kind === 'reception'));
+  // Inna trenerka nie widzi cudzej prywatnej rozmowy ani cudzej grupy.
+  const other = await threads(weronika, '/api/staff/threads');
+  assert.ok(!other.threads.some((t) => t.id === nataliaId || t.id === 'ss_g_morning'));
+  // Klientka nie wchodzi do skrzynki panelu.
+  assert.equal((await call(natalia, SSG_STUDIO, 'GET', '/api/staff/threads')).statusCode, 403);
+});
+
 test('grupy za zgodą: prośba czeka w panelu, akceptacja dodaje do grupy, a klientka dopiero wtedy widzi wpisy', async () => {
   const owner = await login(SSG.owner);
   const julia = await login(SSG.julia);

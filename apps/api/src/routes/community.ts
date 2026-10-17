@@ -553,7 +553,7 @@ function markRead(scope: StudioScope, groupId: string, userId: string, at: strin
 }
 
 /** Lista grup z podglądem ostatniej wiadomości i liczbą nieprzeczytanych (cudzych, widocznych). */
-function groupList(scope: StudioScope, userId: string, which: 'studio' | 'trainer' | 'all') {
+export function groupList(scope: StudioScope, userId: string, which: 'studio' | 'trainer' | 'all') {
   const rows = scope.all<GroupRow & { approval: number; joined: number; requested: number; trainer_name: string | null; last_body: string | null; last_media: string | null; last_author: string | null; last_at: string | null; unread: number }>(
     `SELECT g.id, g.name, g.description, g.approval, g.trainer_id, t.name AS trainer_name,
             (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members,
