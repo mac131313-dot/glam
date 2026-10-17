@@ -84,7 +84,7 @@ function Journal() {
           <Field label="Jedno zdanie wdzięczności (opcjonalnie)">
             <input className="input" maxLength={280} value={gratitude} onChange={(e) => setGratitude(e.target.value)} placeholder="Za co dziś dziękuję…" />
           </Field>
-          <button className="btn" disabled={busy} onClick={() => run(() => api(`/me/journal/${today()}`, { method: 'PUT', global: true, body: { mood, energy, sleep, gratitude } }).then(reload), 'Zapisane w dzienniku')}>
+          <button className="btn" disabled={busy} onClick={() => run(() => api(`/me/journal/${today()}`, { method: 'PUT', global: true, body: { mood, energy, sleep, gratitude } }).then(() => (window.dispatchEvent(new Event('glam:passes-changed')), reload())), 'Zapisane w dzienniku')}>
             {todayEntry ? 'Zaktualizuj wpis' : 'Zapisz wpis'}
           </button>
         </section>
