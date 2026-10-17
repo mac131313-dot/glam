@@ -56,6 +56,7 @@ const SECTIONS: Section[] = [
   { id: 'music', label: 'Muzyka', icon: 'music', perms: ['playlists.moderate'], group: 'Treści' },
   { id: 'themes', label: 'Edycje sezonowe', icon: 'season', perms: ['themes.edit'], group: 'Marketing' },
   { id: 'marketing', label: 'Kampanie i życzenia', icon: 'bell', perms: ['campaigns.edit'], group: 'Marketing' },
+  { id: 'loyalty', label: 'Lojalność', icon: 'gift', perms: ['loyalty.edit'], group: 'Marketing' },
   { id: 'shop', label: 'Sklep', icon: 'bag', perms: ['shop.manage'], group: 'Sprzedaż' },
   { id: 'products', label: 'Karnety', icon: 'ticket', perms: ['config.edit'], group: 'Sprzedaż' },
   { id: 'finance', label: 'Finanse', icon: 'card', perms: ['finance.view', 'finance.export'], group: 'Sprzedaż' },

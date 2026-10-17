@@ -367,7 +367,7 @@ function Security() {
   const passkeys = useApi<{ id: string; label: string; created_at: string; last_used_at: string | null }[]>('/me/passkeys');
   const sessions = useApi<{ device: string; created_at: string; current: boolean }[]>('/me/sessions');
   const calendar = useApi<{ hasToken: boolean }>('/calendar-sync');
-  const integrations = useApi<{ music: { provider: string; label: string }[]; health: { provider: string; enabled: number }[] }>('/me/integrations');
+  const integrations = useApi<{ music: { provider: string; label: string }[] }>('/me/integrations');
   const { run, busy } = useAction();
   const [phone, setPhone] = useState('');
   const [codes, setCodes] = useState<{ old: string; new: string } | null>(null);
@@ -456,18 +456,6 @@ function Security() {
                 {on ? 'Odłącz' : 'Połącz'}
               </button>
             </div>
-          );
-        })}
-        {(['apple_health', 'google_fit'] as const).map((p) => {
-          const on = !!integrations.data?.health.find((h) => h.provider === p)?.enabled;
-          return (
-            <Toggle
-              key={p}
-              label={p === 'apple_health' ? 'Apple Health' : 'Google Fit'}
-              hint="Zapis zajęć jako treningów – w aplikacji natywnej"
-              checked={on}
-              onChange={(v) => run(() => api(`/me/health-sync/${p}`, { method: 'PUT', global: true, body: { enabled: v } }).then(integrations.reload))}
-            />
           );
         })}
         <p className="tiny muted" style={{ margin: 0 }}>Logujesz się u dostawcy – nie przechowujemy haseł ani historii słuchania.</p>

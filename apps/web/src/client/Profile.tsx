@@ -74,7 +74,10 @@ export function Profile() {
 
       <section>
         {/* Od najczęściej potrzebnego do rzadziej używanego; ustawienia i pomoc na końcu. */}
+        <ListRow title="Mój kod wejścia" hint="Pokaż na recepcji" onClick={() => open('checkin')} />
+        <ListRow title="Wiadomości" hint="Wszystkie powiadomienia od studia" onClick={() => open('inbox')} />
         <ListRow title="Mój plan" hint="Od Twojej trenerki" onClick={() => open('plan')} />
+        <ListRow title="Lojalność i szafka" hint="Punkty, odznaki, nagrody i rzeczy do odbioru" onClick={() => open('loyalty')} />
         <ListRow title="Historia płatności" hint="Płatności i faktura na życzenie" onClick={() => open('payments')} />
         {hasFeature(studio, 'shop') && <ListRow title="Sklep i zamówienia" hint="Bar, merch i stroje" onClick={() => open('shop')} />}
         {hasFeature(studio, 'events') && <ListRow title="Wydarzenia w klubie" hint="Urodziny, babski wieczór w studiu" onClick={() => open('events')} />}
