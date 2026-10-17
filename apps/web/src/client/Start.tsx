@@ -33,6 +33,8 @@ type Home = {
   welcome: { id: string; body: string; trainer_name: string; kind?: string; video_id?: string | null } | null;
   unread: number;
   chatUnread: number;
+  /** Nieprzeczytane we wszystkich rozmowach (recepcja, trenerki, grupy). */
+  messagesUnread: number;
   ritual: string;
   birthday: boolean;
   eventToday: { id: string; hero: string } | null;
@@ -77,7 +79,16 @@ export function Start() {
 
   return (
     <div className="stack-lg">
-      <section style={{ paddingTop: 8 }}>
+      <section style={{ paddingTop: 8, position: 'relative' }}>
+        {/* Jedno wejście do wszystkich rozmów i powiadomień; kropka – coś czeka na przeczytanie. */}
+        <button
+          className="icon-btn inbox-btn"
+          onClick={() => open('messages')}
+          aria-label={home.messagesUnread + home.unread > 0 ? `Wiadomości, nieprzeczytane: ${home.messagesUnread + home.unread}` : 'Wiadomości'}
+        >
+          <Icon name="chat" size={22} />
+          {home.messagesUnread + home.unread > 0 && <span className="inbox-dot" aria-hidden />}
+        </button>
         <p className="eyebrow">{new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}</p>
         <h1 style={{ fontSize: '2.4rem', lineHeight: 1.05 }}>
           {hello},
@@ -254,8 +265,8 @@ export function Start() {
       <div className="stack" style={{ gap: 0 }}>
         {/* Od najczęściej potrzebnego: kontakt (czat, telefon), potem dodatki. Kod wejścia – w Profilu i na karcie w dniu zajęć. */}
         {[
-          // Jedna pozycja: czat z recepcją jest na górze strony Pomocy; licznik nieprzeczytanych zostaje tutaj.
-          { label: home.chatUnread ? `Pomoc (${home.chatUnread})` : 'Pomoc', hint: 'Czat z recepcją, pytania i regulamin', to: 'faq' as const },
+          // Rozmowy (z licznikiem) są pod ikoną Wiadomości u góry; Pomoc to pytania, regulamin i godziny recepcji.
+          { label: 'Pomoc', hint: 'Pytania, regulamin i godziny recepcji', to: 'faq' as const },
           ...(studio.phone ? [{ label: 'Zadzwoń do studia', hint: studio.phone, to: 'phone' as const }] : []),
           { label: 'Trzy minuty oddechu', hint: 'Rytm 4–6, prowadzi aplikacja', to: 'breath' as const },
           ...(home.eventsEnabled ? [{ label: 'Zorganizuj wydarzenie w naszym studiu', hint: 'Urodziny, babski wieczór, trening w prezencie', to: 'event-new' as const }] : []),

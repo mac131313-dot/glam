@@ -1,28 +1,77 @@
-// Wiadomości (3, #31, 4.9, 4.10): szybkie wiadomości do grupy (trenerka – do swoich zajęć, recepcja – do wszystkich,
-// typu zajęć albo grupy), czat z klientkami, prośby o termin z ankiety uśpionych (kontakt w 24 h), skrzynka personelu.
+// Wiadomości – jedno miejsce na wszystkie rozmowy panelu (3, #31, 4.9, 4.10):
+// · Rozmowy – wspólna lista wątków: czat z recepcją (klientki), prywatne wiadomości do trenerki, czaty grup,
+//   każdy z licznikiem nieprzeczytanych; widoczność według uprawnień (GET /api/staff/threads),
+// · Napisz do grupy – szybka wiadomość jako powiadomienie (trenerka – do swoich zajęć, recepcja – do wszystkich, typu zajęć albo grupy),
+// · Prośby o kontakt – z ankiety uśpionych (kontakt w 24 h), · Dla mnie – skrzynka personelu.
 import { useEffect, useRef, useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { api, fmtDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Empty, Select, Spinner, Tabs, useAction } from '../ui.tsx';
+import { Empty, Page, Select, Spinner, Tabs, useAction } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
+import { DirectChatPage, GroupChatPage, ThreadRow, type ThreadItem } from '../groupChat.tsx';
+
+type Tab = 'threads' | 'group' | 'followups' | 'inbox';
 
 export default function Messages({ roles }: { roles: Role[] }) {
-  const options: ['group' | 'chat' | 'followups' | 'inbox', string][] = [
-    ['group', 'Do grupy'],
-    ...(can(roles, 'chat.answer') ? ([['chat', 'Czat z klientkami']] as ['chat', string][]) : []),
-    ...(can(roles, 'clients.contact') ? ([['followups', 'Prośby o termin']] as ['followups', string][]) : []),
+  const hasThreads = can(roles, 'chat.answer') || can(roles, 'messages.group.own') || can(roles, 'community.moderate') || roles.includes('trainer');
+  const threads = useApi<{ threads: ThreadItem[]; unread: number }>(hasThreads ? '/staff/threads' : null);
+  const unread = threads.data?.unread ?? 0;
+  const options: [Tab, string][] = [
+    ...(hasThreads ? ([['threads', unread ? `Rozmowy (${unread})` : 'Rozmowy']] as [Tab, string][]) : []),
+    ...(can(roles, 'messages.group.own') || can(roles, 'messages.group.all') ? ([['group', 'Napisz do grupy']] as [Tab, string][]) : []),
+    ...(can(roles, 'clients.contact') ? ([['followups', 'Prośby o kontakt']] as [Tab, string][]) : []),
     // Skrzynka „Dla mnie” – dla zespołu (np. zastępstwa trenerek); właścicielka jej nie potrzebuje.
-    ...(roles.includes('owner') ? [] : ([['inbox', 'Dla mnie']] as ['inbox', string][])),
+    ...(roles.includes('owner') ? [] : ([['inbox', 'Dla mnie']] as [Tab, string][])),
   ];
-  const [tab, setTab] = useState(options[0][0]);
+  const [tab, setTab] = useState<Tab>(options[0]?.[0] ?? 'inbox');
   return (
     <div className="stack-lg">
       <h1>Wiadomości</h1>
-      <Tabs label="Wiadomości" value={tab} onChange={setTab} options={options} />
+      {options.length > 1 && <Tabs label="Wiadomości" value={tab} onChange={setTab} options={options} />}
+      {tab === 'threads' && <Threads list={threads} />}
       {tab === 'group' && <GroupMessage roles={roles} />}
-      {tab === 'chat' && <Chats />}
       {tab === 'followups' && <Followups />}
       {tab === 'inbox' && <StaffInbox />}
+    </div>
+  );
+}
+
+/** Wspólna lista rozmów; rozmowa otwiera się na pełnym ekranie, po powrocie liczniki się odświeżają. */
+function Threads({ list }: { list: ReturnType<typeof useApi<{ threads: ThreadItem[]; unread: number }>> }) {
+  const [open, setOpen] = useState<ThreadItem | null>(null);
+  const reload = list.reload;
+  useEffect(() => {
+    const t = setInterval(() => document.visibilityState === 'visible' && !open && reload(), 15_000);
+    return () => clearInterval(t);
+  }, [reload, open]);
+  if (!list.data) return <Spinner />;
+  const mine = list.data.threads.filter((t) => t.mine);
+  // Moderacja widzi też grupy, którymi opiekują się inne osoby – osobno, żeby nie mieszały się z jej rozmowami.
+  const rest = list.data.threads.filter((t) => !t.mine);
+  const back = () => (setOpen(null), reload());
+  return (
+    <div className="stack" style={{ maxWidth: 640, gap: 0 }}>
+      {mine.length === 0 && rest.length === 0 && <Empty>Na razie cisza. Gdy klientka napisze, rozmowa pojawi się tutaj.</Empty>}
+      {mine.length > 0 && (
+        <ul className="thread-list">
+          {mine.map((t) => (
+            <ThreadRow key={`${t.kind}:${t.id}`} g={t} onOpen={() => setOpen(t)} />
+          ))}
+        </ul>
+      )}
+      {rest.length > 0 && (
+        <section>
+          <div className="eyebrow thread-group-head">{mine.length > 0 ? 'Pozostałe grupy studia' : 'Grupy studia'}</div>
+          <ul className="thread-list">
+            {rest.map((t) => (
+              <ThreadRow key={`${t.kind}:${t.id}`} g={t} onOpen={() => setOpen(t)} />
+            ))}
+          </ul>
+        </section>
+      )}
+      {open?.kind === 'group' && <GroupChatPage groupId={open.id} onBack={back} />}
+      {open?.kind === 'dm' && <DirectChatPage path={`/staff/dm/${open.id}`} hint="prywatna rozmowa z klientką" onBack={back} />}
+      {open?.kind === 'reception' && <ReceptionChatPage clientId={open.id} name={open.name} onBack={back} />}
     </div>
   );
 }
@@ -74,53 +123,45 @@ function GroupMessage({ roles }: { roles: Role[] }) {
   );
 }
 
-function Chats() {
-  const threads = useApi<{ client_id: string; name: string; last_at: string; unread: number; last_body: string }[]>('/staff/chats');
-  const [open, setOpen] = useState<string | null>(null);
-  if (!threads.data) return <Spinner />;
-  return (
-    <div className="grid-2" style={{ alignItems: 'start' }}>
-      <div className="stack" style={{ gap: 4 }}>
-        {threads.data.length === 0 && <Empty>Brak rozmów.</Empty>}
-        {threads.data.map((t) => (
-          <button key={t.client_id} className={`card ${open === t.client_id ? 'soft' : 'flat'}`} style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setOpen(t.client_id)}>
-            <div className="row between">
-              <b>{t.name}</b>
-              {t.unread > 0 && <span className="badge ok">{t.unread}</span>}
-            </div>
-            <div className="small muted">{t.last_body?.slice(0, 70)}</div>
-          </button>
-        ))}
-      </div>
-      {open && <Thread clientId={open} onRead={threads.reload} />}
-    </div>
-  );
-}
-
-function Thread({ clientId, onRead }: { clientId: string; onRead: () => void }) {
+/** Czat recepcji z jedną klientką – na pełnym ekranie, jak pozostałe rozmowy. */
+function ReceptionChatPage({ clientId, name, onBack }: { clientId: string; name: string; onBack: () => void }) {
   const msgs = useApi<ChatMessage[]>(`/staff/chats/${clientId}`, [clientId]);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' });
-    if (msgs.data) onRead();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [msgs.data]);
   return (
-    <section className="card stack">
-      <div className="stack" style={{ gap: 8, maxHeight: 420, overflow: 'auto' }}>
-        {msgs.data?.map((m) => (
-          <div key={m.id} className={`chat-bubble ${m.from_staff ? 'me' : ''} ${m.auto ? 'auto' : ''}`}>
-            {m.attachment && <AttachmentView a={m.attachment} />}
-            {m.body}
-            <div className="tiny" style={{ opacity: 0.7 }}>
-              {m.auto ? 'automatyczna odpowiedź' : m.author} · {fmtDay(m.created_at)} {fmtTime(m.created_at)}
-            </div>
+    <Page
+      onBack={onBack}
+      title={
+        <span className="gchat-title">
+          <span>{name}</span>
+          <span className="tiny muted">czat z recepcją</span>
+        </span>
+      }
+    >
+      <div className="stack">
+        {!msgs.data ? (
+          <Spinner />
+        ) : (
+          <div className="stack" style={{ gap: 8 }}>
+            {msgs.data.map((m) => (
+              <div key={m.id} className={`chat-bubble ${m.from_staff ? 'me' : ''} ${m.auto ? 'auto' : ''}`}>
+                {m.attachment && <AttachmentView a={m.attachment} />}
+                {m.body}
+                <div className="tiny" style={{ opacity: 0.7 }}>
+                  {m.auto ? 'automatyczna odpowiedź' : m.author} · {fmtDay(m.created_at)} {fmtTime(m.created_at)}
+                </div>
+              </div>
+            ))}
+            <div ref={end} />
           </div>
-        ))}
-        <div ref={end} />
+        )}
+        <div style={{ position: 'sticky', bottom: 0, background: 'var(--bg)', paddingTop: 8 }}>
+          <ChatComposer placeholder="Odpowiedz…" onSend={(msg) => api(`/staff/chats/${clientId}`, { method: 'POST', body: msg }).then(msgs.reload)} />
+        </div>
       </div>
-      <ChatComposer placeholder="Odpowiedz…" onSend={(msg) => api(`/staff/chats/${clientId}`, { method: 'POST', body: msg }).then(msgs.reload)} />
-    </section>
+    </Page>
   );
 }
 

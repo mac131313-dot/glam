@@ -248,9 +248,25 @@ function Conversation({
   );
 }
 
-// ——— Lista rozmów (Razem → Grupy i aplikacja trenerki) ———
+// ——— Lista rozmów (skrzynka Wiadomości, Razem → Grupy, panel) ———
 
-export type ThreadItem = { id: string; name: string; members?: number; trainer?: string | null; unread: number; last: { body: string; author: string | null; at: string } | null };
+/** kind – skąd rozmowa (GET /api/threads, /api/staff/threads): recepcja, prywatnie z trenerką, czat grupy. */
+export type ThreadKind = 'reception' | 'dm' | 'group';
+export type ThreadItem = {
+  id: string;
+  name: string;
+  kind?: ThreadKind;
+  members?: number;
+  trainer?: string | null;
+  unread: number;
+  last: { body: string; author: string | null; at: string } | null;
+  /** Panel: rozmowa tej osoby (liczy się do licznika). */
+  mine?: boolean;
+  /** Podpowiedź zamiast podglądu, gdy rozmowa jest jeszcze pusta. */
+  hint?: string;
+};
+
+const KIND_TAG: Record<ThreadKind, string> = { reception: 'recepcja', dm: 'prywatnie', group: 'grupa' };
 
 const osoby = (n: number) => (n === 1 ? 'osoba' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'osoby' : 'osób');
 
@@ -269,11 +285,14 @@ export function ThreadRow({ g, onOpen }: { g: ThreadItem; onOpen: () => void }) 
         <Avatar name={g.name} />
         <span className="thread-main">
           <span className="thread-top">
-            <span className="thread-name">{g.name}</span>
+            <span className="thread-name">
+              {g.name}
+              {g.kind && <span className="thread-tag tiny muted">{KIND_TAG[g.kind]}</span>}
+            </span>
             {g.last && <span className="tiny muted">{threadTime(g.last.at)}</span>}
           </span>
           <span className="row" style={{ gap: 8 }}>
-            <span className="thread-preview grow">{g.last ? `${g.last.author ? `${g.last.author}: ` : ''}${g.last.body}` : g.trainer ? `prowadzi ${g.trainer}` : g.members != null ? `${g.members} ${osoby(g.members)}` : ''}</span>
+            <span className="thread-preview grow">{g.last ? `${g.last.author ? `${g.last.author}: ` : ''}${g.last.body}` : g.hint ? g.hint : g.trainer ? `prowadzi ${g.trainer}` : g.members != null ? `${g.members} ${osoby(g.members)}` : ''}</span>
             {g.unread > 0 && <span className="thread-dot">{g.unread > 99 ? '99+' : g.unread}</span>}
           </span>
         </span>

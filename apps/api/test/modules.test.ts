@@ -654,9 +654,9 @@ test('wydarzenie: zmiana godziny nie omija innych zajęć, a stare zapytanie wyg
   assert.equal((await call(magda, R, 'POST', `/api/events/${ev.json().id}/client`, { action: 'reschedule', startsAt: half })).statusCode, 200);
 
   // Zapytanie bez odpowiedzi wygasa po terminie.
-  const inq = await call(magda, R, 'POST', '/api/events', { kind: 'gift', trainerId, zoneId, activity: 'Mat', startsAt: free.at(-1).startsAt, guests: 4, termsAccepted: true });
+  const inq = await call(magda, R, 'POST', '/api/events', { kind: 'gift', trainerId, zoneId, activity: 'Mat', startsAt: free.at(-1)!.startsAt, guests: 4, termsAccepted: true });
   assert.equal(inq.statusCode, 200, inq.body);
-  await runJobs(deps, new Date(Date.parse(free.at(-1).startsAt) + 86_400_000));
+  await runJobs(deps, new Date(Date.parse(free.at(-1)!.startsAt) + 86_400_000));
   const after = (await call(magda, R, 'GET', `/api/events/${inq.json().id}`)).json();
   assert.equal(after.status, 'cancelled');
   assert.match(after.history.at(-1).text, /Wygasło/);

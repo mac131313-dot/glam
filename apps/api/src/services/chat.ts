@@ -45,3 +45,25 @@ export function postChatMessage(
 /** Podgląd ostatniej wiadomości na liście rozmów: sam plik bez tekstu → opis załącznika. */
 export const CHAT_LAST_BODY = `(SELECT CASE WHEN x.body != '' THEN x.body WHEN x.media_id IS NOT NULL THEN '📎 Załącznik' ELSE '' END
   FROM chat_messages x WHERE x.studio_id = c.studio_id AND x.client_id = c.client_id ORDER BY x.created_at DESC LIMIT 1)`;
+
+/** Rozmowy z recepcją dla panelu: jedna na klientkę, z liczbą nieprzeczytanych wiadomości klientki. */
+export function receptionThreads(scope: StudioScope) {
+  return scope.all<{ client_id: string; name: string; last_at: string; unread: number; last_body: string }>(
+    `SELECT c.client_id, u.name, MAX(c.created_at) AS last_at,
+            SUM(CASE WHEN c.from_staff = 0 AND c.read_at IS NULL THEN 1 ELSE 0 END) AS unread,
+            ${CHAT_LAST_BODY} AS last_body
+     FROM chat_messages c JOIN users u ON u.id = c.client_id WHERE c.studio_id = $studio GROUP BY c.client_id ORDER BY last_at DESC`,
+  );
+}
+
+/** Rozmowa klientki z recepcją: ostatnia wiadomość i liczba nieprzeczytanych odpowiedzi studia. */
+export function receptionThreadOf(scope: StudioScope, clientId: string) {
+  return scope.get<{ last_at: string | null; unread: number; last_body: string | null; last_staff: number | null }>(
+    `SELECT MAX(c.created_at) AS last_at,
+            COALESCE(SUM(CASE WHEN c.from_staff = 1 AND c.read_at IS NULL THEN 1 ELSE 0 END), 0) AS unread,
+            ${CHAT_LAST_BODY} AS last_body,
+            (SELECT x.from_staff FROM chat_messages x WHERE x.studio_id = $studio AND x.client_id = $c ORDER BY x.created_at DESC LIMIT 1) AS last_staff
+     FROM chat_messages c WHERE c.studio_id = $studio AND c.client_id = $c`,
+    { c: clientId },
+  )!;
+}

@@ -26,7 +26,7 @@ import type { StudioScope } from '../scope.ts';
 import { DESK_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
 import { bookSession, cancelBooking, changeTrainer, checkIn, loadSession, markNoShow, walkInOptions } from '../services/booking.ts';
-import { CHAT_BODY_LIMIT, CHAT_LAST_BODY, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
+import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, receptionThreads, type ChatInput } from '../services/chat.ts';
 import { logUsage } from '../services/dispatch.ts';
 import { storeMedia } from '../services/media.ts';
 import { notify } from '../services/notify.ts';
@@ -902,14 +902,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
 
   // ——— Czat z klientkami (4.9) i kontakt po ankiecie uśpionych (4.10) ———
 
-  app.get('/api/staff/chats', perm('chat.answer'), async (req) =>
-    ctx(req).scope.all(
-      `SELECT c.client_id, u.name, MAX(c.created_at) AS last_at,
-              SUM(CASE WHEN c.from_staff = 0 AND c.read_at IS NULL THEN 1 ELSE 0 END) AS unread,
-              ${CHAT_LAST_BODY} AS last_body
-       FROM chat_messages c JOIN users u ON u.id = c.client_id WHERE c.studio_id = $studio GROUP BY c.client_id ORDER BY last_at DESC`,
-    ),
-  );
+  app.get('/api/staff/chats', perm('chat.answer'), async (req) => receptionThreads(ctx(req).scope));
 
   app.get<{ Params: { clientId: string } }>('/api/staff/chats/:clientId', perm('chat.answer'), async (req) => {
     const { scope } = ctx(req);

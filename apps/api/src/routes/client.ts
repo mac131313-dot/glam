@@ -39,6 +39,7 @@ import { HttpError, badRequest, conflict, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
 import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { bookSession, cancelBooking, confirmAttendance, rateSession } from '../services/booking.ts';
+import { clientThreads } from './threads.ts';
 import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
 import { checkinCode } from '../services/checkin.ts';
 import { logUsage } from '../services/dispatch.ts';
@@ -213,6 +214,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       { user: user.id, now: now.toISOString() },
     )!.n;
     const chatUnread = scope.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_messages WHERE studio_id = $studio AND client_id = $u AND from_staff = 1 AND read_at IS NULL', { u: user.id })!.n;
+    // Kropka przy „Wiadomościach” na Start: recepcja, trenerki i grupy razem.
+    const messagesUnread = clientThreads(scope, studio, user.id).unread;
     const theme = user.theme_opt_out ? null : activeTheme(scope, user.id);
     // Kolekcjonerka (7.5): zapamiętujemy, jakie motywy klientka już widziała.
     const prefs = prefsOf(user);
@@ -246,6 +249,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       welcome,
       unread,
       chatUnread,
+      messagesUnread,
       reward: rewardProgress(scope, studio, user.id),
       loyalty: s.loyalty.enabled && studio.has('loyalty') ? { points, ...levelFor(points, s.loyalty.levels) } : null,
       nps,
