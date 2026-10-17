@@ -24,6 +24,7 @@ export type UserPrefs = {
   reminderTime?: string | null;
   eveningDays?: number[];
   microBreaks?: string[];
+  classReminders?: number[];
   visibility?: 'public' | 'studio' | 'private';
   language?: 'pl';
   sounds?: boolean;

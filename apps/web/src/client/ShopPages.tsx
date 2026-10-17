@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { nutritionHighlight, nutritionRows, SHOP_CATEGORIES, type Nutrition } from '@glam/core';
 import { api, fmtDay, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
-import { Empty, PAYMENT_LABELS, Sheet, Spinner, useAction } from '../ui.tsx';
+import { Empty, ListRow, PAYMENT_LABELS, Sheet, Spinner, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -102,13 +102,9 @@ function Shop() {
           ))}
         </div>
       )}
-      <div className="row wrap" style={{ marginTop: 8 }}>
-        <button className="btn ghost sm" onClick={() => open('orders')}>
-          Moje zamówienia
-        </button>
-        <button className="btn ghost sm" onClick={() => open('partners')}>
-          Partnerzy
-        </button>
+      <div className="list-rows">
+        <ListRow title="Moje zamówienia" onClick={() => open('orders')} />
+        <ListRow title="Partnerzy" onClick={() => open('partners')} />
       </div>
       <p className="tiny muted">Rezerwacja: płacisz w recepcji, sztuka czeka {shop.data.settings.reservationDays} dni. Napój – do końca dnia. Paragon wystawia studio.</p>
     </div>

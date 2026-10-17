@@ -5,6 +5,8 @@ import type { FastifyInstance } from 'fastify';
 import {
   addDays,
   affirmationFor,
+  cleanAudience,
+  cleanFit,
   breathRitual,
   dayPart,
   describePass,
@@ -92,8 +94,10 @@ export const PHOTO_URL = "CASE WHEN ct.photo_mime IS NOT NULL THEN '/api/class-t
 export function scheduleRows(scope: StudioScope, userId: string, fromIso: string, toIso: string, includePrivate = false) {
   return scope.all<Record<string, unknown>>(
     `SELECT s.id, s.starts_at, s.ends_at, s.capacity, s.status, s.trainer_id, s.kind, s.template_id, s.theme_id,
-            COALESCE(s.title, ct.name) AS class_name, ct.id AS class_type_id, ct.color, ct.level, ct.description, ${PHOTO_URL},
+            COALESCE(s.title, ct.name) AS class_name, ct.id AS class_type_id, ct.color, ct.level, ct.description, ct.audience_json, ${PHOTO_URL},
             z.id AS zone_id, z.name AS zone_name, u.name AS trainer_name,
+            CASE WHEN u.avatar_mime IS NOT NULL THEN '/api/users/' || u.id || '/avatar?v=' || u.avatar_version END AS trainer_avatar_url,
+            (SELECT m.bio FROM memberships m WHERE m.studio_id = s.studio_id AND m.user_id = s.trainer_id AND m.bio IS NOT NULL ORDER BY m.role = 'trainer' DESC LIMIT 1) AS trainer_bio,
             (SELECT p.name FROM playlists p WHERE p.id = COALESCE(s.playlist_id, ct.playlist_id)) AS playlist_name,
             (SELECT p.url FROM playlists p WHERE p.id = COALESCE(s.playlist_id, ct.playlist_id)) AS playlist_url,
             (SELECT COUNT(*) FROM bookings b WHERE b.session_id = s.id AND b.status IN ('booked', 'attended')) AS taken,
@@ -272,7 +276,26 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const from = req.query.from && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : localParts(new Date(), studio.timezone).date;
     const days = Math.min(Math.max(Number(req.query.days ?? 7) || 7, 1), 42);
     const rows = scheduleRows(scope, user.id, zonedToUtc(from, '00:00', studio.timezone).toISOString(), zonedToUtc(addDays(from, days), '00:00', studio.timezone).toISOString());
-    return { from, days, sessions: rows };
+    const sessions = rows.map(({ audience_json, ...r }) => {
+      const lp = localParts(new Date(r.starts_at as string), studio.timezone);
+      return { ...r, audience: cleanAudience(audience_json ? JSON.parse(audience_json as string) : null, r.level as string), local_hour: Number(lp.time.slice(0, 2)), local_weekday: new Date(`${lp.date}T12:00:00Z`).getUTCDay() };
+    });
+    // „Dopasowane do Ciebie”: odpowiedzi z ankiety (null = jeszcze nie wypełniła) i ulubione typy zajęć.
+    const favorites = scope.all<{ class_type_id: string }>('SELECT class_type_id FROM favorite_class_types WHERE studio_id = $studio AND user_id = $u', { u: user.id }).map((f) => f.class_type_id);
+    return { from, days, sessions, fit: cleanFit(user.prefs_json ? JSON.parse(user.prefs_json).classFit : null), favorites };
+  });
+
+  // Serduszko przy zajęciach – ulubione wracają w „Dopasowanych do Ciebie” w każdym tygodniu.
+  app.put<{ Params: { id: string } }>('/api/favorites/:id', member, async (req) => {
+    const { scope, user } = ctx(req);
+    if (!scope.get('SELECT 1 FROM class_types WHERE studio_id = $studio AND id = $id', { id: req.params.id })) throw notFound('Nie znaleziono zajęć.');
+    scope.run('INSERT OR IGNORE INTO favorite_class_types (studio_id, user_id, class_type_id, created_at) VALUES ($studio, $u, $id, $now)', { u: user.id, id: req.params.id, now: nowIso() });
+    return { ok: true };
+  });
+  app.delete<{ Params: { id: string } }>('/api/favorites/:id', member, async (req) => {
+    const { scope, user } = ctx(req);
+    scope.run('DELETE FROM favorite_class_types WHERE studio_id = $studio AND user_id = $u AND class_type_id = $id', { u: user.id, id: req.params.id });
+    return { ok: true };
   });
 
   app.post<{ Body: { sessionId: string; guest?: { name: string; phone?: string } | null } }>('/api/bookings', member, async (req) => {

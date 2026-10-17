@@ -128,6 +128,25 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
   for (const [id, name, level, color, desc] of REFORMER) ct.run(id, S, 'z_ss_reformer', name, level, color, desc);
   for (const [id, name, desc] of PRIVATE) ct.run(id, S, 'z_ss_reformer', name, 'indywidualnie', '#ece4da', desc);
   for (const [id, name, level, color, desc] of GROUP) ct.run(id, S, 'z_ss_group', name, level, color, desc);
+  // „Dla kogo” (core/classfit) – karuzela „Dopasowane do Ciebie” w Grafiku.
+  const AUDIENCE: Record<string, object> = {
+    ss_core: { level: 'all', focus: ['strength', 'posture'], forWhom: ['back', 'return'] },
+    ss_classic_basic: { level: 'beginner', focus: ['posture', 'strength'], forWhom: ['return'] },
+    ss_classic_mid: { level: 'intermediate', focus: ['strength', 'posture'], forWhom: [] },
+    ss_hips: { level: 'all', focus: ['stretch', 'posture'], forWhom: ['back'] },
+    ss_barre_booty: { level: 'all', focus: ['strength', 'energy'], forWhom: [] },
+    ss_barre_stretch: { level: 'all', focus: ['stretch', 'strength'], forWhom: [] },
+    ss_flow: { level: 'all', focus: ['calm', 'stretch'], forWhom: ['return'] },
+    ss_split: { level: 'intermediate', focus: ['stretch'], forWhom: [] },
+    ss_aerial_stretch: { level: 'all', focus: ['stretch', 'calm'], forWhom: [] },
+    ss_barre_glow: { level: 'all', focus: ['posture', 'strength'], forWhom: [] },
+    ss_aerial_pilates: { level: 'intermediate', focus: ['strength'], forWhom: [] },
+    ss_girly: { level: 'beginner', focus: ['strength', 'calm'], forWhom: ['postnatal', 'return'] },
+    ss_burn: { level: 'advanced', focus: ['energy', 'strength'], forWhom: [] },
+    ss_yoga_stretch: { level: 'all', focus: ['calm', 'stretch'], forWhom: ['gentle', 'back'] },
+  };
+  const aud = db.prepare('UPDATE class_types SET audience_json = ? WHERE id = ?');
+  for (const [id, a] of Object.entries(AUDIENCE)) aud.run(JSON.stringify(a), id);
   const REFORMER_IDS = REFORMER.map(([id]) => id);
   const GROUP_IDS = GROUP.map(([id]) => id);
 

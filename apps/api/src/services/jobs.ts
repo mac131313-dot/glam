@@ -3,12 +3,16 @@
 // nic nie poszło dwa razy, nawet po restarcie serwera.
 import {
   addDays,
+  CLASS_REMINDER_OPTIONS,
+  classReminderOffsets,
+  dueClassReminder,
   fill,
   holidaysOn,
   initialBalances,
   isAnniversary,
   lessonUnlocked,
   localParts,
+  reminderLead,
   passValidity,
   returnStock,
   scheduledTheme,
@@ -89,26 +93,31 @@ function closeSessions(c: Ctx) {
   }
 }
 
-/** Przypomnienia 24 h i 2 h przed + prośba o potwierdzenie obecności (8). */
+/** Przypomnienia przed treningiem w czasie wybranym przez klientkę + prośba o potwierdzenie obecności (8). */
 function classReminders(c: Ctx) {
-  const rows = c.scope.all<{ id: string; user_id: string; confirmed_at: string | null; starts_at: string; class_name: string; trainer: string }>(
-    `SELECT b.id, b.user_id, b.confirmed_at, s.starts_at, COALESCE(s.title, ct.name) AS class_name, u.name AS trainer
-     FROM bookings b JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id JOIN users u ON u.id = s.trainer_id
+  const rows = c.scope.all<{ id: string; user_id: string; confirmed_at: string | null; created_at: string; starts_at: string; class_name: string; trainer: string; prefs_json: string | null }>(
+    `SELECT b.id, b.user_id, b.confirmed_at, b.created_at, s.starts_at, COALESCE(s.title, ct.name) AS class_name, u.name AS trainer, me.prefs_json
+     FROM bookings b JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id JOIN users u ON u.id = s.trainer_id JOIN users me ON me.id = b.user_id
      WHERE b.studio_id = $studio AND b.status = 'booked' AND b.guest_name IS NULL AND s.status = 'scheduled' AND s.starts_at > $now AND s.starts_at <= $to`,
-    { now: c.now.toISOString(), to: new Date(c.now.getTime() + 24 * 3_600_000).toISOString() },
+    { now: c.now.toISOString(), to: new Date(c.now.getTime() + Math.max(...CLASS_REMINDER_OPTIONS.map((o) => o.minutes)) * 60_000).toISOString() },
   );
-  const confirmMs = c.studio.settings.confirmBeforeMinutes * 60_000;
+  const confirmMin = c.studio.settings.confirmBeforeMinutes;
   for (const b of rows) {
-    const left = Date.parse(b.starts_at) - c.now.getTime();
-    const time = localParts(new Date(b.starts_at), c.studio.timezone).time;
+    const startsAt = new Date(b.starts_at);
+    const left = startsAt.getTime() - c.now.getTime();
+    const time = localParts(startsAt, c.studio.timezone).time;
     const vars = { time, class: b.class_name, trainer: b.trainer };
-    if (left > confirmMs) {
-      notify(c.scope, { userId: b.user_id, category: 'transactional', tz: c.studio.timezone, now: c.now, body: TRIGGERS.class_24h.text(vars), action: 'schedule', dedupeKey: `class_24h:${b.id}` });
-    } else if (!b.confirmed_at) {
+    // Prośba o potwierdzenie to zasada studia – sama w sobie przypomina, więc zastępuje przypomnienia z tego okna.
+    const askConfirm = confirmMin > 0 && !b.confirmed_at && left <= confirmMin * 60_000;
+    if (askConfirm) {
       notify(c.scope, { userId: b.user_id, category: 'transactional', tz: c.studio.timezone, now: c.now, body: TRIGGERS.confirm_2h.text(vars), action: `confirm/${b.id}`, dedupeKey: `confirm_2h:${b.id}` });
-    } else {
-      notify(c.scope, { userId: b.user_id, category: 'transactional', tz: c.studio.timezone, now: c.now, body: TRIGGERS.class_2h.text(vars), action: 'schedule', dedupeKey: `class_2h:${b.id}` });
     }
+    const chosen = classReminderOffsets(b.prefs_json ? (JSON.parse(b.prefs_json) as { classReminders?: number[] }).classReminders : undefined);
+    const offsets = askConfirm ? chosen.filter((m) => m < confirmMin) : chosen;
+    const due = dueClassReminder({ startsAt, bookedAt: new Date(b.created_at), now: c.now, offsets });
+    if (due === null) continue;
+    const body = due >= 1440 ? TRIGGERS.class_24h.text(vars) : TRIGGERS.class_soon.text({ ...vars, lead: reminderLead(due) });
+    notify(c.scope, { userId: b.user_id, category: 'transactional', tz: c.studio.timezone, now: c.now, body, action: 'schedule', dedupeKey: `class_rem_${due}:${b.id}` });
   }
 }
 

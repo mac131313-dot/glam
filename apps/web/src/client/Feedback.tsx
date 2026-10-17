@@ -2,7 +2,7 @@
 // Empatyczny ton, bez presji – zawsze można pominąć.
 import { useState } from 'react';
 import { api, useApi } from '../api.ts';
-import { Spinner, Toggle, useAction } from '../ui.tsx';
+import { Spinner, Toggle, useAction, useThanks } from '../ui.tsx';
 import type { RouteProps } from './router.tsx';
 
 export default function FeedbackPages({ route, arg, close }: RouteProps) {
@@ -15,6 +15,7 @@ function Nps({ id, onDone }: { id: string | null; onDone: () => void }) {
   const [score, setScore] = useState<number | null>(null);
   const [comment, setComment] = useState('');
   const { run, busy } = useAction();
+  const thanks = useThanks();
   if (!id && !home.data) return <Spinner />;
   if (!npsId) return <p className="muted">Dziękujemy – nie mamy teraz pytań.</p>;
   return (
@@ -36,7 +37,7 @@ function Nps({ id, onDone }: { id: string | null; onDone: () => void }) {
         <button className="btn ghost" onClick={() => run(() => api(`/nps/${npsId}/skip`, { method: 'POST' }).then(onDone))}>
           Pomiń
         </button>
-        <button className="btn" disabled={score === null || busy} onClick={() => run(() => api(`/nps/${npsId}`, { method: 'POST', body: { score, comment } }).then((r) => (onDone(), r)))}>
+        <button className="btn" disabled={score === null || busy} onClick={() => run(() => api(`/nps/${npsId}`, { method: 'POST', body: { score, comment } }).then((r) => (onDone(), thanks(), r)))}>
           Wyślij
         </button>
       </div>

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ENERGY_LABELS, MOOD_LABELS, QUIZ, routineSeconds, sessionById, SLEEP_LABELS, STRETCH, stretchById, stretchStepAt, type QuizAnswers } from '@glam/core';
 import { api, fmtDay, useApi } from '../api.ts';
-import { AuthImg, Empty, Field, ListRow, Progress, readFile, Spinner, Toggle, useAction } from '../ui.tsx';
+import { AuthImg, Empty, Field, LevelPicker, ListRow, Progress, readFile, Spinner, Toggle, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 import { useWakeLock } from './senses.ts';
@@ -31,21 +31,6 @@ function ConsentGate({ kind, text, onGranted }: { kind: 'health' | 'cycle' | 'ph
         Wyrażam zgodę
       </button>
     </section>
-  );
-}
-
-function Scale({ label, value, onChange, labels }: { label: string; value: number; onChange: (v: number) => void; labels: string[] }) {
-  return (
-    <div className="field">
-      <span className="field-label">{label}</span>
-      <div className="mood" role="radiogroup" aria-label={label}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button key={n} role="radio" aria-checked={value === n} aria-pressed={value === n} onClick={() => onChange(n)}>
-            {labels[n]}
-          </button>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -78,9 +63,9 @@ function Journal() {
       {!week || week >= today().slice(0, 8) ? (
         <section className="card stack">
           <div className="eyebrow">Dziś</div>
-          <Scale label="Nastrój" value={mood} onChange={setMood} labels={MOOD_LABELS} />
-          <Scale label="Energia" value={energy} onChange={setEnergy} labels={ENERGY_LABELS} />
-          <Scale label="Sen" value={sleep} onChange={setSleep} labels={SLEEP_LABELS} />
+          <LevelPicker label="Nastrój" value={mood} onChange={setMood} words={MOOD_LABELS} />
+          <LevelPicker label="Energia" value={energy} onChange={setEnergy} words={ENERGY_LABELS} />
+          <LevelPicker label="Sen" value={sleep} onChange={setSleep} words={SLEEP_LABELS} />
           <Field label="Jedno zdanie wdzięczności (opcjonalnie)">
             <input className="input" maxLength={280} value={gratitude} onChange={(e) => setGratitude(e.target.value)} placeholder="Za co dziś dziękuję…" />
           </Field>

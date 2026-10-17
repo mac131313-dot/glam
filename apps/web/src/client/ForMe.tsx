@@ -48,7 +48,7 @@ export function ForMe() {
 
   return (
     <div className="stack-lg">
-      {/* Nagłówek zakładki: data, jedno zdanie i start oddechu. Piwonia pojawia się dopiero w samej sesji
+      {/* Nagłówek zakładki: data i jedno zdanie. Start oddechu mieszka w „Mój dzień” (i w przyklejonym pasku). Piwonia pojawia się dopiero w samej sesji
           (oddech i medytacje), żeby ekran główny został lekki. */}
       <section className="forme-hero forme-head" aria-label="Oddech na dziś">
         {/* Kalendarz kwiatków: wszystkie dni z oddechem, miesiąc po miesiącu. */}
@@ -59,21 +59,14 @@ export function ForMe() {
           <div className="eyebrow">Dla mnie · {new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
           <p className="forme-quote serif">Zacznij dzień od spokojnego oddechu</p>
         </header>
-        {/* Jedno dotknięcie pod kwiatem: oddech w ostatnio wybranym rytmie i czasie. */}
-        <button className="start-min forme-start" onClick={() => openBreath({ patternId, minutes })} aria-label={`Zacznij oddech, ${minutes} min`}>
-          <span className="start-min-icon">
-            <Icon name="play" size={16} />
-          </span>
-          Zacznij · {minutes} min
-        </button>
       </section>
 
       {/* Panel tygodnia: pierścienie, podpowiedź na dziś, mój dzień, sesje i wykres. */}
-      <ForMeBoard />
+      <ForMeBoard breath={{ patternId, minutes }} />
 
       {/* Ustawienia sesji jako dwie pigułki – bez długich opisów. */}
       <section className="forme-list">
-        <h2 className="forme-h serif">Podczas sesji</h2>
+        <h2 className="forme-h">Podczas sesji</h2>
         <div className="chips" role="group" aria-label="Podczas sesji">
           <button
             className="chip"
@@ -91,7 +84,7 @@ export function ForMe() {
 
       {/* Medytacje: tytuł, rytm i czas – bez powtarzania kategorii i bez przycisków; cały wiersz startuje sesję. */}
       <section className="forme-list">
-        <h2 className="forme-h serif">Medytacje</h2>
+        <h2 className="forme-h">Medytacje</h2>
         <div ref={catRow} className="chips scroll-row" role="group" aria-label="Kategoria medytacji">
           {['Wszystkie', ...new Set(SESSIONS.map((x) => x.category))].map((c) => (
             <button
@@ -138,7 +131,7 @@ export function ForMe() {
       />
 
       <section className="forme-list">
-        <h2 className="forme-h serif">Więcej dla Ciebie</h2>
+        <h2 className="forme-h">Więcej dla Ciebie</h2>
         {/* Zawijane pigułki zamiast długiej listy – wszystko na jednym ekranie. */}
         <nav className="more-pills" aria-label="Więcej dla Ciebie">
           {more.map(([title, route]) => (

@@ -116,7 +116,13 @@ export function setStudioTimezone(tz: string | null | undefined) {
 }
 export const fmtTime = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 export const fmtDay = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'numeric' }).format(new Date(iso));
-export const fmtLongDay = (iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(iso));
+/** Części daty do plakietki w kalendarzowym stylu: { day: '17', month: 'paź', weekday: 'sob.' }. */
+export const fmtDateParts = (iso: string) => {
+  const parts = new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short' }).formatToParts(new Date(iso));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return { day: get('day'), month: get('month').replace('.', ''), weekday: get('weekday') };
+};
+export const fmtLongDay =(iso: string) => new Intl.DateTimeFormat('pl-PL', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(iso));
 export const localDate = (d: Date = new Date()) => new Intl.DateTimeFormat('sv-SE', { timeZone: TZ }).format(d);
 /** Okres z regulaminu po ludzku: 120 → „2 h”, 90 → „1 h 30 min”, 45 → „45 min”. */
 export const fmtMinutes = (min: number) => (min < 60 ? `${min} min` : min % 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min / 60} h`);

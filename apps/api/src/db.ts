@@ -200,7 +200,18 @@ CREATE TABLE IF NOT EXISTS class_types (
   photo_ratio REAL,
   playlist_id TEXT,
   -- kiedy zajęcia weszły do oferty (nowości na stronie); NULL = sprzed wprowadzenia tej kolumny
-  created_at TEXT
+  created_at TEXT,
+  -- „Dla kogo” (core/classfit): poziom, cel, grupy – do karuzeli „Dopasowane do Ciebie”; NULL = zgadujemy z level
+  audience_json TEXT
+);
+
+-- Ulubione zajęcia klientki (serduszko w Grafiku) – na poziomie typu zajęć, bo te same zajęcia wracają co tydzień
+CREATE TABLE IF NOT EXISTS favorite_class_types (
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  class_type_id TEXT NOT NULL REFERENCES class_types(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (studio_id, user_id, class_type_id)
 );
 -- Data dodania wypełnia się sama, niezależnie od miejsca, które wstawia zajęcia (panel, presety, import)
 CREATE TRIGGER IF NOT EXISTS trg_class_types_created AFTER INSERT ON class_types WHEN NEW.created_at IS NULL BEGIN UPDATE class_types SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = NEW.id; END;
