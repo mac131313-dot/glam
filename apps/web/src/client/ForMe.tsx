@@ -39,6 +39,7 @@ export function ForMe() {
     ['Dziennik nastroju', 'journal'],
     ['Cel tygodnia', 'goal'],
     ['Mój styl dnia', 'quiz'],
+    ...(hasFeature(studio, 'health') ? ([['Zdrowie i postępy', 'health']] as [string, string][]) : []),
     ...(hasFeature(studio, 'cycle') ? ([['Cykl', 'cycle']] as [string, string][]) : []),
     ...(hasFeature(studio, 'courses') ? ([['Kursy online', 'courses']] as [string, string][]) : []),
     ...(hasFeature(studio, 'music') ? ([['Muzyka do medytacji i snu', 'music']] as [string, string][]) : []),

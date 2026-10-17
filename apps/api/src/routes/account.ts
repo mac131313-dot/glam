@@ -577,11 +577,10 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
     return { ok: true };
   });
 
-  // ——— Integracje: muzyka (G5) i zdrowie (#41) ———
+  // ——— Integracje: muzyka (G5). Bez Apple Health / Google Fit – decyzja 17.10.2026: bez sensorów zdrowia. ———
 
   app.get('/api/me/integrations', auth, async (req) => ({
     music: db.prepare('SELECT provider, label, connected_at FROM music_accounts WHERE user_id = ?').all(me(req).id),
-    health: db.prepare('SELECT provider, enabled, last_sync_at FROM health_sync WHERE user_id = ?').all(me(req).id),
   }));
 
   // Logowanie u dostawcy przez OAuth – my nie przechowujemy haseł. Bez skonfigurowanego klienta: tryb demo.
@@ -599,13 +598,6 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
   });
   app.delete<{ Params: { provider: string } }>('/api/me/music/:provider', auth, async (req) => {
     db.prepare('DELETE FROM music_accounts WHERE user_id = ? AND provider = ?').run(me(req).id, req.params.provider);
-    return { ok: true };
-  });
-
-  // Apple Health / Google Fit: zgoda i przełącznik po stronie aplikacji natywnej; serwer pamięta wybór.
-  app.put<{ Params: { provider: string }; Body: { enabled: boolean } }>('/api/me/health-sync/:provider', auth, async (req) => {
-    if (!['apple_health', 'google_fit'].includes(req.params.provider)) throw notFound();
-    db.prepare('INSERT OR REPLACE INTO health_sync (user_id, provider, enabled, last_sync_at) VALUES (?, ?, ?, ?)').run(me(req).id, req.params.provider, Number(!!req.body?.enabled), req.body?.enabled ? nowIso() : null);
     return { ok: true };
   });
 }

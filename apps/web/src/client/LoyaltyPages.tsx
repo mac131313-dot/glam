@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { BADGES, FRAMES, rewardCounterCopy } from '@glam/core';
 import { api, fmtDay, useApi } from '../api.ts';
-import { Avatar, Empty, Progress, Sheet, Spinner, useAction } from '../ui.tsx';
+import { Avatar, Empty, ListRow, Progress, Sheet, Spinner, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -142,6 +142,10 @@ function LoyaltyPage() {
             );
           })}
         </div>
+      </section>
+
+      <section>
+        <ListRow title="Moja szafka" hint="Nagrody i rzeczy do odbioru w studiu" onClick={() => open('locker')} />
       </section>
 
       {data.ledger.length > 0 && (

@@ -1361,6 +1361,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   value TEXT NOT NULL
 );
 
+-- Nieużywana od 17.10.2026 (bez sensorów zdrowia). Zostaje dla starych baz; czyszczona przy usunięciu konta.
 CREATE TABLE IF NOT EXISTS health_sync (
   user_id TEXT NOT NULL REFERENCES users(id),
   provider TEXT NOT NULL CHECK (provider IN ('apple_health', 'google_fit')),
