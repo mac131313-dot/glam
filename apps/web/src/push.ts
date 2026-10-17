@@ -30,6 +30,15 @@ export async function enablePush(): Promise<boolean> {
   return true;
 }
 
+/** Wyłącza push tylko na tym urządzeniu (inne telefony tej osoby dalej dostają). */
+export async function disablePush(): Promise<void> {
+  const reg = await navigator.serviceWorker.getRegistration();
+  const sub = await reg?.pushManager.getSubscription();
+  if (!sub) return;
+  await api('/me/push-subscriptions', { method: 'DELETE', body: { endpoint: sub.endpoint }, global: true });
+  await sub.unsubscribe();
+}
+
 export async function pushEnabled(): Promise<boolean> {
   if (!pushSupported() || Notification.permission !== 'granted') return false;
   const reg = await navigator.serviceWorker.getRegistration();

@@ -2,10 +2,10 @@
 // prywatność i zgody, biometria, zmiana numeru, kalendarz, integracje, dostępność, eksport i usunięcie danych,
 // skrzynka Wiadomości (rozmowy + powiadomienia), czat z recepcją, pomoc (FAQ, regulamin, telefon), kod QR do wejścia.
 import { useEffect, useRef, useState } from 'react';
-import { receptionSlots, WEEKDAY_LONG } from '@glam/core';
+import { CLASS_REMINDER_OPTIONS, classReminderOffsets, receptionSlots, WEEKDAY_LONG } from '@glam/core';
 import { api, fmtDay, fmtTime, session, useApi } from '../api.ts';
 import { getAppearance, setAppearance, type Appearance } from '../look.ts';
-import { enablePush, passkeySupported, pushEnabled, pushSupported, registerPasskey } from '../push.ts';
+import { disablePush, enablePush, passkeySupported, pushEnabled, pushSupported, registerPasskey } from '../push.ts';
 import { AuthVideo, Empty, Field, ListRow, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
@@ -13,7 +13,7 @@ import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
 const CATEGORIES: [string, string, string][] = [
-  ['transactional', 'Zajęcia i karnet', 'Przypomnienia, zwolnione miejsca, odwołania – zawsze włączone'],
+  ['transactional', 'Zajęcia i karnet', 'Zwolnione miejsca, odwołania, koniec karnetu – zawsze włączone'],
   ['wellbeing', 'Dla mnie', 'Rytuał dnia, medytacja na weekend, mikroprzerwy'],
   ['motivation', 'Cel tygodnia i serie', 'Delikatnie, bez presji'],
   ['community', 'Społeczność', 'Zaproszenia, wyzwania, komentarze'],
@@ -164,7 +164,7 @@ function Settings() {
       </section>
 
       <section>
-        <ListRow title="Powiadomienia" hint="Rodzaje, ciche godziny, życzenia" onClick={() => open('notifications')} />
+        <ListRow title="Powiadomienia" hint="Przypomnienia przed treningiem, ciche godziny" onClick={() => open('notifications')} />
         <ListRow title="Prywatność i zgody" hint="Widoczność profilu, zgody, Twoje dane" onClick={() => open('privacy')} />
         <ListRow title="Logowanie i urządzenia" hint="Face ID, numer telefonu, kalendarz telefonu" onClick={() => open('security')} />
         <ListRow title="Dostępność" hint="Większy tekst, kontrast, mniej ruchu" onClick={() => open('a11y')} />
@@ -173,43 +173,97 @@ function Settings() {
   );
 }
 
+/** Zgoda i subskrypcja push na tym konkretnym telefonie – ustawienia rodzajów są na koncie, to – per urządzenie. */
+function ThisDevice() {
+  const [on, setOn] = useState<boolean | null>(null);
+  const toast = useToast();
+  useEffect(() => {
+    pushEnabled().then(setOn);
+  }, []);
+  if (!pushSupported()) {
+    const ios = /iPhone|iPad/.test(navigator.userAgent);
+    return (
+      <section className="card soft stack">
+        <div className="card-title">Powiadomienia na tym telefonie</div>
+        <p className="small muted" style={{ margin: 0 }}>
+          {ios ? 'Na iPhonie: w Safari stuknij „Udostępnij” → „Do ekranu początkowego”, otwórz aplikację z ikonki i wróć tutaj.' : 'Ta przeglądarka nie obsługuje powiadomień. Otwórz aplikację w Chrome albo Safari.'}
+        </p>
+      </section>
+    );
+  }
+  if (on === null) return null;
+  const blocked = Notification.permission === 'denied';
+  return (
+    <section className="card soft stack">
+      <div className="card-title">Powiadomienia na tym telefonie</div>
+      {on ? (
+        <div className="row between">
+          <span className="small">Włączone</span>
+          <button className="link small" onClick={async () => (await disablePush().catch(() => false), setOn(false), toast('Wyłączone na tym telefonie'))}>
+            Wyłącz
+          </button>
+        </div>
+      ) : blocked ? (
+        <p className="small muted" style={{ margin: 0 }}>Powiadomienia są zablokowane w ustawieniach telefonu. Zezwól na nie dla tej strony i wróć tutaj.</p>
+      ) : (
+        <>
+          <p className="small muted" style={{ margin: 0 }}>Bez tego przypomnienia przed treningiem nie dotrą.</p>
+          <button
+            className="btn sm"
+            style={{ alignSelf: 'flex-start' }}
+            onClick={async () => {
+              const ok = await enablePush().catch(() => false);
+              setOn(ok);
+              toast(ok ? 'Powiadomienia włączone' : 'Nie udało się – sprawdź zgodę w ustawieniach przeglądarki', ok ? 'ok' : 'error');
+            }}
+          >
+            Włącz powiadomienia
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
 function Notifications() {
   const { me } = useClient();
   const { save } = useSave();
-  const [pushOn, setPushOn] = useState<boolean | null>(null);
   const [from, setFrom] = useState(me.user.quietFrom);
   const [to, setTo] = useState(me.user.quietTo);
   const [reminder, setReminder] = useState(me.user.prefs.reminderTime ?? '');
-  const toast = useToast();
-  useEffect(() => {
-    pushEnabled().then(setPushOn);
-  }, []);
   const disabled = new Set(me.user.pushDisabled);
   const occOff = new Set(me.user.prefs.occasionsOff ?? []);
   const evening = new Set(me.user.prefs.eveningDays ?? []);
   const micro = me.user.prefs.microBreaks ?? [];
+  const lead = classReminderOffsets(me.user.prefs.classReminders);
+  const setLead = (next: number[]) => save({ prefs: { classReminders: next } }, next.length ? 'Zapisane' : 'Przypomnienia wyłączone');
+  // Godziny zapisują się same po wyborze – bez osobnego „Zapisz” (zasada prostoty).
+  const saveQuiet = (f: string, t: string) => f && t && (f !== me.user.quietFrom || t !== me.user.quietTo) && save({ quietFrom: f, quietTo: t });
   return (
     <div className="stack-lg">
-      {pushSupported() && (
-        <section className="card soft stack">
-          <div className="card-title">Powiadomienia na tym telefonie</div>
-          {pushOn ? (
-            <p className="small" style={{ margin: 0 }}>Włączone ✓</p>
-          ) : (
-            <button
-              className="btn sm"
-              style={{ alignSelf: 'flex-start' }}
-              onClick={async () => {
-                const ok = await enablePush().catch(() => false);
-                setPushOn(ok);
-                toast(ok ? 'Powiadomienia włączone' : 'Nie udało się – sprawdź zgodę w ustawieniach przeglądarki', ok ? 'ok' : 'error');
-              }}
-            >
-              Włącz powiadomienia
-            </button>
-          )}
-        </section>
-      )}
+      <ThisDevice />
+      <section className="stack">
+        <h2 style={{ margin: 0 }}>Przypomnienie przed treningiem</h2>
+        <Toggle
+          label="Przypominaj o moich zajęciach"
+          hint={lead.length ? `Wyślemy: ${CLASS_REMINDER_OPTIONS.filter((o) => lead.includes(o.minutes)).map((o) => o.label.toLowerCase()).join(', ')}` : 'Bez przypomnień – sama pilnujesz grafiku'}
+          checked={lead.length > 0}
+          onChange={(v) => setLead(v ? [1440, 120] : [])}
+        />
+        {lead.length > 0 && (
+          <div className="pill-row" role="group" aria-label="Kiedy przypomnieć">
+            {CLASS_REMINDER_OPTIONS.map((o) => {
+              const on = lead.includes(o.minutes);
+              return (
+                <button key={o.minutes} className="chip" aria-pressed={on} onClick={() => setLead(on ? lead.filter((m) => m !== o.minutes) : [...lead, o.minutes])}>
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <p className="tiny muted" style={{ margin: 0 }}>Jeśli zapiszesz się w ostatniej chwili, nie przypominamy – wiesz najlepiej. Prośba o potwierdzenie obecności przychodzi zawsze, gdy studio jej wymaga.</p>
+      </section>
       <section>
         <div className="eyebrow">Rodzaje (każdy osobno)</div>
         {CATEGORIES.map(([id, label, hint]) => (
@@ -226,11 +280,9 @@ function Notifications() {
         <div className="eyebrow">Ciche godziny</div>
         <p className="tiny muted" style={{ margin: 0 }}>W tych godzinach nie wysyłamy niczego poza ważnymi zmianami w Twoich zajęciach.</p>
         <div className="row">
-          <input className="input" type="time" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Od" />
-          <input className="input" type="time" value={to} onChange={(e) => setTo(e.target.value)} aria-label="Do" />
-          <button className="btn sm" onClick={() => save({ quietFrom: from, quietTo: to })}>
-            Zapisz
-          </button>
+          <input className="input" type="time" value={from} onChange={(e) => setFrom(e.target.value)} onBlur={() => saveQuiet(from, to)} aria-label="Od" />
+          <span className="muted">–</span>
+          <input className="input" type="time" value={to} onChange={(e) => setTo(e.target.value)} onBlur={() => saveQuiet(from, to)} aria-label="Do" />
         </div>
       </section>
       <section className="stack">
@@ -243,12 +295,7 @@ function Notifications() {
       <section className="stack">
         <div className="eyebrow">Rytuały (opcjonalnie)</div>
         <Field label="Poranny rytuał w dni robocze" hint="Np. 07:30 – „Dzisiejszy cel: 5 minut oddechu”. Puste = wyłączone.">
-          <div className="row">
-            <input className="input" type="time" value={reminder} onChange={(e) => setReminder(e.target.value)} />
-            <button className="btn sm" onClick={() => save({ prefs: { reminderTime: reminder || null } })}>
-              Zapisz
-            </button>
-          </div>
+          <input className="input" type="time" value={reminder} onChange={(e) => setReminder(e.target.value)} onBlur={() => (reminder || null) !== (me.user.prefs.reminderTime ?? null) && save({ prefs: { reminderTime: reminder || null } })} />
         </Field>
         <div className="field">
           <span className="field-label">„Zrób coś dla siebie” o 20:30 w dni:</span>

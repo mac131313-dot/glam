@@ -1,7 +1,11 @@
 // Grafik (4.1): widok dnia / tygodnia / miesiąca, filtry (typ, trenerka, poziom, sala, wolne miejsca), zapis,
 // trening we dwie (#6), rezerwacja „na stałe”, lista oczekujących, odwołanie, „umów się z dziewczynami”,
-// playlista zajęć, synchronizacja z kalendarzem telefonu.
+// playlista zajęć, synchronizacja z kalendarzem telefonu. Widok dnia: karuzela „Dopasowane do Ciebie” (ankieta
+// + ulubione, core/classfit) i pod nią karuzela pozostałych zajęć tego dnia.
 import { useMemo, useState } from 'react';
+import { dayTimesOf, FIT_THRESHOLD, fitReason, fitScore, type ClassAudience, type ClassFit } from '@glam/core';
+import { Icon } from '../icons.tsx';
+import { ClassFitSheet } from './ClassFitQuestions.tsx';
 import { addDaysStr, api, ApiError, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
 import { Empty, Field, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
@@ -26,6 +30,8 @@ type Session = {
   zone_name: string;
   trainer_name: string;
   trainer_id: string;
+  trainer_avatar_url: string | null;
+  trainer_bio: string | null;
   playlist_name: string | null;
   playlist_url: string | null;
   taken: number;
@@ -35,7 +41,13 @@ type Session = {
   my_confirmed_at: string | null;
   my_guest: string | null;
   my_recurring_id: string | null;
+  audience: ClassAudience;
+  /** godzina i dzień tygodnia w strefie studia – do dopasowania pory z ankiety */
+  local_hour: number;
+  local_weekday: number;
 };
+
+type ForYou = { s: Session; fav: boolean; reason: string | null };
 
 const DOW = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
 type View = 'day' | 'week' | 'month';
@@ -46,7 +58,10 @@ export function Schedule() {
   const [view, setView] = useState<View>('day');
   // Tydzień może zacząć się od ostatniego dnia z paska (dziś + 13), więc pobieramy 21 dni.
   const span = view === 'month' ? 35 : 21;
-  const { data, reload } = useApi<{ sessions: Session[] }>(`/schedule?from=${today}&days=${span}`, [span]);
+  const { data, reload } = useApi<{ sessions: Session[]; fit: ClassFit | null; favorites: string[] }>(`/schedule?from=${today}&days=${span}`, [span]);
+  /** Serduszka zmieniamy od razu na ekranie, serwer dostaje zmianę w tle. */
+  const [favs, setFavs] = useState<string[] | null>(null);
+  const [askFit, setAskFit] = useState(false);
   const [day, setDay] = useState(today);
   const [type, setType] = useState<string | null>(null);
   const [trainer, setTrainer] = useState<string | null>(null);
@@ -94,10 +109,43 @@ export function Schedule() {
     }
   };
 
+  const favorites = favs ?? data?.favorites ?? [];
+  const isFav = (s: Session) => favorites.includes(s.class_type_id);
+  const toggleFav = async (s: Session) => {
+    const on = !isFav(s);
+    setFavs(on ? [...favorites, s.class_type_id] : favorites.filter((x) => x !== s.class_type_id));
+    try {
+      await api(`/favorites/${s.class_type_id}`, { method: on ? 'PUT' : 'DELETE' });
+      if (on) toast(`${s.class_name} w ulubionych – pokażemy je w „Dopasowanych do Ciebie”`);
+    } catch (e) {
+      setFavs(favorites);
+      toast((e as ApiError).message, 'error');
+    }
+  };
+
+  // Dzień: najpierw „Dopasowane do Ciebie” (ulubione + wynik z ankiety), potem reszta zajęć tego dnia.
+  const fit = data?.fit ?? null;
+  const forYou: ForYou[] = [];
+  if (view === 'day') {
+    const scored = list
+      .filter((s) => s.status !== 'cancelled' && Date.parse(s.starts_at) > Date.now())
+      .map((s) => ({ s, fav: isFav(s), score: fit ? fitScore(s.audience, fit, dayTimesOf(s.local_hour, s.local_weekday)) : 0 }))
+      .filter((x) => x.fav || x.score >= FIT_THRESHOLD)
+      .sort((a, b) => Number(b.fav) - Number(a.fav) || b.score - a.score || a.s.starts_at.localeCompare(b.s.starts_at));
+    for (const x of scored) forYou.push({ s: x.s, fav: x.fav, reason: x.fav ? 'ulubione' : fit && fitReason(x.s.audience, fit) });
+  }
+  const rest = list.filter((s) => !forYou.some((f) => f.s.id === s.id));
+
   const started = (s: Session) => Date.parse(s.starts_at) <= Date.now();
+  const activeFilters = [type, trainer, level, zone].filter(Boolean).length + Number(onlyFree);
+  /** Pusty dzień (bez filtrów): „odpoczywa” – nic w grafiku, „done” – dziś wszystko już się odbyło. Wtedy zamiast list pokazujemy spokojną planszę. */
+  const dayRest: DayRestKind | null =
+    view !== 'day' || activeFilters > 0 ? null : list.length === 0 ? (day === today ? 'today-empty' : 'empty') : day === today && list.every((s) => started(s) || s.status === 'cancelled') ? 'done' : null;
+  /** Najbliższe zajęcia po wybranym dniu (i po teraz) – plansza od razu do nich prowadzi. */
+  const nextAfterDay = dayRest ? (data?.sessions ?? []).find((s) => s.status !== 'cancelled' && !started(s) && localDate(new Date(s.starts_at)) > day) ?? null : null;
+  const canQuickBook = (s: Session) => !s.my_status && s.status !== 'cancelled' && !started(s) && s.taken < s.capacity;
   const lateCancel = (s: Session) => Date.parse(s.starts_at) - Date.now() < studio.policy.cancelMinutesBefore * 60_000;
   const days = Array.from({ length: 14 }, (_, i) => addDaysStr(today, i));
-  const activeFilters = [type, trainer, level, zone].filter(Boolean).length + Number(onlyFree);
 
   return (
     <div className="stack">
@@ -167,40 +215,64 @@ export function Schedule() {
         </div>
       )}
 
-      {view !== 'month' && (
+      {view === 'day' && !data && <Spinner />}
+      {view === 'day' && data && dayRest && <DayRest kind={dayRest} next={nextAfterDay} onNext={(d) => setDay(d)} />}
+      {view === 'day' && data && !dayRest && (
+        <>
+          <section className="stack" style={{ gap: 10 }} aria-label="Dopasowane do Ciebie">
+            <div className="row between">
+              <h2 className="carousel-title">
+                Dopasowane <span className="serif">do Ciebie</span>
+              </h2>
+              {fit && (
+                <button className="link small" style={{ whiteSpace: 'nowrap' }} onClick={() => setAskFit(true)} aria-label="Zmień odpowiedzi z ankiety">
+                  Zmień
+                </button>
+              )}
+            </div>
+            {forYou.length > 0 ? (
+              <div className="cover-carousel">
+                {forYou.map(({ s, fav, reason }) => (
+                  <SessionCard key={s.id} s={s} fav={fav} onFav={() => toggleFav(s)} onOpen={() => setDetail(s)} reason={reason} />
+                ))}
+              </div>
+            ) : !fit ? (
+              <button className="fit-prompt" onClick={() => setAskFit(true)}>
+                <b>Trzy pytania i wiemy, co Ci polecić</b>
+                <span className="small muted">Poziom, cel i pora dnia – zajmie mniej niż minutę. Serduszkiem dodasz też ulubione zajęcia.</span>
+              </button>
+            ) : (
+              <p className="small muted" style={{ margin: 0 }}>
+                {list.length ? 'Tego dnia nic szczególnie pod Ciebie – zerknij niżej albo na kolejny dzień.' : 'Tego dnia nie ma zajęć.'}
+              </p>
+            )}
+          </section>
+
+          {rest.length > 0 && (
+            <section className="stack" style={{ gap: 10 }} aria-label="Pozostałe zajęcia tego dnia">
+              <h2 className="carousel-title">{forYou.length ? 'Pozostałe zajęcia' : 'Zajęcia tego dnia'}</h2>
+              <div className="cover-carousel">
+                {rest.map((s) => (
+                  <SessionCard key={s.id} s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={() => setDetail(s)} />
+                ))}
+              </div>
+            </section>
+          )}
+          {list.length === 0 && filtered.length > 0 && activeFilters > 0 && <Empty>Nic nie pasuje do filtrów tego dnia.</Empty>}
+        </>
+      )}
+
+      {view === 'week' && (
         <>
           {!data && <Spinner />}
           {data && list.length === 0 && <Empty>Nic nie pasuje. Zajrzyj na inny dzień albo zmień filtry.</Empty>}
           <div className="cover-list">
             {list.map((s, i) => {
-              const free = s.capacity - s.taken;
-              const past = Date.parse(s.starts_at) < Date.now();
-              const newDay = view === 'week' && (i === 0 || localDate(new Date(list[i - 1].starts_at)) !== localDate(new Date(s.starts_at)));
+              const newDay = i === 0 || localDate(new Date(list[i - 1].starts_at)) !== localDate(new Date(s.starts_at));
               return (
                 <div key={s.id} style={{ display: 'contents' }}>
                   {newDay && <div className="eyebrow" style={{ marginTop: 10 }}>{fmtLongDay(s.starts_at)}</div>}
-                  <ClassCover
-                    bleed
-                    photoUrl={s.photo_url}
-                    photoRatio={s.photo_ratio}
-                    onClick={() => setDetail(s)}
-                    dimmed={past || s.status === 'cancelled'}
-                    eyebrow={`${fmtTime(s.starts_at)} · ${Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000)} min${s.kind === 'themed' ? ' · tematyczne' : s.kind === 'special' ? ' · specjalne' : ''}`}
-                    title={s.class_name}
-                    meta={`prowadzi ${s.trainer_name} · ${s.zone_name}`}
-                    corner={
-                      s.my_status === 'booked' ? (
-                        <span className="badge ok">{s.my_guest ? 'zapisane we dwie' : 'zapisana'}</span>
-                      ) : s.my_status === 'attended' ? (
-                        <span className="badge">byłaś</span>
-                      ) : s.my_status === 'waitlist' ? (
-                        <span className="badge warn">na liście</span>
-                      ) : s.status === 'cancelled' ? (
-                        <span className="badge">odwołane</span>
-                      ) : null
-                    }
-                    footer={s.status !== 'cancelled' && !past ? (free > 0 ? `${free} ${free === 1 ? 'wolne miejsce' : free < 5 ? 'wolne miejsca' : 'wolnych miejsc'}` : `Komplet · oczekujące: ${s.waiting}`) : null}
-                  />
+                  <SessionCard s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={() => setDetail(s)} bleed />
                 </div>
               );
             })}
@@ -208,29 +280,52 @@ export function Schedule() {
         </>
       )}
 
+      {askFit && <ClassFitSheet initial={fit} onClose={() => setAskFit(false)} onSaved={reload} />}
+
       {detail && (
         <Sheet onClose={() => (setDetail(null), setConfirmCancel(false))} label={detail.class_name}>
           <div className="stack">
-            {detail.photo_url && (
-              <div className="sheet-cover">
+            {/* Ze zdjęciem: zdjęcie na całą szerokość arkusza, data i nazwa leżą na nim. Bez zdjęcia – zwykły nagłówek. */}
+            {detail.photo_url ? (
+              <div className="sheet-hero">
                 <img src={detail.photo_url} alt="" />
+                <button type="button" className={`fav-btn${detail.photo_url ? ' on-photo' : ' inline'}`} aria-pressed={isFav(detail)} aria-label={isFav(detail) ? `Usuń ${detail.class_name} z ulubionych` : `Dodaj ${detail.class_name} do ulubionych`} onClick={() => toggleFav(detail)}>
+                <Icon name="heart" />
+              </button>
+                <div className="sheet-hero-text">
+                  <div className="eyebrow">{fmtLongDay(detail.starts_at)}</div>
+                  <h2>
+                    {detail.class_name} <span className="serif">{fmtTime(detail.starts_at)}</span>
+                  </h2>
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="eyebrow">{fmtLongDay(detail.starts_at)}</div>
+                <div className="sheet-title">
+                  <h2 style={{ fontSize: '1.8rem' }}>
+                    {detail.class_name} <span className="serif">{fmtTime(detail.starts_at)}</span>
+                  </h2>
+                  <button type="button" className={`fav-btn${detail.photo_url ? ' on-photo' : ' inline'}`} aria-pressed={isFav(detail)} aria-label={isFav(detail) ? `Usuń ${detail.class_name} z ulubionych` : `Dodaj ${detail.class_name} do ulubionych`} onClick={() => toggleFav(detail)}>
+                    <Icon name="heart" />
+                  </button>
+                </div>
+              </>
             )}
-            <div className="eyebrow">{fmtLongDay(detail.starts_at)}</div>
-            <h2 style={{ fontSize: '1.8rem' }}>
-              {detail.class_name} <span className="serif">{fmtTime(detail.starts_at)}</span>
-            </h2>
-            <p className="muted">{detail.description}</p>
-            <div className="row wrap small">
-              <span className="badge">{detail.level}</span>
-              <button className="badge" style={{ border: 0, cursor: 'pointer', font: 'inherit' }} onClick={() => (setDetail(null), open(`trainer/${detail.trainer_id}`))}>
-                prowadzi {detail.trainer_name} ›
-              </button>
-              <button className="badge" style={{ border: 0, cursor: 'pointer', font: 'inherit' }} onClick={() => (setDetail(null), open(`dm/${detail.trainer_id}`))} aria-label={`Napisz wiadomość – prowadzi ${detail.trainer_name}`}>
-                napisz ›
-              </button>
-              <span className="badge">{detail.zone_name}</span>
+            {/* Poziom i sala to informacje, nie przyciski – jedna spokojna linijka zamiast plakietek. */}
+            <div className="meta-line">
+              {[detail.level, detail.zone_name, fmtMinutes(Math.round((Date.parse(detail.ends_at) - Date.parse(detail.starts_at)) / 60_000))].filter(Boolean).map((x) => (
+                <span key={x}>{x}</span>
+              ))}
             </div>
+            {detail.description && <p className="muted" style={{ margin: 0 }}>{detail.description}</p>}
+            <TrainerCard s={detail} onProfile={() => (setDetail(null), open(`trainer/${detail.trainer_id}`))} onWrite={() => (setDetail(null), open(`dm/${detail.trainer_id}`))} />
+            {/* Szybki zapis od razu pod prowadzącą – bez przewijania. „We dwie” i lista oczekujących zostają niżej. */}
+            {canQuickBook(detail) && !withFriend && (
+              <button className="btn block" disabled={busy} onClick={() => act(() => api('/bookings', { method: 'POST', body: { sessionId: detail.id, guest: null } }))}>
+                Zarezerwuj miejsce
+              </button>
+            )}
             {detail.playlist_url && (
               <a className="small" href={detail.playlist_url} target="_blank" rel="noreferrer">
                 Na zajęciach: {detail.playlist_name}
@@ -291,9 +386,11 @@ export function Schedule() {
                     <input className="input" value={guest} onChange={(e) => setGuest(e.target.value)} />
                   </Field>
                 )}
-                <button className="btn block" disabled={busy || (withFriend && !guest.trim())} onClick={() => act(() => api('/bookings', { method: 'POST', body: { sessionId: detail.id, guest: withFriend ? { name: guest } : null } }))}>
-                  {withFriend ? 'Zarezerwuj dwa miejsca' : 'Zarezerwuj miejsce'}
-                </button>
+                {withFriend && (
+                  <button className="btn block" disabled={busy || !guest.trim()} onClick={() => act(() => api('/bookings', { method: 'POST', body: { sessionId: detail.id, guest: { name: guest } } }))}>
+                    Zarezerwuj dwa miejsca
+                  </button>
+                )}
               </>
             )}
             {detail.template_id && detail.status !== 'cancelled' && (
@@ -325,6 +422,83 @@ export function Schedule() {
       {/* Historia zajęć (przeniesiona z Profilu) – na samym dole Grafiku. */}
       <ClassHistory />
     </div>
+  );
+}
+
+/** Karta zajęć z serduszkiem. W karuzeli – stała wysokość, w tygodniu – pełna szerokość jak dotąd. */
+function SessionCard({ s, fav, onFav, onOpen, reason, bleed }: { s: Session; fav: boolean; onFav: () => void; onOpen: () => void; reason?: string | null; bleed?: boolean }) {
+  const free = s.capacity - s.taken;
+  const past = Date.parse(s.starts_at) < Date.now();
+  return (
+    <div className={bleed ? 'fav-wrap' : 'fav-wrap cc-item'}>
+      <ClassCover
+        bleed={bleed}
+        photoUrl={s.photo_url}
+        photoRatio={s.photo_ratio}
+        onClick={onOpen}
+        dimmed={past || s.status === 'cancelled'}
+        eyebrow={`${fmtTime(s.starts_at)} · ${Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000)} min${s.kind === 'themed' ? ' · tematyczne' : s.kind === 'special' ? ' · specjalne' : ''}`}
+        title={s.class_name}
+        aside={<TrainerFace name={s.trainer_name} url={s.trainer_avatar_url} />}
+        corner={
+          s.my_status === 'booked' ? (
+            <span className="badge ok">{s.my_guest ? 'zapisane we dwie' : 'zapisana'}</span>
+          ) : s.my_status === 'attended' ? (
+            <span className="badge">byłaś</span>
+          ) : s.my_status === 'waitlist' ? (
+            <span className="badge warn">na liście</span>
+          ) : s.status === 'cancelled' ? (
+            <span className="badge">odwołane</span>
+          ) : reason && reason !== 'ulubione' ? (
+            <span className="badge">{reason}</span>
+          ) : null
+        }
+        footer={s.status !== 'cancelled' && !past ? (free > 0 ? `${free} ${free === 1 ? 'wolne miejsce' : free < 5 ? 'wolne miejsca' : 'wolnych miejsc'}` : `Komplet · oczekujące: ${s.waiting}`) : null}
+      />
+      <button type="button" className={`fav-btn${s.photo_url ? ' on-photo' : ''}`} aria-pressed={fav} aria-label={fav ? `Usuń ${s.class_name} z ulubionych` : `Dodaj ${s.class_name} do ulubionych`} onClick={onFav}>
+        <Icon name="heart" size={20} />
+      </button>
+    </div>
+  );
+}
+
+/** Samo zdjęcie prowadzącej na karcie zajęć (imię dla czytników ekranu i w podpowiedzi). */
+function TrainerFace({ name, url }: { name: string; url: string | null }) {
+  return (
+    <span className="cover-face" title={`prowadzi ${name}`} aria-label={`prowadzi ${name}`} role="img">
+      {url ? <img src={url} alt="" loading="lazy" /> : name.charAt(0)}
+    </span>
+  );
+}
+
+type DayRestKind = 'today-empty' | 'empty' | 'done';
+
+const DAY_REST: Record<DayRestKind, { title: [string, string]; text: string }> = {
+  done: { title: ['Na dziś', 'to wszystko'], text: 'Do zobaczenia na macie.' },
+  'today-empty': { title: ['Dziś studio', 'odpoczywa'], text: 'Czas na regenerację.' },
+  empty: { title: ['Tego dnia', 'odpoczywamy'], text: 'Zajrzyj na inny dzień.' },
+};
+
+/** Plansza pustego dnia: ikonka, krótki nagłówek, jedno zdanie i ciche wyjście do najbliższych zajęć. */
+function DayRest({ kind, next, onNext }: { kind: DayRestKind; next: Session | null; onNext: (day: string) => void }) {
+  const t = DAY_REST[kind];
+  const nextDay = next ? localDate(new Date(next.starts_at)) : null;
+  const when = nextDay === addDaysStr(localDate(), 1) ? 'jutro' : next ? DOW[new Date(`${nextDay}T12:00:00Z`).getUTCDay()] + '.' : '';
+  return (
+    <section className="day-rest" aria-live="polite">
+      <span className="day-rest-icon">
+        <Icon name={kind === 'done' ? 'moon' : 'leaf'} size={20} />
+      </span>
+      <h2>
+        {t.title[0]} <span className="serif">{t.title[1]}</span>
+      </h2>
+      <p>{t.text}</p>
+      {next && nextDay && (
+        <button className="day-rest-next" onClick={() => onNext(nextDay)}>
+          Najbliższe: {when} {fmtTime(next.starts_at)} <Icon name="chevron" size={16} />
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -361,6 +535,26 @@ function MonthGrid({ today, sessions, selected, onPick }: { today: string; sessi
         })}
       </div>
       <p className="tiny muted">● – Twój zapis. Liczba – zajęcia tego dnia.</p>
+    </div>
+  );
+}
+
+/** Wizytówka prowadzącej w arkuszu zajęć: zdjęcie z konta, imię, krótkie bio. Całość prowadzi do profilu, obok – napisz. */
+function TrainerCard({ s, onProfile, onWrite }: { s: Session; onProfile: () => void; onWrite: () => void }) {
+  return (
+    <div className="trainer-card">
+      <button type="button" className="trainer-card-main" onClick={onProfile} aria-label={`Profil prowadzącej: ${s.trainer_name}`}>
+        <span className="trainer-card-photo">{s.trainer_avatar_url ? <img src={s.trainer_avatar_url} alt="" /> : s.trainer_name.charAt(0)}</span>
+        <span className="trainer-card-text">
+          <span className="eyebrow">Prowadzi</span>
+          <span className="trainer-card-name">{s.trainer_name}</span>
+          {s.trainer_bio && <span className="trainer-card-bio">{s.trainer_bio}</span>}
+        </span>
+        <Icon name="chevron" />
+      </button>
+      <button type="button" className="trainer-card-write" onClick={onWrite} aria-label={`Napisz do ${s.trainer_name}`}>
+        <Icon name="chat" />
+      </button>
     </div>
   );
 }

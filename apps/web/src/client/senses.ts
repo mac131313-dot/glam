@@ -98,14 +98,16 @@ export class CalmNoise {
 
   stop() {
     if (!this.ctx) return;
-    const ctx = this.ctx;
+    // Węzły chwytamy lokalnie: start() tuż po stop() (StrictMode, wznowienie) podmienia pola instancji
+    // i opóźnione zamknięcie trafiłoby w nowe źródło, a stary kontekst grałby dalej.
+    const { ctx, src } = this;
     this.fadeTo(0, 1.2);
-    this.ctx = null;
+    this.ctx = this.src = this.gain = this.breathGain = this.filter = null;
     setTimeout(() => {
       try {
-        this.src?.stop();
+        src?.stop();
       } catch {}
-      ctx.close();
+      ctx.close().catch(() => {});
     }, 1400);
   }
 

@@ -4,11 +4,13 @@ import { api, ApiError, localDate, useApi } from '../api.ts';
 import { ClassCover } from '../client/ClassCover.tsx';
 import { Select, Spinner, useToast } from '../ui.tsx';
 import { preparePhoto } from './logoUpload.ts';
+import { ClassTypeSheet, type ClassTypeRow } from './ClassTypeSheet.tsx';
 import { WeekBoard, type BoardConfig } from './WeekBoard.tsx';
+import { CLASS_LEVELS, FOR_WHOM_CLASS, FOCUS, type ClassAudience } from '@glam/core';
 
 type Config = Omit<BoardConfig, 'classTypes'> & {
   zones: { id: string; name: string; access: string }[];
-  classTypes: { id: string; name: string; zone_id: string; level: string; color: string; photo_url: string | null; photo_ratio: number | null }[];
+  classTypes: { id: string; name: string; zone_id: string; level: string; color: string; description: string | null; audience: ClassAudience; photo_url: string | null; photo_ratio: number | null }[];
   exceptions: { id: string; date: string; zone_id: string | null; reason: string }[];
 };
 
@@ -25,6 +27,8 @@ export function ScheduleAdmin() {
   const [zone, setZone] = useState('');
   const [reason, setReason] = useState('');
   const [uploading, setUploading] = useState<string | null>(null);
+  /** 'new' – nowe zajęcia; obiekt – edycja „Dla kogo” */
+  const [editing, setEditing] = useState<ClassTypeRow | 'new' | null>(null);
   const toast = useToast();
 
   if (!data) return <Spinner />;
@@ -112,8 +116,13 @@ export function ScheduleAdmin() {
 
       <section className="card stack">
         <div>
-          <h3 style={{ margin: 0 }}>Typy zajęć i zdjęcia</h3>
-          <p className="small muted" style={{ margin: 0 }}>Zdjęcie jest tłem karty zajęć w grafiku klientek. Najlepiej poziome, jasne, z wolną przestrzenią w lewym dolnym rogu na nazwę.</p>
+          <div className="row between">
+            <h3 style={{ margin: 0 }}>Typy zajęć</h3>
+            <button className="btn sm" onClick={() => setEditing('new')}>
+              + Nowe zajęcia
+            </button>
+          </div>
+          <p className="small muted" style={{ margin: 0 }}>Zdjęcie jest tłem karty zajęć w grafiku klientek. Najlepiej poziome, jasne, z wolną przestrzenią w lewym dolnym rogu na nazwę. „Dla kogo” decyduje, komu podpowiemy zajęcia w karuzeli „Dopasowane do Ciebie”.</p>
         </div>
         <div className="photo-grid">
           {data.classTypes.map((c) => (
@@ -130,11 +139,20 @@ export function ScheduleAdmin() {
                   </button>
                 )}
               </div>
+              <button className="link small" style={{ textAlign: 'left' }} onClick={() => setEditing(c)}>
+                Dla kogo: {audienceLabel(c.audience)}
+              </button>
             </div>
           ))}
         </div>
       </section>
 
+      {editing && <ClassTypeSheet classType={editing === 'new' ? undefined : editing} zones={data.zones} onClose={() => setEditing(null)} onSaved={reload} />}
     </div>
   );
+}
+
+function audienceLabel(a: ClassAudience) {
+  const parts = [CLASS_LEVELS.find(([k]) => k === a.level)![1], ...a.focus.map((f) => FOCUS.find(([k]) => k === f)![1].split(' i ')[0]), ...a.forWhom.map((w) => FOR_WHOM_CLASS[w])];
+  return parts.slice(0, 3).join(' · ');
 }

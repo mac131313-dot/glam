@@ -5,6 +5,7 @@ import type { PushCategory } from './push.ts';
 export type Trigger =
   | 'class_24h'
   | 'class_2h'
+  | 'class_soon'
   | 'confirm_2h'
   | 'spot_freed'
   | 'class_cancelled'
@@ -40,6 +41,7 @@ export type Trigger =
 export const TRIGGERS: Record<Trigger, { label: string; when: string; category: PushCategory; text: (v: Record<string, string>) => string }> = {
   class_24h: { label: 'Zajęcia jutro', when: '24 h przed', category: 'transactional', text: (v) => `Jutro o ${v.time} ${v.class}, prowadzi ${v.trainer}. Do zobaczenia! 💛` },
   class_2h: { label: 'Zajęcia za 2 h', when: '2 h przed', category: 'transactional', text: () => 'Za 2 godziny ruszamy. Weź wodę i matę 🧘‍♀️' },
+  class_soon: { label: 'Zajęcia wkrótce', when: 'wybrany czas przed', category: 'transactional', text: (v) => `${v.lead[0].toUpperCase()}${v.lead.slice(1)} ${v.class} o ${v.time}, prowadzi ${v.trainer}. Weź wodę i matę 🧘‍♀️` },
   confirm_2h: { label: 'Potwierdzenie obecności', when: '2 h przed', category: 'transactional', text: (v) => `Będziesz na ${v.class} o ${v.time}? Potwierdź jednym kliknięciem.` },
   spot_freed: { label: 'Zwolnione miejsce', when: 'natychmiast', category: 'transactional', text: (v) => `Zwolniło się miejsce na ${v.time}. Chcesz je?` },
   class_cancelled: { label: 'Odwołanie zajęć', when: 'natychmiast', category: 'transactional', text: (v) => `Zajęcia ${v.time} odwołane. Wybierz inny termin.` },
@@ -79,6 +81,7 @@ export const PREVIEW_VARS: Record<string, string> = {
   class: 'Reformer',
   trainer: 'Marzena',
   zone: 'sala 2',
+  lead: 'za godzinę',
   when: 'za tydzień',
   name: 'Magda',
   done: '2',

@@ -5,6 +5,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   CALM_7,
   calmDayUnlocked,
+  classReminderOffsets,
+  cleanFit,
+  fitGoalLabel,
   initialBalances,
   journalWeek,
   localParts,
@@ -17,6 +20,7 @@ import {
   addDays,
   cyclePhase,
   CYCLE_SUGGESTION,
+  type ClassFit,
   type JournalEntry,
   type ProductRules,
   type QuizAnswers,
@@ -63,6 +67,8 @@ export type UserPrefs = {
   reminderTime?: string | null;
   eveningDays?: number[];
   microBreaks?: string[];
+  /** minuty przed zajęciami (core/reminders); [] = bez przypomnień */
+  classReminders?: number[];
   visibility?: 'public' | 'studio' | 'private';
   frame?: string;
   language?: 'pl';
@@ -73,6 +79,8 @@ export type UserPrefs = {
   themesSeen?: string[];
   goal?: string;
   timePrefs?: string[];
+  /** ankieta „Dopasujmy zajęcia” (core/classfit) */
+  classFit?: ClassFit;
 };
 
 export const prefsOf = (u: { prefs_json: string | null }): UserPrefs => (u.prefs_json ? JSON.parse(u.prefs_json) : {});
@@ -187,6 +195,7 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
     const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
     if ((b.quietFrom && !hhmm.test(b.quietFrom)) || (b.quietTo && !hhmm.test(b.quietTo))) throw badRequest('Ciche godziny w formacie GG:MM.');
     const prefs = { ...prefsOf(u), ...(b.prefs ?? {}) };
+    if (b.prefs?.classReminders !== undefined) prefs.classReminders = classReminderOffsets(b.prefs.classReminders);
     if (prefs.a11y?.fontScale && (prefs.a11y.fontScale < 0.9 || prefs.a11y.fontScale > 1.6)) throw badRequest('Rozmiar tekstu: od 90 do 160%.');
     const today = new Date().toISOString().slice(0, 10);
     db.prepare(
@@ -227,19 +236,31 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
   });
 
   // Onboarding (3): cel, preferencje czasowe, zgody, urodziny (dobrowolnie, bez roku).
-  app.post<{ Body: { name?: string; goal?: string; timePrefs?: string[]; birthday?: string | null; consents?: Record<string, boolean>; studioId?: string } }>('/api/me/onboarding', auth, async (req) => {
+  app.post<{ Body: { name?: string; goal?: string; timePrefs?: string[]; classFit?: unknown; birthday?: string | null; consents?: Record<string, boolean>; studioId?: string } }>('/api/me/onboarding', auth, async (req) => {
     const u = me(req);
     const b = req.body ?? {};
     if (b.name && (b.name.trim().length < 2 || b.name.length > 60)) throw badRequest('Imię powinno mieć od 2 do 60 znaków.');
     if (b.birthday && !/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(b.birthday)) throw badRequest('Data urodzin w formacie MM-DD.');
     if (!b.consents?.terms) throw badRequest('Aby korzystać z aplikacji, zaakceptuj regulamin.');
     tx(db, () => {
-      const prefs = { ...prefsOf(u), goal: b.goal?.slice(0, 120), timePrefs: b.timePrefs?.slice(0, 5) };
+      const prefs: UserPrefs = { ...prefsOf(u), goal: b.goal?.slice(0, 120), timePrefs: b.timePrefs?.slice(0, 5), classFit: cleanFit(b.classFit) ?? prefsOf(u).classFit };
       db.prepare('UPDATE users SET name = COALESCE(?, name), birthday = COALESCE(?, birthday), prefs_json = ?, onboarded_at = ? WHERE id = ?').run(b.name?.trim() ?? null, b.birthday ?? null, JSON.stringify(prefs), nowIso(), u.id);
       for (const [kind, granted] of Object.entries(b.consents ?? {})) setConsent(u.id, kind, granted, kind === 'marketing' ? (b.studioId ?? '') : '');
       if (b.goal && b.studioId) db.prepare("UPDATE memberships SET goal = ? WHERE studio_id = ? AND user_id = ? AND role = 'client'").run(b.goal.slice(0, 120), b.studioId, u.id);
     });
     return { user: publicUser(reloadUser(u.id)) };
+  });
+
+  // Ankieta „Dopasujmy zajęcia” – z onboardingu albo później z Grafiku („Zmień odpowiedzi”).
+  app.put<{ Body: unknown }>('/api/me/class-fit', auth, async (req) => {
+    const fit = cleanFit(req.body);
+    if (!fit) throw badRequest('Zaznacz, jak często ćwiczysz – resztę możesz pominąć.');
+    const u = me(req);
+    db.prepare('UPDATE users SET prefs_json = ? WHERE id = ?').run(JSON.stringify({ ...prefsOf(u), classFit: fit }), u.id);
+    const goal = fitGoalLabel(fit);
+    // Trenerka widzi tylko zadeklarowany cel (4.12.2) – uzupełniamy, jeśli klientka nie podała go wcześniej.
+    if (goal) db.prepare("UPDATE memberships SET goal = COALESCE(goal, ?) WHERE user_id = ? AND role = 'client'").run(goal, u.id);
+    return { fit };
   });
 
   // ——— Zgody (sekcja 11): regulamin, marketing (per studio), dane zdrowotne i cykl (art. 9), zdjęcia, adres ———
@@ -338,6 +359,7 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
         'DELETE FROM notifications WHERE user_id = ?',
         'DELETE FROM post_likes WHERE user_id = ?',
         'DELETE FROM course_mini_progress WHERE user_id = ?',
+        'DELETE FROM favorite_class_types WHERE user_id = ?',
         'UPDATE posts SET hidden = 1, body = \'[treść usunięta]\', media_id = NULL WHERE author_id = ?',
         'UPDATE post_comments SET hidden = 1, body = \'[treść usunięta]\' WHERE author_id = ?',
         'DELETE FROM trainer_notes WHERE client_id = ?',

@@ -2,7 +2,7 @@
 // przełożony na to, co GLAM naprawdę wie): ruch z rezerwacji, oddech z sesji w aplikacji, samopoczucie z dziennika.
 // Bez ocen i bez wniosków o zdrowiu – tylko lustro tygodnia i jedna podpowiedź, co dalej.
 import { useEffect, useRef, useState } from 'react';
-import { MOOD_LABELS, sessionById, type BreathRitual } from '@glam/core';
+import { MOOD_LABELS, patternById, sessionById, type BreathRitual } from '@glam/core';
 import { fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
@@ -30,7 +30,23 @@ export function wellbeingScore(e: Pick<Entry, 'mood' | 'energy' | 'sleep'>): num
   return Math.round(((avg - 1) / 4) * 100);
 }
 
-export function ForMeBoard() {
+/**
+ * Kolor pierścienia mówi, jak idzie – bez czerwieni i bez oceniania: od ciepłej gliny (dopiero start),
+ * przez piasek (w połowie), do szałwii (dobrze) i głębokiej szałwii (cel domknięty).
+ * Progi są wspólne dla wszystkich trzech pierścieni, żeby ten sam kolor znaczył wszędzie to samo.
+ */
+export function ringTone(value: number): 'none' | 'low' | 'mid' | 'good' | 'full' {
+  if (value <= 0) return 'none';
+  if (value >= 1) return 'full';
+  if (value >= 0.67) return 'good';
+  if (value >= 0.34) return 'mid';
+  return 'low';
+}
+const TONE_LABEL = { none: 'jeszcze nic', low: 'początek', mid: 'w połowie', good: 'dobrze', full: 'domknięte' } as const;
+
+type BreathChoice = { patternId: string; minutes: number };
+
+export function ForMeBoard({ breath }: { breath: BreathChoice }) {
   const { studio, open, go, openBreath } = useClient();
   const { data: home, reload: reloadHome } = useApi<Home>('/home');
   const { data: ritual, reload: reloadRitual } = useApi<BreathRitual>('/my/breath-ritual');
@@ -62,17 +78,16 @@ export function ForMeBoard() {
   const ratio = (done = 0, goal = 0) => (goal > 0 ? Math.min(1, done / goal) : done > 0 ? 1 : 0);
 
   const rings = [
-    { id: 'move', label: 'Ruch', color: 'var(--ink)', value: ratio(week?.done.trainings, week?.goal.trainings), text: week ? `${week.done.trainings}/${week.goal.trainings}` : '–', onClick: () => open('goal') },
-    { id: 'breath', label: 'Oddech', color: 'var(--ink)', value: ratio(week?.done.mindful, week?.goal.mindful), text: week ? `${week.done.mindful}/${week.goal.mindful}` : '–', onClick: () => open('goal') },
+    { id: 'move', label: 'Ruch', value: ratio(week?.done.trainings, week?.goal.trainings), text: week ? `${week.done.trainings}/${week.goal.trainings}` : '–', onClick: () => open('goal') },
+    { id: 'breath', label: 'Oddech', value: ratio(week?.done.mindful, week?.goal.mindful), text: week ? `${week.done.mindful}/${week.goal.mindful}` : '–', onClick: () => open('goal') },
     {
       id: 'mood',
       label: 'Samopoczucie',
-      color: 'var(--ink)',
       value: todayEntry ? wellbeingScore(todayEntry) / 100 : 0,
       text: todayEntry ? `${wellbeingScore(todayEntry)}%` : 'Zapisz',
       onClick: () => open('journal'),
     },
-  ];
+  ].map((r) => ({ ...r, tone: ringTone(r.value) }));
 
   const todayClasses = (home?.upcoming ?? []).filter((u) => isoDay(new Date(u.starts_at)) === today);
   const evening = new Date().getHours() >= 18;
@@ -84,23 +99,78 @@ export function ForMeBoard() {
       <div className={`board-mini${compact ? ' is-on' : ''}`} aria-hidden={!compact}>
         {rings.map((r) => (
           <button key={r.id} tabIndex={compact ? 0 : -1} onClick={r.onClick}>
-            <Ring value={r.value} color={r.color} size={22} stroke={3} />
+            <Ring value={r.value} tone={r.tone} size={22} stroke={3} />
             {r.label}
           </button>
         ))}
+        {/* Szybki start oddechu zostaje pod kciukiem także po przewinięciu – w przyklejonym pasku. */}
+        {!ritual?.today && (
+          <button className="board-mini-play" tabIndex={compact ? 0 : -1} onClick={() => openBreath(breath)} aria-label={`Zacznij oddech, ${breath.minutes} min`}>
+            <Icon name="play" size={12} />
+          </button>
+        )}
       </div>
 
       {/* Trzy pierścienie: ruch i oddech wobec celu tygodnia, samopoczucie z dzisiejszego wpisu. */}
       <div ref={ringsRef} className="board-rings" role="group" aria-label="Twój tydzień">
         {rings.map((r) => (
-          <button key={r.id} className="board-ring" onClick={r.onClick} aria-label={`${r.label}: ${r.text}`}>
-            <Ring value={r.value} color={r.color} size={84} stroke={3}>
+          <button key={r.id} className="board-ring" onClick={r.onClick} aria-label={`${r.label}: ${r.text}, ${TONE_LABEL[r.tone]}`}>
+            <Ring value={r.value} tone={r.tone} size={84} stroke={4}>
               <span className={r.text === 'Zapisz' ? 'board-ring-cta' : 'board-ring-num'}>{r.text}</span>
             </Ring>
             <span className="board-ring-label">{r.label}</span>
           </button>
         ))}
       </div>
+
+      {/* Mój dzień tuż pod pierścieniami: dzisiejszy oddech jako pierwsza pozycja planu dnia (zamiast przycisku
+          w nagłówku), potem zajęcia. Po oddechu wiersz zamienia się w ✓ – plan dnia sam się odhacza. */}
+      <section className="forme-list">
+        <h2 className="forme-h">Mój dzień</h2>
+        <div className="card board-day">
+          {ritual?.today ? (
+            <div className="board-act is-soft is-done">
+              <span className="board-act-time">
+                <Icon name="check" size={14} />
+              </span>
+              <span className="grow">
+                <span className="session-title">Oddech</span>
+                <span className="session-meta"> · dziś już był</span>
+              </span>
+            </div>
+          ) : (
+            <button className="board-act is-breath" onClick={() => openBreath(breath)} aria-label={`Zacznij oddech, ${breath.minutes} min`}>
+              <span className="board-act-time board-act-play">
+                <Icon name="play" size={14} />
+              </span>
+              <span className="grow">
+                <span className="session-title">{evening ? 'Oddech na wieczór' : new Date().getHours() < 12 ? 'Poranny oddech' : 'Chwila oddechu'}</span>
+                <span className="session-meta">
+                  {breath.minutes} min · {patternById(breath.patternId).label.toLowerCase()}
+                </span>
+              </span>
+              <span className="board-act-go">Zacznij</span>
+            </button>
+          )}
+          {todayClasses.map((c) => (
+            <button key={c.booking_id} className="board-act" onClick={() => go('start')}>
+              <span className="board-act-time">{fmtTime(c.starts_at)}</span>
+              <span className="grow">
+                <span className="session-title">{c.class_name}</span>
+                <span className="session-meta"> · prowadzi {c.trainer_name}</span>
+              </span>
+            </button>
+          ))}
+          {!todayClasses.length && (
+            <p className="small muted board-empty">
+              Bez zajęć na dziś – to też jest plan.{' '}
+              <button className="link" onClick={() => go('schedule')}>
+                Zobacz grafik
+              </button>
+            </p>
+          )}
+        </div>
+      </section>
 
       {/* Jedna podpowiedź na dziś – faza cyklu, jeśli klientka ją prowadzi, inaczej słowo o celu tygodnia. */}
       <article className="card board-insight">
@@ -124,39 +194,6 @@ export function ForMeBoard() {
           </span>
         </button>
       </div>
-
-      {/* Mój dzień: zajęcia na dziś i dzisiejszy oddech, z dwiema szybkimi akcjami jak w pulpicie. */}
-      <section className="forme-list">
-        <h2 className="forme-h">Mój dzień</h2>
-        <div className="card board-day">
-          {todayClasses.map((c) => (
-            <button key={c.booking_id} className="board-act" onClick={() => go('start')}>
-              <span className="board-act-time">{fmtTime(c.starts_at)}</span>
-              <span className="grow">
-                <span className="session-title">{c.class_name}</span>
-                <span className="session-meta"> · prowadzi {c.trainer_name}</span>
-              </span>
-            </button>
-          ))}
-          {ritual?.today && (
-            <div className="board-act is-soft">
-              <span className="board-act-time">
-                <Icon name="check" size={14} />
-              </span>
-              <span className="session-title grow">Oddech</span>
-            </div>
-          )}
-          {/* Oddech startuje przyciskiem u góry zakładki – tu tylko jedno ciche wejście do grafiku. */}
-          {!todayClasses.length && !ritual?.today && (
-            <p className="small muted board-empty">
-              Dziś nic zaplanowanego – to też jest plan.{' '}
-              <button className="link" onClick={() => go('schedule')}>
-                Zapisz się
-              </button>
-            </p>
-          )}
-        </div>
-      </section>
 
       {/* Dwie sesje na teraz – odpowiednik „zwiększ relaks / zwiększ czujność”. */}
       <section className="forme-list">
@@ -183,20 +220,19 @@ export function ForMeBoard() {
 }
 
 /** Pierścień postępu – miękka linia, zaokrąglone końce, start na godzinie 12. */
-function Ring({ value, color, size, stroke, children }: { value: number; color: string; size: number; stroke: number; children?: React.ReactNode }) {
+function Ring({ value, tone, size, stroke, children }: { value: number; tone: ReturnType<typeof ringTone>; size: number; stroke: number; children?: React.ReactNode }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   return (
-    <span className="bring" style={{ width: size, height: size }}>
+    <span className={`bring is-${tone}`} style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line)" strokeWidth={stroke} />
+        <circle className="bring-track" cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} />
         <circle
           className="bring-arc"
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
-          stroke={color}
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={c}

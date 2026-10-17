@@ -17,6 +17,7 @@ export function ClassCover({
   title,
   meta,
   corner,
+  aside,
   footer,
   onClick,
   dimmed,
@@ -32,6 +33,8 @@ export function ClassCover({
   meta?: ReactNode;
   /** prawy górny róg – status rezerwacji */
   corner?: ReactNode;
+  /** prawy dolny róg, na wysokości nagłówka – np. zdjęcie prowadzącej */
+  aside?: ReactNode;
   /** ostatnia linia pod meta – np. wolne miejsca */
   footer?: ReactNode;
   onClick?: () => void;
@@ -60,7 +63,8 @@ export function ClassCover({
         </div>
       )}
       {corner && <div className="cover-corner">{corner}</div>}
-      <div className="cover-body">
+      {aside && <div className="cover-aside">{aside}</div>}
+      <div className={`cover-body${aside ? ' with-aside' : ''}`}>
         <div className="cover-eyebrow">{eyebrow}</div>
         <div className="cover-title">{title}</div>
         {meta && <div className="cover-meta">{meta}</div>}

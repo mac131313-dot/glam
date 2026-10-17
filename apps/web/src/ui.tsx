@@ -6,17 +6,26 @@ import { createPortal } from 'react-dom';
 type Toast = { text: string; kind: 'ok' | 'error' } | null;
 const ToastCtx = createContext<(text: string, kind?: 'ok' | 'error') => void>(() => {});
 
+const ThanksCtx = createContext<() => void>(() => {});
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast>(null);
+  const [thanks, setThanks] = useState(0);
   const timer = useRef<number | undefined>(undefined);
   const show = useCallback((text: string, kind: 'ok' | 'error' = 'ok') => {
     setToast({ text, kind });
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => setToast(null), 3800);
   }, []);
+  // Licznik zamiast true/false: druga opinia pod rząd montuje ekran od nowa i animacja serca rusza ponownie.
+  const showThanks = useCallback(() => setThanks((n) => n + 1), []);
+  const hideThanks = useCallback(() => setThanks(0), []);
   return (
     <ToastCtx.Provider value={show}>
-      {children}
+      <ThanksCtx.Provider value={showThanks}>
+        {children}
+        {thanks > 0 && <ThanksScreen key={thanks} onClose={hideThanks} />}
+      </ThanksCtx.Provider>
       {toast && (
         <div className={`toast ${toast.kind === 'error' ? 'error' : ''}`} role="status" aria-live="polite">
           {toast.text}
@@ -27,6 +36,26 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 export const useToast = () => useContext(ToastCtx);
+
+/** Pełnoekranowe podziękowanie po opinii (NPS, ocena zajęć, opinia o kursie). Żyje w providerze, więc przeżywa zamknięcie ekranu z formularzem. */
+export const useThanks = () => useContext(ThanksCtx);
+
+function ThanksScreen({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const t = window.setTimeout(onClose, 3200);
+    return () => window.clearTimeout(t);
+  }, [onClose]);
+  return (
+    <div className="thanks" role="status" aria-live="polite" onClick={onClose}>
+      <svg className="thanks-heart" viewBox="0 0 64 64" width="112" height="112" aria-hidden>
+        <circle className="halo" cx="32" cy="33" r="30" />
+        <path className="heart" pathLength={1} d="M32 54C29 51.4 9 37.8 9 23.6 9 16 14.8 10.5 21.8 10.5c4.6 0 8 2.5 10.2 6 2.2-3.5 5.6-6 10.2-6C49.2 10.5 55 16 55 23.6 55 37.8 35 51.4 32 54z" />
+      </svg>
+      <p className="thanks-title">Twoja opinia ma dla nas duże znaczenie</p>
+      <p className="thanks-sub">Dziękujemy</p>
+    </div>
+  );
+}
 
 /**
  * Fokus w oknie: po otwarciu przechodzi do okna (czytnik ekranu zaczyna od jego treści, nie od tła),
@@ -345,6 +374,31 @@ export function Select({
         </ul>,
           document.body,
         )}
+    </div>
+  );
+}
+
+/** Skala 1–5 ze słowami (nastrój, energia, sen): słowo wybranego poziomu nad ścieżką, kropki rosną z poziomem – bez łamanych etykiet w przyciskach. */
+export function LevelPicker({ label, value, onChange, words }: { label: string; value: number; onChange: (v: number) => void; words: string[] }) {
+  return (
+    <div className="level">
+      <div className="level-head">
+        <span className="field-label">{label}</span>
+        <span className="level-word" aria-live="polite">
+          {words[value]}
+        </span>
+      </div>
+      <div className="level-track" role="radiogroup" aria-label={label}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button key={n} type="button" role="radio" aria-checked={value === n} aria-label={words[n]} className={n < value ? 'is-below' : undefined} onClick={() => onChange(n)}>
+            <i style={{ width: 8 + n * 3, height: 8 + n * 3 }} />
+          </button>
+        ))}
+      </div>
+      <div className="level-ends tiny muted" aria-hidden>
+        <span>{words[1]}</span>
+        <span>{words[5]}</span>
+      </div>
     </div>
   );
 }

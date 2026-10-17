@@ -4,7 +4,9 @@
 import type { FastifyInstance } from 'fastify';
 import {
   addDays,
+  cleanAudience,
   initialBalances,
+  LEVEL_TEXT,
   localParts,
   parseCsv,
   PRESETS,
@@ -46,7 +48,10 @@ export function configRoutes(app: FastifyInstance, deps: Deps) {
     return {
       facilities: scope.all('SELECT * FROM facilities WHERE studio_id = $studio ORDER BY name'),
       zones: scope.all('SELECT * FROM zones WHERE studio_id = $studio ORDER BY name'),
-      classTypes: scope.all(`SELECT ct.id, ct.zone_id, ct.name, ct.level, ct.color, ct.description, ct.playlist_id, ${PHOTO_URL} FROM class_types ct WHERE ct.studio_id = $studio ORDER BY ct.name`),
+      classTypes: scope.all<Record<string, unknown>>(`SELECT ct.id, ct.zone_id, ct.name, ct.level, ct.color, ct.description, ct.playlist_id, ct.audience_json, ${PHOTO_URL} FROM class_types ct WHERE ct.studio_id = $studio ORDER BY ct.name`).map(({ audience_json, ...c }) => ({
+        ...c,
+        audience: cleanAudience(audience_json ? JSON.parse(audience_json as string) : null, c.level as string),
+      })),
       templates: scope.all(
         `SELECT t.*, ct.name AS class_name, u.name AS trainer_name FROM schedule_templates t
          JOIN class_types ct ON ct.id = t.class_type_id JOIN users u ON u.id = t.trainer_id
@@ -117,16 +122,19 @@ export function configRoutes(app: FastifyInstance, deps: Deps) {
     return { ok: true };
   });
 
-  app.post<{ Body: { zoneId: string; name: string; level?: string; color?: string; description?: string } }>('/api/owner/class-types', owner, async (req) => {
+  app.post<{ Body: { zoneId: string; name: string; level?: string; color?: string; description?: string; audience?: unknown } }>('/api/owner/class-types', owner, async (req) => {
     const { scope, user, studio } = ctx(req);
     if (!scope.get('SELECT 1 FROM zones WHERE studio_id = $studio AND id = $z', { z: req.body?.zoneId })) throw notFound('Nie znaleziono strefy.');
     if (scope.get<{ n: number }>('SELECT COUNT(*) AS n FROM class_types WHERE studio_id = $studio')!.n >= 10 && !studio.has('network')) throw conflict('limit', 'Na start obsługujemy do 10 typów zajęć (pyt. 20).');
     const cid = id();
-    scope.run('INSERT INTO class_types (id, studio_id, zone_id, name, level, color, description) VALUES ($id, $studio, $z, $n, $l, $c, $d)', {
+    // „Dla kogo” wybrane w panelu ustala też tekst poziomu, który widać w grafiku i na stronie.
+    const aud = req.body.audience !== undefined ? cleanAudience(req.body.audience, req.body.level) : null;
+    scope.run('INSERT INTO class_types (id, studio_id, zone_id, name, level, color, description, audience_json) VALUES ($id, $studio, $z, $n, $l, $c, $d, $a)', {
       id: cid,
       z: req.body.zoneId,
       n: clean(req.body.name, 60) || 'Zajęcia',
-      l: clean(req.body.level, 40) || 'wszystkie poziomy',
+      l: aud ? LEVEL_TEXT[aud.level] : clean(req.body.level, 40) || 'wszystkie poziomy',
+      a: aud ? JSON.stringify(aud) : null,
       c: /^#[0-9a-f]{6}$/i.test(req.body.color ?? '') ? req.body.color! : '#e8b4c4',
       d: clean(req.body.description, 300) || null,
     });
@@ -134,13 +142,14 @@ export function configRoutes(app: FastifyInstance, deps: Deps) {
     return { id: cid };
   });
 
-  app.put<{ Params: { id: string }; Body: { name?: string; level?: string; description?: string; zoneId?: string; playlistId?: string | null } }>('/api/owner/class-types/:id', owner, async (req) => {
+  app.put<{ Params: { id: string }; Body: { name?: string; level?: string; description?: string; zoneId?: string; playlistId?: string | null; audience?: unknown } }>('/api/owner/class-types/:id', owner, async (req) => {
     const { scope } = ctx(req);
     const b = req.body ?? {};
+    const aud = b.audience !== undefined ? cleanAudience(b.audience, b.level) : null;
     scope.run(
       `UPDATE class_types SET name = COALESCE($n, name), level = COALESCE($l, level), description = COALESCE($d, description), zone_id = COALESCE($z, zone_id),
-       playlist_id = CASE WHEN $setp = 1 THEN $p ELSE playlist_id END WHERE studio_id = $studio AND id = $id`,
-      { n: b.name ? clean(b.name, 60) : null, l: b.level ? clean(b.level, 40) : null, d: b.description !== undefined ? clean(b.description, 300) : null, z: b.zoneId ?? null, setp: Number(b.playlistId !== undefined), p: b.playlistId ?? null, id: req.params.id },
+       audience_json = COALESCE($a, audience_json), playlist_id = CASE WHEN $setp = 1 THEN $p ELSE playlist_id END WHERE studio_id = $studio AND id = $id`,
+      { a: aud ? JSON.stringify(aud) : null, n: b.name ? clean(b.name, 60) : null, l: aud ? LEVEL_TEXT[aud.level] : b.level ? clean(b.level, 40) : null, d: b.description !== undefined ? clean(b.description, 300) : null, z: b.zoneId ?? null, setp: Number(b.playlistId !== undefined), p: b.playlistId ?? null, id: req.params.id },
     );
     return { ok: true };
   });

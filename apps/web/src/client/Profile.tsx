@@ -80,7 +80,8 @@ export function Profile() {
         {hasFeature(studio, 'shop') && <ListRow title="Sklep i zamówienia" hint="Bar, merch i stroje" onClick={() => open('shop')} />}
         {hasFeature(studio, 'events') && <ListRow title="Wydarzenia w klubie" hint="Urodziny, babski wieczór w studiu" onClick={() => open('events')} />}
         {hasFeature(studio, 'courses') && <ListRow title="Moje kursy" hint="Kursy online od instruktorek" onClick={() => open('courses')} />}
-        <ListRow title="Ustawienia" hint="Konto, powiadomienia, prywatność, dostępność" onClick={() => open('settings')} />
+        <ListRow title="Powiadomienia" hint="Przypomnienia przed treningiem i co ma do Ciebie docierać" onClick={() => open('notifications')} />
+        <ListRow title="Ustawienia" hint="Konto, prywatność, dostępność" onClick={() => open('settings')} />
         <ListRow title="Pomoc" hint="FAQ, czat z recepcją, regulamin" onClick={() => open('faq')} />
       </section>
 

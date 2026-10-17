@@ -484,6 +484,30 @@ test('zadania cykliczne: życzenia urodzinowe o 9:00 z prezentem, ankieta uśpio
   assert.ok((db.prepare("SELECT COUNT(*) AS n FROM dormant_surveys WHERE studio_id = ?").get(R) as { n: number }).n >= 1);
 });
 
+test('przypomnienie przed treningiem: w czasie wybranym przez klientkę, a po wyłączeniu – wcale', async () => {
+  const magda = await login(DEMO.magda);
+  assert.equal((await call(magda, null, 'PATCH', '/api/me', { prefs: { classReminders: [60, 999] } })).statusCode, 200);
+  assert.deepEqual((await call(magda, R, 'GET', '/api/me')).json().user.prefs.classReminders, [60]);
+  const free = futureSession('ct_reformer', 30).find((s) => !db.prepare("SELECT 1 FROM bookings WHERE session_id = ? AND user_id = 'u_005' AND status NOT IN ('cancelled','late_cancel')").get(s.id))!;
+  // karnet Magdy zużyły wcześniejsze testy – rezerwację wstawiamy wprost, zapisaną dzień wcześniej
+  const bookingId = 'b_reminder_test';
+  db.prepare("INSERT INTO bookings (id, studio_id, session_id, user_id, status, created_at, updated_at) VALUES (?, ?, ?, 'u_005', 'booked', ?, ?)").run(bookingId, R, free.id, new Date(Date.now() - 86_400_000).toISOString(), new Date().toISOString());
+  const startsAt = Date.parse((db.prepare('SELECT starts_at FROM class_sessions WHERE id = ?').get(free.id) as { starts_at: string }).starts_at);
+  const keys = () => (db.prepare("SELECT dedupe_key FROM notifications WHERE dedupe_key LIKE ?").all(`%:${bookingId}`) as { dedupe_key: string }[]).map((r) => r.dedupe_key);
+  await runJobs(deps, new Date(startsAt - 3 * 3_600_000));
+  assert.ok(!keys().some((k) => k.startsWith('class_rem')), 'za wcześnie');
+  await runJobs(deps, new Date(startsAt - 59 * 60_000));
+  assert.ok(keys().includes(`class_rem_60:${bookingId}`));
+  const body = (db.prepare('SELECT body FROM notifications WHERE dedupe_key = ?').get(`class_rem_60:${bookingId}`) as { body: string }).body;
+  assert.match(body, /^Za godzinę /);
+  // wyłączone przypomnienia: nic nowego
+  await call(magda, null, 'PATCH', '/api/me', { prefs: { classReminders: [] } });
+  await runJobs(deps, new Date(startsAt - 20 * 60_000));
+  assert.ok(!keys().some((k) => k.startsWith('class_rem_30')));
+  db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(bookingId);
+  await call(magda, null, 'PATCH', '/api/me', { prefs: { classReminders: [1440, 120] } });
+});
+
 test('RODO: eksport danych zawiera dziennik (odszyfrowany), usunięcie konta anonimizuje', async () => {
   const magda = await login(DEMO.magda);
   const exp = await call(magda, null, 'GET', '/api/me/export');

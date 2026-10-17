@@ -1,27 +1,22 @@
-// Onboarding (3): imię i cel, preferencje czasowe, urodziny (dobrowolnie, bez roku – 8.1.5), zgody, powiadomienia.
+// Onboarding (3): imię, ankieta „Dopasujmy zajęcia” (karuzela w Grafiku), preferencje czasowe, urodziny
+// (dobrowolnie, bez roku – 8.1.5), zgody, powiadomienia.
 // Quiz „Mój styl dnia” jest opcjonalny – można go zrobić teraz albo później w Profilu.
 import { useState } from 'react';
+import { fitGoalLabel } from '@glam/core';
 import { api } from '../api.ts';
+import { ClassFitSteps, DAY_TIMES, EMPTY_FIT, type FitDraft } from './ClassFitQuestions.tsx';
 import type { Me } from '../App.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { Toggle, useAction } from '../ui.tsx';
 import type { Studio } from './ClientApp.tsx';
 import { enablePush, pushSupported } from '../push.ts';
 
-const GOALS = ['Siła i stabilny kręgosłup', 'Spokój i mniej stresu', 'Powrót do ruchu po przerwie', 'Rozciąganie i mobilność', 'Energia na co dzień', 'Forma po porodzie'];
-const TIMES: [string, string][] = [
-  ['morning', 'Rano'],
-  ['noon', 'W porze lunchu'],
-  ['evening', 'Wieczorem'],
-  ['weekend', 'W weekend'],
-];
 const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
 
 export function Onboarding({ studio, me, onDone }: { studio: Studio; me: Me; onDone: () => Promise<void> }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(me.user.name ?? '');
-  const [goal, setGoal] = useState('');
-  const [times, setTimes] = useState<string[]>([]);
+  const [fit, setFit] = useState<FitDraft>(EMPTY_FIT);
   const [day, setDay] = useState('');
   const [month, setMonth] = useState('');
   const [terms, setTerms] = useState(false);
@@ -37,8 +32,10 @@ export function Onboarding({ studio, me, onDone }: { studio: Studio; me: Me; onD
         global: true,
         body: {
           name: name.trim() || undefined,
-          goal: goal || undefined,
-          timePrefs: times,
+          // Cel dla trenerki składamy z ankiety – jedno pytanie mniej.
+          goal: fit.level ? fitGoalLabel({ ...fit, level: fit.level }) : undefined,
+          timePrefs: fit.times,
+          classFit: fit.level ? fit : undefined,
           birthday: day && month ? `${month.padStart(2, '0')}-${day.padStart(2, '0')}` : null,
           consents: { terms, marketing },
           studioId: studio.id,
@@ -57,24 +54,28 @@ export function Onboarding({ studio, me, onDone }: { studio: Studio; me: Me; onD
         <span className="field-label">Jak masz na imię?</span>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="given-name" />
       </label>
-      <div className="field">
-        <span className="field-label">Na czym Ci najbardziej zależy?</span>
-        <div className="pill-row">
-          {GOALS.map((g) => (
-            <button key={g} className="chip" aria-pressed={goal === g} onClick={() => setGoal(goal === g ? '' : g)}>
-              {g}
-            </button>
-          ))}
-        </div>
-        <span className="tiny muted">Trenerka zobaczy tylko ten cel – nic więcej.</span>
-      </div>
     </div>,
+    // Ankieta ma własne ekrany, pasek postępu i przyciski – dolna nawigacja onboardingu jest na tym kroku schowana.
+    <ClassFitSteps
+      key="fit"
+      value={fit}
+      onChange={setFit}
+      withTimes={false}
+      onExit={() => setStep(0)}
+      onDone={() => setStep(2)}
+      doneLabel="Dalej"
+      top={
+        <button type="button" className="fit-skip" onClick={() => (setFit(EMPTY_FIT), setStep(2))}>
+          Pomiń
+        </button>
+      }
+    />,
     <div key="1" className="stack">
       <h2>Kiedy masz czas dla siebie?</h2>
       <p className="muted small">Podpowiemy zajęcia w tych porach. Możesz wybrać kilka.</p>
       <div className="pill-row">
-        {TIMES.map(([v, l]) => (
-          <button key={v} className="chip" aria-pressed={times.includes(v)} onClick={() => setTimes(times.includes(v) ? times.filter((x) => x !== v) : [...times, v])}>
+        {DAY_TIMES.map(([v, l]) => (
+          <button key={v} className="chip" aria-pressed={fit.times.includes(v)} onClick={() => setFit({ ...fit, times: fit.times.includes(v) ? fit.times.filter((x) => x !== v) : [...fit.times, v] })}>
             {l}
           </button>
         ))}
@@ -115,27 +116,29 @@ export function Onboarding({ studio, me, onDone }: { studio: Studio; me: Me; onD
         <StudioBrand studio={studio} />
       </div>
       {steps[step]}
-      <div className="row between" style={{ marginTop: 28 }}>
-        <span className="tiny muted">
-          {step + 1} / {steps.length}
-        </span>
-        <div className="row">
-          {step > 0 && (
-            <button className="btn ghost" onClick={() => setStep(step - 1)}>
-              Wstecz
-            </button>
-          )}
-          {step < steps.length - 1 ? (
-            <button className="btn" onClick={() => setStep(step + 1)} disabled={step === 0 && name.trim().length < 2}>
-              Dalej
-            </button>
-          ) : (
-            <button className="btn" disabled={!terms || busy} onClick={finish}>
-              Zaczynamy
-            </button>
-          )}
+      {step !== 1 && (
+        <div className="row between" style={{ marginTop: 28 }}>
+          <span className="tiny muted">
+            {step + 1} / {steps.length}
+          </span>
+          <div className="row">
+            {step > 0 && (
+              <button className="btn ghost" onClick={() => setStep(step - 1)}>
+                Wstecz
+              </button>
+            )}
+            {step < steps.length - 1 ? (
+              <button className="btn" onClick={() => setStep(step + 1)} disabled={step === 0 && name.trim().length < 2}>
+                Dalej
+              </button>
+            ) : (
+              <button className="btn" disabled={!terms || busy} onClick={finish}>
+                Zaczynamy
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </main>
   );
 }

@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PLAYBACK_RATES } from '@glam/core';
 import { api, fmtDay, fmtLongDay, fmtTime, useApi } from '../api.ts';
-import { Empty, PAYMENT_LABELS, Progress, Sheet, Spinner, STARS, Toggle, useAction } from '../ui.tsx';
+import { Empty, PAYMENT_LABELS, Progress, Sheet, Spinner, STARS, Toggle, useAction, useThanks } from '../ui.tsx';
 import { CastButton } from './CastButton.tsx';
 import { useClient } from './ClientApp.tsx';
 import { openAuthed } from './PassPages.tsx';
@@ -152,6 +152,7 @@ function CourseDetail({ id }: { id: string }) {
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState('');
   const { run, busy } = useAction();
+  const thanks = useThanks();
   if (!data) return <Spinner />;
   if (lesson) return <LessonView lesson={lesson} onBack={() => (setLesson(null), reload())} />;
   const hasAccess = !!data.access;
@@ -230,15 +231,15 @@ function CourseDetail({ id }: { id: string }) {
       {data.canReview && (
         <section className="card stack">
           <div className="eyebrow">{data.myReview ? 'Twoja opinia' : 'Oceń kurs'}</div>
-          <div className="pill-row">
+          <div className="rate-stars" role="radiogroup" aria-label="Ocena">
             {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} className="chip" aria-pressed={rating === n} onClick={() => setRating(n)}>
-                {'★'.repeat(n)}
+              <button key={n} type="button" role="radio" aria-checked={rating === n} aria-label={`${n} z 5`} className={n <= rating ? 'is-on' : ''} onClick={() => setRating(n)} style={{ fontSize: 30, lineHeight: 1 }}>
+                ★
               </button>
             ))}
           </div>
           <textarea className="input" placeholder={data.myReview?.body ?? 'Co Ci się podobało?'} value={review} onChange={(e) => setReview(e.target.value)} />
-          <button className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => run(() => api(`/courses/${id}/review`, { method: 'PUT', body: { rating, body: review } }).then(reload), 'Dziękujemy za opinię')}>
+          <button className="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => run(() => api(`/courses/${id}/review`, { method: 'PUT', body: { rating, body: review } }).then(() => (reload(), thanks())))}>
             Zapisz opinię
           </button>
         </section>

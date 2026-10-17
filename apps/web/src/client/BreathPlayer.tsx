@@ -49,9 +49,10 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   // Szum startuje razem z sesją (otwarcie nastąpiło z kliknięcia, więc przeglądarka pozwala grać).
   useEffect(() => {
     if (done) return;
-    const n = noise.current;
-    if (sensesRef.current.noise) n.start(sensesRef.current.volume);
-    return () => n.stop();
+    if (sensesRef.current.noise) noise.current.start(sensesRef.current.volume);
+    // Pauza i przełącznik szumu podmieniają instancję – zatrzymujemy tę, która gra teraz, nie tę z startu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => noise.current.stop();
   }, [done, round]);
 
   // Pętla rytmu – poziom trafia do kwiatu przez ref, React odświeża tylko fazę i podpowiedź.
