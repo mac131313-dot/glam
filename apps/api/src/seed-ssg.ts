@@ -318,21 +318,24 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
     iso(zonedToUtc(today, '17:00', studio.timezone)),
   );
 
-  // ——— Grupy (Razem → Grupy): dwie wokół zajęć studia, z pierwszymi wiadomościami ———
-  const group = (id: string, name: string, description: string, members: string[], posts: [string, string, number][]) => {
-    run('INSERT INTO groups (id, studio_id, name, description, approval, created_at) VALUES (?, ?, ?, ?, 1, ?)', id, S, name, description, iso(new Date(now.getTime() - 20 * DAY)));
+  // ——— Grupy (Razem → Grupy): dwie wokół zajęć studia, każda z trenerką-opiekunką i rozmową na czacie ———
+  const group = (id: string, name: string, description: string, trainer: string, members: string[], chat: [string, string, number][]) => {
+    run('INSERT INTO groups (id, studio_id, name, description, approval, trainer_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)', id, S, name, description, trainer, iso(new Date(now.getTime() - 20 * DAY)));
     members.forEach((u, i) => run('INSERT INTO group_members (studio_id, group_id, user_id, joined_at) VALUES (?, ?, ?, ?)', S, id, u, iso(new Date(now.getTime() - (18 - i * 3) * DAY))));
-    posts.forEach(([author, body, hoursAgo], i) =>
-      run("INSERT INTO posts (id, studio_id, author_id, group_id, kind, body, created_at) VALUES (?, ?, ?, ?, 'post', ?, ?)", `${id}_p${i + 1}`, S, author, id, body, iso(new Date(now.getTime() - hoursAgo * 3_600_000))),
+    chat.forEach(([author, body, hoursAgo], i) =>
+      run('INSERT INTO group_chat (id, studio_id, group_id, author_id, body, created_at) VALUES (?, ?, ?, ?, ?, ?)', `${id}_m${i + 1}`, S, id, author, body, iso(new Date(now.getTime() - hoursAgo * 3_600_000))),
     );
   };
-  group('ss_g_morning', 'Reformer o poranku', 'Pilates Klasyczny i Core & Mobility przed pracą – motywujemy się do wczesnych zajęć.', [julia.id, natalia.id, aleksandra.id], [
+  group('ss_g_morning', 'Reformer o poranku', 'Pilates Klasyczny i Core & Mobility przed pracą – motywujemy się do wczesnych zajęć.', T.basia, [julia.id, natalia.id, aleksandra.id], [
+    [T.basia, 'Dzień dobry, dziewczyny ☀️ W tym tygodniu na porannym Pilatesie skupiamy się na oddechu i stabilizacji miednicy.', 32],
     [natalia.id, 'Kto będzie jutro na Pilatesie Klasycznym? Pierwszy raz idę tak wcześnie 🙈', 30],
     [julia.id, 'Ja! Weź skarpetki antypoślizgowe i nic się nie martw – po 10 minutach budzi się całe ciało ☀️', 28],
+    [T.basia, 'Natalia, super! Przyjdź 10 minut wcześniej, pokażę Ci reformer na spokojnie.', 27],
     [aleksandra.id, 'Polecam po zajęciach matchę w recepcji, idealny start dnia 🍵', 5],
   ]);
-  group('ss_g_split', 'Droga do szpagatu', 'Kurs Szpagatu i Joga Stretch – dzielimy się postępami i dobrym słowem.', [zuzanna.id, karolina.id, paulina.id], [
+  group('ss_g_split', 'Droga do szpagatu', 'Kurs Szpagatu i Joga Stretch – dzielimy się postępami i dobrym słowem.', T.weronika, [zuzanna.id, karolina.id, paulina.id], [
     [zuzanna.id, 'Dziś pierwszy raz dotknęłam podłogi w szpagacie wzdłużnym! Pół roku temu brakowało 20 cm 🥹', 22],
+    [T.weronika, 'Zuzanna, brawo!! To efekt Twojej regularności 💛', 21],
     [paulina.id, 'Gratulacje!! Ja wciąż walczę z poprzecznym, ale Aerial Stretch bardzo pomaga.', 20],
     [karolina.id, 'Mój sposób: 10 minut rozciągania wieczorem z kwiatkiem w „Dla mnie” – i od razu lepiej śpię 🌸', 3],
   ]);

@@ -5,13 +5,13 @@ import { BREATH_LENGTHS, PATTERNS, SESSIONS, patternById, type BreathRitual } fr
 import { Icon } from '../icons.tsx';
 import { Toggle, useScrollRow } from '../ui.tsx';
 import { api, useApi } from '../api.ts';
-import { BreathBloom } from './BreathBloom.tsx';
 import { BreathCalendar } from './BreathCalendar.tsx';
+import { ForMeBoard } from './ForMeBoard.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { hapticsSupported, loadSenses, saveSenses, type SenseSettings } from './senses.ts';
 
 export function ForMe() {
-  const { openBreath, breathOpen, open, studio, me, reloadMe } = useClient();
+  const { openBreath, open, studio, me, reloadMe } = useClient();
   const { data: ritual, reload: reloadRitual } = useApi<BreathRitual>('/my/breath-ritual');
   // Po ukończonej sesji odświeżamy kalendarz kwiatków.
   useEffect(() => {
@@ -39,6 +39,7 @@ export function ForMe() {
     ['Dziennik nastroju', 'journal'],
     ['Cel tygodnia', 'goal'],
     ['Mój styl dnia', 'quiz'],
+    ...(hasFeature(studio, 'health') ? ([['Zdrowie i postępy', 'health']] as [string, string][]) : []),
     ...(hasFeature(studio, 'cycle') ? ([['Cykl', 'cycle']] as [string, string][]) : []),
     ...(hasFeature(studio, 'courses') ? ([['Kursy online', 'courses']] as [string, string][]) : []),
     ...(hasFeature(studio, 'music') ? ([['Muzyka do medytacji i snu', 'music']] as [string, string][]) : []),
@@ -47,10 +48,9 @@ export function ForMe() {
 
   return (
     <div className="stack-lg">
-      {/* Główny motyw zakładki: piwonia na cały ekran – tylko data, jedno zdanie i kwiat.
-          Pod sesją oddechu scena stoi, żeby nie zabierać płynności. */}
-      <section className="forme-hero" aria-label="Oddychaj z piwonią">
-        <BreathBloom variant="full" className={breathOpen ? 'is-paused' : ''} />
+      {/* Nagłówek zakładki: data, jedno zdanie i start oddechu. Piwonia pojawia się dopiero w samej sesji
+          (oddech i medytacje), żeby ekran główny został lekki. */}
+      <section className="forme-hero forme-head" aria-label="Oddech na dziś">
         {/* Kalendarz kwiatków: wszystkie dni z oddechem, miesiąc po miesiącu. */}
         <button className="forme-cal" aria-label="Kalendarz oddechu" disabled={!ritual} onClick={() => setCalendar(true)}>
           <Icon name="calendar" size={20} />
@@ -67,6 +67,9 @@ export function ForMe() {
           Zacznij · {minutes} min
         </button>
       </section>
+
+      {/* Panel tygodnia: pierścienie, podpowiedź na dziś, mój dzień, sesje i wykres. */}
+      <ForMeBoard />
 
       {/* Ustawienia sesji jako dwie pigułki – bez długich opisów. */}
       <section className="forme-list">

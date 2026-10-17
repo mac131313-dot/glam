@@ -7,14 +7,15 @@ import { Empty, Field, Select, Spinner, Tabs, Toggle, useAction } from '../ui.ts
 
 type Report = { id: string; target_kind: string; target_id: string; reason: string | null; status: string; created_at: string; reporter: string; content?: { body?: string } };
 type Hub = {
-  groups: { id: string; name: string; description: string | null; approval: number; members: number }[];
+  groups: { id: string; name: string; description: string | null; approval: number; members: number; trainer_id: string | null }[];
+  trainers: { id: string; name: string }[];
   requests: { group_id: string; group_name: string; user_id: string; name: string; message: string | null; created_at: string; goal: string | null }[];
   challenges: { id: string; title: string; metric: string; target: number; starts_on: string; ends_on: string; members: number; done: number }[];
   hidden: { id: string; body: string; name: string; created_at: string }[];
   openReports: number;
 };
 
-const KIND: Record<string, string> = { post: 'post', comment: 'komentarz', question: 'pytanie w kursie', review: 'opinia', track: 'utwór' };
+const KIND: Record<string, string> = { post: 'post', comment: 'komentarz', question: 'pytanie w kursie', review: 'opinia', track: 'utwór', group_chat: 'wiadomość w grupie' };
 const METRIC: Record<string, string> = { trainings: 'treningi', mindful: 'minuty uważności', checkins: 'odhaczenia' };
 
 export default function CommunityAdmin() {
@@ -138,9 +139,17 @@ function Groups({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
             <b>{g.name}</b> <span className="small muted">· {g.members} członkiń{g.approval ? ' · dołączanie za zgodą' : ''}</span>
             {g.description && <span className="small muted" style={{ display: 'block' }}>{g.description}</span>}
           </span>
+          <span className="row" style={{ gap: 8 }}>
+          <Select
+            ariaLabel={`Opiekunka grupy ${g.name}`}
+            value={g.trainer_id ?? ''}
+            onChange={(v) => run(() => api(`/staff/groups/${g.id}/trainer`, { method: 'PUT', body: { trainerId: v || null } }).then(reload), v ? 'Opiekunka przypisana – może pisać do grupy z aplikacji' : 'Grupa bez opiekunki')}
+            options={[{ value: '', label: 'Bez opiekunki' }, ...hub.trainers.map((t) => ({ value: t.id, label: `Prowadzi ${t.name}` }))]}
+          />
           <button className="btn ghost sm" onClick={() => window.confirm(`Usunąć grupę „${g.name}”?`) && run(() => api(`/staff/groups/${g.id}`, { method: 'DELETE' }).then(reload))}>
             Usuń
           </button>
+          </span>
         </div>
       ))}
       <section className="card stack">

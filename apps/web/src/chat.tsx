@@ -29,7 +29,8 @@ export function AttachmentView({ a }: { a: ChatAttachment }) {
 }
 
 /** Pole wiadomości: tekst, spinacz (zdjęcie, wideo, PDF), podgląd wybranego pliku, „Wyślij”. Enter wysyła. */
-export function ChatComposer({ placeholder, onSend }: { placeholder: string; onSend: (msg: ChatSend) => Promise<unknown> }) {
+/** `variant="bar"` – pasek jak w komunikatorze: zaokrąglone pole i okrągły przycisk wysyłania (czat grupy). */
+export function ChatComposer({ placeholder, onSend, variant }: { placeholder: string; onSend: (msg: ChatSend) => Promise<unknown>; variant?: 'bar' }) {
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export function ChatComposer({ placeholder, onSend }: { placeholder: string; onS
     });
 
   return (
-    <div className="chat-composer stack" style={{ gap: 6 }}>
+    <div className={`chat-composer stack ${variant ?? ''}`} style={{ gap: 6 }}>
       {file && (
         <div className="chat-pending">
           <Icon name="clip" size={16} />
@@ -77,9 +78,17 @@ export function ChatComposer({ placeholder, onSend }: { placeholder: string; onS
         </button>
         <input ref={input} type="file" accept={ACCEPT} hidden onChange={(e) => pick(e.target.files?.[0])} />
         <input className="input" placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} />
-        <button className="btn sm" disabled={!ready} onClick={send}>
-          {busy && file ? 'Wysyłam…' : 'Wyślij'}
-        </button>
+        {variant === 'bar' ? (
+          <button className="chat-send" disabled={!ready} onClick={send} aria-label={busy ? 'Wysyłam' : 'Wyślij'}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
+          </button>
+        ) : (
+          <button className="btn sm" disabled={!ready} onClick={send}>
+            {busy && file ? 'Wysyłam…' : 'Wyślij'}
+          </button>
+        )}
       </div>
     </div>
   );

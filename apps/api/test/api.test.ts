@@ -630,6 +630,12 @@ test('profil trenerki: opis własny, film i zaproszenia na jej zajęcia', async 
   assert.equal((await call(marzena, R, 'PUT', '/api/staff/profile', { about: 'Pierwszy akapit.\n\nDrugi akapit.' })).statusCode, 200);
   assert.equal((await call(magda, R, 'PUT', '/api/staff/profile', { about: 'x' })).statusCode, 403, 'klientka nie ma profilu trenerki');
 
+  // Przełącznik życzeń urodzinowych zapisuje się osobno i nie rusza opisu.
+  assert.equal((await call(marzena, R, 'PUT', '/api/staff/profile', { birthdayWishes: true })).statusCode, 200);
+  const afterWishes = (await call(marzena, R, 'GET', '/api/staff/profile')).json();
+  assert.equal(afterWishes.birthdayWishes, true);
+  assert.equal(afterWishes.about, 'Pierwszy akapit.\n\nDrugi akapit.');
+
   // Zaproszenie tylko na własne zajęcia.
   const own = (await call(marzena, R, 'GET', '/api/staff/profile')).json();
   assert.ok(own.sessions.length > 0);
@@ -658,6 +664,147 @@ test('profil trenerki: opis własny, film i zaproszenia na jej zajęcia', async 
   assert.equal(db.prepare('SELECT 1 FROM trainer_invites WHERE id = ?').get(inviteId), undefined);
 });
 
+test('czat grupy: opiekunka pisze z aplikacji trenerki, członkinie odpowiadają, nieprzeczytane i moderacja', async () => {
+  const weronika = await login(SSG.weronika);
+  const basia = await login(SSG.basia);
+  const karolina = await login(SSG.karolina);
+  const natalia = await login(SSG.natalia);
+  const uid = (phone: string) => (db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string }).id;
+
+  // Aplikacja trenerki widzi tylko swoje grupy, od najświeższej rozmowy.
+  const mine = (await call(weronika, SSG_STUDIO, 'GET', '/api/staff/group-chats')).json();
+  assert.deepEqual(mine.map((g: { id: string }) => g.id), ['ss_g_split']);
+  assert.ok(mine[0].last.body.length > 0);
+  assert.equal((await call(basia, SSG_STUDIO, 'GET', '/api/groups/ss_g_split/chat')).statusCode, 403, 'cudza grupa – bez wglądu');
+  assert.equal((await call(natalia, SSG_STUDIO, 'GET', '/api/groups/ss_g_split/chat')).statusCode, 403, 'nie członkini');
+
+  // Rozmowa: stare wiadomości z seeda, opiekunka oznaczona.
+  const open = (await call(karolina, SSG_STUDIO, 'GET', '/api/groups/ss_g_split/chat')).json();
+  assert.equal(open.group.trainer.name, 'Weronika');
+  assert.ok(open.messages.some((m: { trainer: boolean }) => m.trainer));
+  assert.equal(open.group.canModerate, false);
+
+  // Opiekunka pisze → powiadomienie do członkiń, licznik nieprzeczytanych u Karoliny.
+  const sent = await call(weronika, SSG_STUDIO, 'POST', '/api/groups/ss_g_split/chat', { body: 'Jutro zajęcia w sali 2, weźcie paski 🧘‍♀️' });
+  assert.equal(sent.statusCode, 200, sent.body);
+  assert.ok(db.prepare("SELECT 1 FROM notifications WHERE user_id = ? AND action = 'community/groups/ss_g_split'").get(uid(SSG.karolina)));
+  const list = (await call(karolina, SSG_STUDIO, 'GET', '/api/groups')).json().find((g: { id: string }) => g.id === 'ss_g_split');
+  assert.equal(list.unread, 1);
+  assert.equal(list.trainer, 'Weronika');
+  const fresh = (await call(karolina, SSG_STUDIO, 'GET', `/api/groups/ss_g_split/chat?after=${encodeURIComponent(open.messages.at(-1).created_at)}`)).json();
+  assert.equal(fresh.messages.length, 1, 'dociąganie tylko nowych');
+  assert.equal((await call(karolina, SSG_STUDIO, 'GET', '/api/groups')).json().find((g: { id: string }) => g.id === 'ss_g_split').unread, 0);
+
+  // Członkini odpowiada → opiekunka dostaje jedno zbiorcze powiadomienie na godzinę.
+  const reply = (await call(karolina, SSG_STUDIO, 'POST', '/api/groups/ss_g_split/chat', { body: 'Będę!' })).json();
+  await call(karolina, SSG_STUDIO, 'POST', '/api/groups/ss_g_split/chat', { body: 'I wezmę koleżankę' });
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND action = 'staff/groups/ss_g_split'").get(uid(SSG.weronika)) as { n: number }).n, 1);
+
+  // Opiekunka ukrywa cudzą wiadomość, członkini nie może ukryć wiadomości opiekunki.
+  assert.equal((await call(karolina, SSG_STUDIO, 'DELETE', `/api/groups/ss_g_split/chat/${sent.json().id}`)).statusCode, 403);
+  assert.equal((await call(weronika, SSG_STUDIO, 'DELETE', `/api/groups/ss_g_split/chat/${reply.id}`)).json().hidden, true);
+  assert.ok(!(await call(karolina, SSG_STUDIO, 'GET', '/api/groups/ss_g_split/chat')).json().messages.some((m: { id: string }) => m.id === reply.id));
+
+  // Przypisanie opiekunki – tylko moderacja i tylko trenerka studia.
+  const owner = await login(SSG.owner);
+  assert.equal((await call(weronika, SSG_STUDIO, 'PUT', '/api/staff/groups/ss_g_split/trainer', { trainerId: uid(SSG.basia) })).statusCode, 403);
+  assert.equal((await call(owner, SSG_STUDIO, 'PUT', '/api/staff/groups/ss_g_split/trainer', { trainerId: uid(SSG.karolina) })).statusCode, 400);
+});
+
+test('napisz do trenerki: prywatna rozmowa, trenerka tylko odpowiada, recepcja i inne trenerki nie widzą', async () => {
+  const julia = await login(SSG.julia);
+  const basia = await login(SSG.basia);
+  const weronika = await login(SSG.weronika);
+  const reception = await login(SSG.reception);
+  const uid = (phone: string) => (db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string }).id;
+  const [basiaId, juliaId] = [uid(SSG.basia), uid(SSG.julia)];
+
+  // Trenerka nie zaczyna rozmowy sama.
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', `/api/staff/dm/${juliaId}`, { body: 'Hej!' })).statusCode, 404);
+  // Do klientki nie da się „napisać jak do trenerki”.
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', `/api/dm/${juliaId}`, { body: 'Hej!' })).statusCode, 404);
+
+  const sent = await call(julia, SSG_STUDIO, 'POST', `/api/dm/${basiaId}`, { body: 'Czy mogę przyjść z lekkim bólem kolana?' });
+  assert.equal(sent.statusCode, 200, sent.body);
+  await call(julia, SSG_STUDIO, 'POST', `/api/dm/${basiaId}`, { body: 'Chodzi o jutrzejszy Pilates' });
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND action = ?").get(basiaId, `staff/dm/${juliaId}`) as { n: number }).n, 1, 'jedno zbiorcze powiadomienie');
+
+  const inbox = (await call(basia, SSG_STUDIO, 'GET', '/api/staff/dm')).json();
+  assert.equal(inbox[0].id, juliaId);
+  assert.equal(inbox[0].unread, 2);
+  assert.equal((await call(weronika, SSG_STUDIO, 'GET', '/api/staff/dm')).json().length, 0, 'inna trenerka nie widzi');
+  assert.equal((await call(reception, SSG_STUDIO, 'GET', `/api/staff/dm/${juliaId}`)).statusCode, 403, 'recepcja nie czyta');
+
+  const conv = (await call(basia, SSG_STUDIO, 'GET', `/api/staff/dm/${juliaId}`)).json();
+  assert.equal(conv.messages.length, 2);
+  assert.equal((await call(basia, SSG_STUDIO, 'GET', '/api/staff/dm')).json()[0].unread, 0);
+  const mine = (await call(julia, SSG_STUDIO, 'GET', `/api/dm/${basiaId}`)).json();
+  assert.equal(mine.messages.at(-1).seen, true, 'klientka widzi, że przeczytane');
+
+  // Odpowiedź trenerki → powiadomienie do klientki prowadzące do rozmowy.
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', `/api/staff/dm/${juliaId}`, { body: 'Jasne, pokażę Ci wersję bez obciążania kolana.' })).statusCode, 200);
+  assert.ok(db.prepare('SELECT 1 FROM notifications WHERE user_id = ? AND action = ?').get(juliaId, `dm/${basiaId}`));
+  const threads = (await call(julia, SSG_STUDIO, 'GET', '/api/dm')).json();
+  assert.equal(threads[0].name, 'Basia');
+  assert.equal(threads[0].unread, 1);
+
+  // Usuwa się tylko własne wiadomości.
+  assert.equal((await call(basia, SSG_STUDIO, 'DELETE', `/api/staff/dm/${juliaId}/${sent.json().id}`)).statusCode, 404);
+  assert.equal((await call(julia, SSG_STUDIO, 'DELETE', `/api/dm/${basiaId}/${sent.json().id}`)).statusCode, 200);
+});
+
+test('jedna skrzynka Wiadomości: recepcja, trenerka i grupy na jednej liście; panel według uprawnień', async () => {
+  const natalia = await login(SSG.natalia);
+  const basia = await login(SSG.basia);
+  const weronika = await login(SSG.weronika);
+  const reception = await login(SSG.reception);
+  const uid = (phone: string) => (db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string }).id;
+  const [nataliaId, basiaId] = [uid(SSG.natalia), uid(SSG.basia)];
+  type T = { kind: string; id: string; unread: number; last: { body: string; at: string } | null; mine?: boolean };
+  const threads = async (token: string, url = '/api/threads') => (await call(token, SSG_STUDIO, 'GET', url)).json() as { threads: T[]; unread: number };
+
+  // Recepcja jest zawsze na liście – nawet bez rozmowy klientka ma gdzie napisać. Grupa: tylko ta, do której należy.
+  const before = await threads(natalia);
+  assert.ok(before.threads.some((t) => t.kind === 'reception' && t.id === 'reception'));
+  assert.ok(before.threads.some((t) => t.kind === 'group' && t.id === 'ss_g_morning'));
+  assert.ok(!before.threads.some((t) => t.id === 'ss_g_split'), 'grupa, do której nie należy – poza skrzynką');
+
+  // Trzy źródła: recepcja, prywatnie do trenerki, czat grupy.
+  assert.equal((await call(natalia, SSG_STUDIO, 'POST', '/api/chat', { body: 'Czy jutro jest parking?' })).statusCode, 200);
+  assert.equal((await call(natalia, SSG_STUDIO, 'POST', `/api/dm/${basiaId}`, { body: 'Czy mogę przyjść później?' })).statusCode, 200);
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', '/api/groups/ss_g_morning/chat', { body: 'Jutro zaczynamy 5 minut później' })).statusCode, 200);
+  assert.equal((await call(basia, SSG_STUDIO, 'POST', `/api/staff/dm/${nataliaId}`, { body: 'Jasne, daj znać przy wejściu' })).statusCode, 200);
+
+  const after = await threads(natalia);
+  const kinds = after.threads.map((t) => t.kind);
+  assert.ok(kinds.includes('reception') && kinds.includes('dm') && kinds.includes('group'));
+  const at = after.threads.map((t) => t.last?.at ?? '');
+  assert.deepEqual(at, [...at].sort().reverse(), 'od najświeższej rozmowy');
+  assert.equal(after.threads.find((t) => t.kind === 'dm')!.unread, 1);
+  assert.ok(after.threads.find((t) => t.id === 'ss_g_morning')!.unread >= 1);
+  assert.equal(after.unread, after.threads.reduce((n, t) => n + t.unread, 0));
+  assert.equal((await call(natalia, SSG_STUDIO, 'GET', '/api/home')).json().messagesUnread, after.unread, 'kropka na Start = suma skrzynki');
+  // Otwarcie rozmowy z trenerką zdejmuje jej licznik.
+  await call(natalia, SSG_STUDIO, 'GET', `/api/dm/${basiaId}`);
+  assert.equal((await threads(natalia)).threads.find((t) => t.kind === 'dm')!.unread, 0);
+
+  // Panel: recepcja widzi rozmowę z recepcją, nie prywatną do trenerki.
+  const desk = await threads(reception, '/api/staff/threads');
+  const fromNatalia = desk.threads.find((t) => t.kind === 'reception' && t.id === nataliaId);
+  assert.ok(fromNatalia && fromNatalia.unread >= 1);
+  assert.ok(!desk.threads.some((t) => t.kind === 'dm'));
+  // Trenerka: swoja klientka prywatnie i swoja grupa; bez czatu recepcji.
+  const trainer = await threads(basia, '/api/staff/threads');
+  assert.ok(trainer.threads.some((t) => t.kind === 'dm' && t.id === nataliaId));
+  assert.ok(trainer.threads.some((t) => t.kind === 'group' && t.id === 'ss_g_morning'));
+  assert.ok(!trainer.threads.some((t) => t.kind === 'reception'));
+  // Inna trenerka nie widzi cudzej prywatnej rozmowy ani cudzej grupy.
+  const other = await threads(weronika, '/api/staff/threads');
+  assert.ok(!other.threads.some((t) => t.id === nataliaId || t.id === 'ss_g_morning'));
+  // Klientka nie wchodzi do skrzynki panelu.
+  assert.equal((await call(natalia, SSG_STUDIO, 'GET', '/api/staff/threads')).statusCode, 403);
+});
+
 test('grupy za zgodą: prośba czeka w panelu, akceptacja dodaje do grupy, a klientka dopiero wtedy widzi wpisy', async () => {
   const owner = await login(SSG.owner);
   const julia = await login(SSG.julia);
@@ -668,7 +815,7 @@ test('grupy za zgodą: prośba czeka w panelu, akceptacja dodaje do grupy, a kli
   assert.equal(split.approval, 1);
   const asked = await call(julia, SSG_STUDIO, 'POST', '/api/groups/ss_g_split/join', { message: 'Chcę spróbować!' });
   assert.equal(asked.json().requested, true);
-  assert.equal((await call(julia, SSG_STUDIO, 'GET', '/api/feed?group=ss_g_split')).statusCode, 403, 'przed akceptacją bez dostępu do wpisów');
+  assert.equal((await call(julia, SSG_STUDIO, 'GET', '/api/groups/ss_g_split/chat')).statusCode, 403, 'przed akceptacją bez dostępu do rozmowy');
 
   const juliaId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(SSG.julia) as { id: string }).id;
   assert.equal((await call(julia, SSG_STUDIO, 'POST', `/api/staff/group-requests/ss_g_split/${juliaId}`, { action: 'accept' })).statusCode, 403, 'klientka nie akceptuje sama');
@@ -676,6 +823,6 @@ test('grupy za zgodą: prośba czeka w panelu, akceptacja dodaje do grupy, a kli
   const after = (await call(julia, SSG_STUDIO, 'GET', '/api/groups')).json().find((g: { id: string }) => g.id === 'ss_g_split');
   assert.equal(after.joined, 1);
   assert.equal(after.requested, 0);
-  assert.equal((await call(julia, SSG_STUDIO, 'GET', '/api/feed?group=ss_g_split')).statusCode, 200);
+  assert.equal((await call(julia, SSG_STUDIO, 'GET', '/api/groups/ss_g_split/chat')).statusCode, 200);
   assert.equal((await call(owner, SSG_STUDIO, 'POST', `/api/staff/group-requests/ss_g_split/${juliaId}`, { action: 'accept' })).statusCode, 404, 'drugi raz – już rozpatrzona');
 });

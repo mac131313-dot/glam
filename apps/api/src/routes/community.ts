@@ -1,12 +1,13 @@
 // Społeczność studia (4.5, decyzja 10: zamknięta w obrębie studia): feed (posty, ogłoszenia, relacje trenerek,
 // kalendarz wydarzeń), grupy tematyczne, wyzwania z postępem i odznakami, moderacja i zgłoszenia, widoczność profilu.
 import type { FastifyInstance } from 'fastify';
-import { badgeAvailable, badgeByCode, COMMUNITY_RULES, localParts, moderate, MODERATION_COPY, zonedToUtc, addDays } from '@glam/core';
+import { badgeAvailable, badgeByCode, can, COMMUNITY_RULES, localParts, moderate, MODERATION_COPY, zonedToUtc, addDays } from '@glam/core';
 import { assertFeature, ctx, isStaff, requirePerm, requireStudio, type Deps } from '../context.ts';
 import { id, nowIso } from '../db.ts';
 import { badRequest, conflict, forbidden, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
 import { audit } from '../services/audit.ts';
+import { CHAT_BODY_LIMIT, type ChatInput } from '../services/chat.ts';
 import { storeMedia } from '../services/media.ts';
 import { awardPoints, grantBadge } from '../services/motivation.ts';
 import { notify } from '../services/notify.ts';
@@ -169,10 +170,10 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
 
   // ——— Moderacja (4.5, decyzja 5, 10, 12): zgłoszenia, ukrywanie, log ———
 
-  app.post<{ Body: { targetKind: 'post' | 'comment' | 'question' | 'review' | 'track'; targetId: string; reason: string } }>('/api/reports', member, async (req) => {
+  app.post<{ Body: { targetKind: 'post' | 'comment' | 'question' | 'review' | 'track' | 'group_chat'; targetId: string; reason: string } }>('/api/reports', member, async (req) => {
     const { scope, studio, user } = ctx(req);
     const b = req.body;
-    if (!['post', 'comment', 'question', 'review', 'track'].includes(b?.targetKind) || !b.targetId) throw badRequest('Nieprawidłowe zgłoszenie.');
+    if (!['post', 'comment', 'question', 'review', 'track', 'group_chat'].includes(b?.targetKind) || !b.targetId) throw badRequest('Nieprawidłowe zgłoszenie.');
     scope.run("INSERT INTO reports (id, studio_id, reporter_id, target_kind, target_id, reason, status, created_at) VALUES ($id, $studio, $u, $k, $t, $r, 'open', $now)", {
       id: id(),
       u: user.id,
@@ -189,7 +190,7 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/staff/reports', moderator, async (req) => {
     const { scope } = ctx(req);
     return scope.all<{ target_kind: string; target_id: string }>('SELECT r.*, u.name AS reporter FROM reports r JOIN users u ON u.id = r.reporter_id WHERE r.studio_id = $studio ORDER BY r.status = \'open\' DESC, r.created_at DESC LIMIT 100').map((r) => {
-      const table = { post: 'posts', comment: 'post_comments', question: 'course_questions', review: 'course_reviews', track: 'playlist_tracks' }[r.target_kind as 'post'];
+      const table = { post: 'posts', comment: 'post_comments', question: 'course_questions', review: 'course_reviews', track: 'playlist_tracks', group_chat: 'group_chat' }[r.target_kind as 'post'];
       const col = r.target_kind === 'review' ? "course_id || ':' || user_id" : 'id';
       const content = table ? scope.get<{ body?: string; title?: string }>(`SELECT ${r.target_kind === 'track' ? 'title AS body' : 'body'} FROM ${table} WHERE studio_id = $studio AND ${col} = $id`, { id: r.target_id }) : undefined;
       return { ...r, content: content?.body ?? '(usunięte)' };
@@ -219,13 +220,7 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/groups', member, async (req) => {
     const { scope, studio, user } = ctx(req);
     assertFeature(studio, 'community');
-    return scope.all(
-      `SELECT g.id, g.name, g.description, g.approval, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members,
-              EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.user_id = $u) AS joined,
-              EXISTS (SELECT 1 FROM group_requests r WHERE r.group_id = g.id AND r.user_id = $u AND r.status = 'pending') AS requested
-       FROM groups g WHERE g.studio_id = $studio ORDER BY g.name`,
-      { u: user.id },
-    );
+    return groupList(scope, user.id, 'studio');
   });
 
   // Grupa bez akceptacji – dołączenie od razu; z akceptacją (approval = 1) – prośba, którą studio rozpatruje w panelu.
@@ -256,6 +251,105 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
     scope.run('DELETE FROM group_members WHERE studio_id = $studio AND group_id = $g AND user_id = $u', { g: req.params.id, u: user.id });
     // Wycofanie prośby, która jeszcze czeka.
     scope.run("DELETE FROM group_requests WHERE studio_id = $studio AND group_id = $g AND user_id = $u AND status = 'pending'", { g: req.params.id, u: user.id });
+    return { ok: true };
+  });
+
+  // ——— Czat grupy (Razem → Grupy, aplikacja trenerki) ———
+  // Piszą członkinie i trenerka-opiekunka; opiekunka i moderatorki ukrywają wiadomości. Zastępuje feed grup.
+
+  const authorOf = (scope: StudioScope, viewerId: string) => {
+    const cache = new Map<string, ReturnType<typeof authorView>>();
+    return (aid: string) => {
+      if (!cache.has(aid)) {
+        const a = scope.get<{ id: string; name: string | null; prefs_json: string | null; avatar_mime: string | null; avatar_version: number; staff: number }>(
+          "SELECT u.id, u.name, u.prefs_json, u.avatar_mime, u.avatar_version, EXISTS (SELECT 1 FROM memberships m WHERE m.studio_id = $studio AND m.user_id = u.id AND m.role != 'client') AS staff FROM users u WHERE u.id = $id",
+          { id: aid },
+        );
+        cache.set(aid, a ? authorView(scope, viewerId, a) : { id: aid, name: 'Klientka', avatarUrl: null, staff: false });
+      }
+      return cache.get(aid)!;
+    };
+  };
+
+  app.get<{ Params: { id: string }; Querystring: { after?: string } }>('/api/groups/:id/chat', member, async (req) => {
+    const { scope, studio, user, roles } = ctx(req);
+    assertFeature(studio, 'community');
+    const g = groupAccess(scope, roles, user.id, req.params.id);
+    const rows = scope.all<{ id: string; author_id: string; body: string; media_id: string | null; attachment_name: string | null; mime: string | null; hidden: number; created_at: string }>(
+      `SELECT c.id, c.author_id, c.body, c.media_id, c.attachment_name, m.mime, c.hidden, c.created_at
+       FROM group_chat c LEFT JOIN media m ON m.id = c.media_id AND m.studio_id = c.studio_id
+       WHERE c.studio_id = $studio AND c.group_id = $g AND (c.hidden = 0 OR $mod = 1) ${req.query.after ? 'AND c.created_at > $after' : ''}
+       ORDER BY c.created_at DESC LIMIT 300`,
+      { g: g.id, mod: Number(g.canModerate), ...(req.query.after ? { after: req.query.after } : {}) },
+    );
+    // Przeczytane = do ostatniej pokazanej wiadomości (nie „teraz”), żeby nic zapisanego w tej samej chwili nie przepadło.
+    if (rows.length) markRead(scope, g.id, user.id, rows[0].created_at);
+    const author = authorOf(scope, user.id);
+    return {
+      group: { id: g.id, name: g.name, description: g.description, members: g.members, trainer: g.trainer_id ? author(g.trainer_id) : null, canModerate: g.canModerate, member: g.member },
+      messages: rows.reverse().map(({ media_id, attachment_name, mime, author_id, ...r }) => ({
+        ...r,
+        mine: author_id === user.id,
+        trainer: author_id === g.trainer_id,
+        author: author(author_id),
+        attachment: media_id && mime ? { url: `/api/media/${media_id}`, name: attachment_name, type: mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'pdf' } : null,
+      })),
+    };
+  });
+
+  app.post<{ Params: { id: string }; Body: ChatInput }>('/api/groups/:id/chat', { ...member, bodyLimit: CHAT_BODY_LIMIT }, async (req) => {
+    const { scope, studio, user, roles } = ctx(req);
+    assertFeature(studio, 'community');
+    const g = groupAccess(scope, roles, user.id, req.params.id);
+    const body = String(req.body?.body ?? '').trim();
+    const file = req.body?.attachment ? String(req.body.attachment) : null;
+    if (!body && !file) throw badRequest('Napisz wiadomość albo dodaj plik.');
+    if (body) {
+      const m = moderate(body, { maxLength: 1500, allowLinks: isStaff(roles) });
+      if (!m.ok) throw badRequest(MODERATION_COPY[m.reason]);
+    }
+    const media = file ? storeMedia(scope, studio, { dataUrl: file, kind: 'group', ownerId: user.id, private: true, allow: ['image', 'video', 'pdf'] }) : null;
+    const mid = id();
+    const now = nowIso();
+    scope.run(
+      'INSERT INTO group_chat (id, studio_id, group_id, author_id, body, media_id, attachment_name, created_at) VALUES ($id, $studio, $g, $a, $b, $m, $n, $now)',
+      { id: mid, g: g.id, a: user.id, b: body, m: media?.id ?? null, n: media ? String(req.body.attachmentName ?? '').trim().slice(0, 120) || null : null, now },
+    );
+    markRead(scope, g.id, user.id, now);
+    notifyGroupChat(scope, studio, g, user.id, body);
+    return { id: mid, created_at: now };
+  });
+
+  // Autorka usuwa swoją wiadomość; opiekunka i moderatorki ukrywają (i przywracają) cudze.
+  app.delete<{ Params: { id: string; messageId: string } }>('/api/groups/:id/chat/:messageId', member, async (req) => {
+    const { scope, user, roles } = ctx(req);
+    const g = groupAccess(scope, roles, user.id, req.params.id);
+    const msg = scope.get<{ author_id: string; hidden: number }>('SELECT author_id, hidden FROM group_chat WHERE studio_id = $studio AND group_id = $g AND id = $id', { g: g.id, id: req.params.messageId });
+    if (!msg) throw notFound();
+    if (msg.author_id === user.id) {
+      scope.run('DELETE FROM group_chat WHERE studio_id = $studio AND id = $id', { id: req.params.messageId });
+      return { ok: true, deleted: true };
+    }
+    if (!g.canModerate) throw forbidden();
+    scope.run('UPDATE group_chat SET hidden = 1 - hidden WHERE studio_id = $studio AND id = $id', { id: req.params.messageId });
+    audit(scope, { actorId: user.id, action: msg.hidden ? 'moderation.unhide' : 'moderation.hide', entity: 'group_chat', entityId: req.params.messageId });
+    return { ok: true, hidden: !msg.hidden };
+  });
+
+  // Aplikacja trenerki: grupy, którymi się opiekuje (moderatorki – wszystkie), z podglądem ostatniej wiadomości.
+  app.get('/api/staff/group-chats', requirePerm(db, 'messages.group.own', 'community.moderate'), async (req) => {
+    const { scope, studio, user, roles } = ctx(req);
+    assertFeature(studio, 'community');
+    return groupList(scope, user.id, can(roles, 'community.moderate') ? 'all' : 'trainer');
+  });
+
+  app.put<{ Params: { id: string }; Body: { trainerId: string | null } }>('/api/staff/groups/:id/trainer', moderator, async (req) => {
+    const { scope, user } = ctx(req);
+    const tid = req.body?.trainerId || null;
+    if (tid && !scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'", { u: tid })) throw badRequest('Wybierz trenerkę ze studia.');
+    const r = scope.run('UPDATE groups SET trainer_id = $t WHERE studio_id = $studio AND id = $id', { t: tid, id: req.params.id });
+    if (!r.changes) throw notFound();
+    audit(scope, { actorId: user.id, action: 'group.trainer', entity: 'group', entityId: req.params.id });
     return { ok: true };
   });
 
@@ -411,7 +505,8 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/staff/community', requirePerm(db, 'community.moderate', 'challenges.edit'), async (req) => {
     const { scope } = ctx(req);
     return {
-      groups: scope.all('SELECT g.id, g.name, g.description, g.approval, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members FROM groups g WHERE g.studio_id = $studio ORDER BY g.name'),
+      groups: scope.all('SELECT g.id, g.name, g.description, g.approval, g.trainer_id, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members FROM groups g WHERE g.studio_id = $studio ORDER BY g.name'),
+      trainers: scope.all("SELECT u.id, u.name FROM memberships ms JOIN users u ON u.id = ms.user_id WHERE ms.studio_id = $studio AND ms.role = 'trainer' ORDER BY u.name"),
       requests: scope.all(
         `SELECT r.group_id, g.name AS group_name, r.user_id, u.name, r.message, r.created_at, ms.goal
          FROM group_requests r JOIN groups g ON g.id = r.group_id JOIN users u ON u.id = r.user_id
@@ -430,9 +525,75 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
 export function hideContent(scope: StudioScope, kind: string, targetId: string, hidden = true) {
   const h = Number(hidden);
   if (kind === 'post') scope.run('UPDATE posts SET hidden = $h WHERE studio_id = $studio AND id = $id', { h, id: targetId });
+  else if (kind === 'group_chat') scope.run('UPDATE group_chat SET hidden = $h WHERE studio_id = $studio AND id = $id', { h, id: targetId });
   else if (kind === 'comment') scope.run('UPDATE post_comments SET hidden = $h WHERE studio_id = $studio AND id = $id', { h, id: targetId });
   else if (kind === 'question') scope.run('UPDATE course_questions SET hidden = $h WHERE studio_id = $studio AND id = $id', { h, id: targetId });
   else if (kind === 'review') scope.run("UPDATE course_reviews SET hidden = $h WHERE studio_id = $studio AND course_id || ':' || user_id = $id", { h, id: targetId });
   else if (kind === 'track') scope.run("UPDATE playlist_tracks SET status = CASE WHEN $h = 1 THEN 'rejected' ELSE 'approved' END WHERE studio_id = $studio AND id = $id", { h, id: targetId });
   else throw badRequest('Nieznany rodzaj treści.');
+}
+
+type GroupRow = { id: string; name: string; description: string | null; trainer_id: string | null; members: number };
+
+/** Kto wchodzi do czatu grupy: członkini, opiekunka albo moderatorka. Moderują opiekunka i moderatorki. */
+export function groupAccess(scope: StudioScope, roles: readonly string[], userId: string, groupId: string) {
+  const g = scope.get<GroupRow>('SELECT g.id, g.name, g.description, g.trainer_id, (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members FROM groups g WHERE g.studio_id = $studio AND g.id = $id', { id: groupId });
+  if (!g) throw notFound();
+  const member = !!scope.get('SELECT 1 FROM group_members WHERE studio_id = $studio AND group_id = $g AND user_id = $u', { g: groupId, u: userId });
+  const canModerate = g.trainer_id === userId || can(roles, 'community.moderate');
+  if (!member && !canModerate) throw forbidden();
+  return { ...g, member, canModerate };
+}
+
+function markRead(scope: StudioScope, groupId: string, userId: string, at: string) {
+  scope.run(
+    'INSERT INTO group_chat_reads (studio_id, group_id, user_id, read_at) VALUES ($studio, $g, $u, $at) ON CONFLICT (group_id, user_id) DO UPDATE SET read_at = MAX(read_at, $at)',
+    { g: groupId, u: userId, at },
+  );
+}
+
+/** Lista grup z podglądem ostatniej wiadomości i liczbą nieprzeczytanych (cudzych, widocznych). */
+export function groupList(scope: StudioScope, userId: string, which: 'studio' | 'trainer' | 'all') {
+  const rows = scope.all<GroupRow & { approval: number; joined: number; requested: number; trainer_name: string | null; last_body: string | null; last_media: string | null; last_author: string | null; last_at: string | null; unread: number }>(
+    `SELECT g.id, g.name, g.description, g.approval, g.trainer_id, t.name AS trainer_name,
+            (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS members,
+            EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.user_id = $u) AS joined,
+            EXISTS (SELECT 1 FROM group_requests r WHERE r.group_id = g.id AND r.user_id = $u AND r.status = 'pending') AS requested,
+            l.body AS last_body, l.media_id AS last_media, lu.name AS last_author, l.created_at AS last_at,
+            (SELECT COUNT(*) FROM group_chat c WHERE c.group_id = g.id AND c.hidden = 0 AND c.author_id != $u
+               AND c.created_at > COALESCE((SELECT read_at FROM group_chat_reads r WHERE r.group_id = g.id AND r.user_id = $u), '')) AS unread
+     FROM groups g
+     LEFT JOIN users t ON t.id = g.trainer_id
+     LEFT JOIN group_chat l ON l.id = (SELECT c.id FROM group_chat c WHERE c.group_id = g.id AND c.hidden = 0 ORDER BY c.created_at DESC LIMIT 1)
+     LEFT JOIN users lu ON lu.id = l.author_id
+     WHERE g.studio_id = $studio ${which === 'trainer' ? 'AND g.trainer_id = $u' : ''}
+     ORDER BY ${which === 'studio' ? 'g.name' : 'COALESCE(l.created_at, g.created_at) DESC'}`,
+    { u: userId },
+  );
+  return rows.map(({ last_body, last_media, last_author, last_at, trainer_id, trainer_name, ...g }) => {
+    const chat = g.joined || trainer_id === userId || which === 'all';
+    return {
+      ...g,
+      trainer: trainer_name,
+      mine: trainer_id === userId,
+      // Podgląd i licznik tylko dla osób w rozmowie – reszta studia widzi samą grupę.
+      unread: chat ? g.unread : 0,
+      last: chat && last_at ? { body: last_body || (last_media ? '📎 Załącznik' : ''), author: last_author?.split(' ')[0] ?? null, at: last_at } : null,
+    };
+  });
+}
+
+/**
+ * Powiadomienia z czatu grupy. Opiekunka pisze → wszystkie członkinie (jak ogłoszenie);
+ * członkini pisze → opiekunka, najwyżej raz na godzinę na grupę, żeby rozmowa nie zasypała jej telefonu.
+ */
+function notifyGroupChat(scope: StudioScope, studio: Studio, g: GroupRow, authorId: string, body: string) {
+  const preview = body ? body.slice(0, 140) : 'Nowy załącznik 📎';
+  if (g.trainer_id === authorId) {
+    const members = scope.all<{ user_id: string }>('SELECT user_id FROM group_members WHERE studio_id = $studio AND group_id = $g AND user_id != $a', { g: g.id, a: authorId });
+    for (const m of members) notify(scope, { userId: m.user_id, category: 'community', tz: studio.timezone, title: g.name, body: preview, action: `community/groups/${g.id}` });
+  } else if (g.trainer_id) {
+    const hour = new Date().toISOString().slice(0, 13);
+    notify(scope, { userId: g.trainer_id, category: 'community', tz: studio.timezone, title: g.name, body: `Nowe wiadomości w grupie: ${preview}`, action: `staff/groups/${g.id}`, dedupeKey: `group-chat:${g.id}:${hour}` });
+  }
 }

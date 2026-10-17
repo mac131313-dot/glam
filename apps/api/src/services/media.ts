@@ -13,7 +13,7 @@ import { imageRatio } from './image.ts';
 import { mediaFile, uploadPart, videoPath } from './media-files.ts';
 import type { Studio } from './studio.ts';
 
-export type MediaKind = 'course' | 'welcome' | 'post' | 'progress' | 'shop' | 'cover' | 'attachment' | 'site' | 'intro' | 'chat';
+export type MediaKind = 'course' | 'welcome' | 'post' | 'progress' | 'shop' | 'cover' | 'attachment' | 'site' | 'intro' | 'chat' | 'group' | 'dm';
 type FileType = 'image' | 'video' | 'pdf';
 
 const SIGNATURES: { mime: string; test: (b: Buffer) => boolean; type: FileType }[] = [

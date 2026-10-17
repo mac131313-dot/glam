@@ -701,6 +701,8 @@ CREATE TABLE IF NOT EXISTS groups (
   description TEXT,
   -- 1 = dołączenie przez prośbę, którą studio akceptuje w panelu (Społeczność → Grupy)
   approval INTEGER NOT NULL DEFAULT 0,
+  -- Trenerka-opiekunka: pisze w czacie grupy z aplikacji trenerki i moderuje rozmowę
+  trainer_id TEXT REFERENCES users(id),
   created_at TEXT NOT NULL
 );
 
@@ -722,6 +724,29 @@ CREATE TABLE IF NOT EXISTS group_requests (
   created_at TEXT NOT NULL,
   decided_at TEXT,
   decided_by TEXT REFERENCES users(id),
+  PRIMARY KEY (group_id, user_id)
+);
+
+-- Czat grupy (Razem → Grupy): rozmowa członkiń z opiekunką, jak w komunikatorze. Załącznik – prywatny plik „group”.
+CREATE TABLE IF NOT EXISTS group_chat (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  group_id TEXT NOT NULL REFERENCES groups(id),
+  author_id TEXT NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL,
+  media_id TEXT,
+  attachment_name TEXT,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_group_chat ON group_chat (studio_id, group_id, created_at);
+
+-- Do kiedy osoba przeczytała czat grupy – licznik nieprzeczytanych na liście grup
+CREATE TABLE IF NOT EXISTS group_chat_reads (
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  group_id TEXT NOT NULL REFERENCES groups(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  read_at TEXT NOT NULL,
   PRIMARY KEY (group_id, user_id)
 );
 
@@ -1208,6 +1233,22 @@ CREATE TABLE IF NOT EXISTS campaigns (
   created_at TEXT NOT NULL
 );
 
+-- Prywatna rozmowa klientka ↔ trenerka („Napisz do trenerki”): widzą ją tylko te dwie osoby. Zaczyna klientka,
+-- trenerka odpowiada. Załącznik – prywatny plik „dm”. read_at – kiedy druga strona przeczytała.
+CREATE TABLE IF NOT EXISTS trainer_messages (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  client_id TEXT NOT NULL REFERENCES users(id),
+  trainer_id TEXT NOT NULL REFERENCES users(id),
+  author_id TEXT NOT NULL REFERENCES users(id),
+  body TEXT NOT NULL,
+  media_id TEXT,
+  attachment_name TEXT,
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trainer_messages ON trainer_messages (studio_id, trainer_id, client_id, created_at);
+
 CREATE TABLE IF NOT EXISTS chat_messages (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
@@ -1320,6 +1361,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   value TEXT NOT NULL
 );
 
+-- Nieużywana od 17.10.2026 (bez sensorów zdrowia). Zostaje dla starych baz; czyszczona przy usunięciu konta.
 CREATE TABLE IF NOT EXISTS health_sync (
   user_id TEXT NOT NULL REFERENCES users(id),
   provider TEXT NOT NULL CHECK (provider IN ('apple_health', 'google_fit')),
@@ -1419,6 +1461,11 @@ function migrate(db: Db) {
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;
+  }
+  // Czat zastąpił feed grup: przy pierwszym uruchomieniu stare posty grupowe stają się pierwszymi wiadomościami.
+  if (!existing.has('group_chat')) {
+    db.exec(`INSERT INTO group_chat (id, studio_id, group_id, author_id, body, media_id, hidden, created_at)
+             SELECT id, studio_id, group_id, author_id, body, media_id, hidden, created_at FROM posts WHERE group_id IS NOT NULL`);
   }
   const broken = db.prepare('PRAGMA foreign_key_check').all();
   if (broken.length) console.warn(`⚠️  Po migracji ${broken.length} rekordów narusza klucze obce`);

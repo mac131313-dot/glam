@@ -2,6 +2,7 @@
 // i zaproszenia na jej najbliższe zajęcia z zapisem jednym przyciskiem.
 import { useApi } from '../api.ts';
 import { AuthVideo, Empty, Spinner } from '../ui.tsx';
+import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 import { InviteCard, type TrainerInvite } from './TrainerInvite.tsx';
 
@@ -9,6 +10,7 @@ type Trainer = { id: string; name: string; bio: string | null; about: string | n
 
 export default function TrainerPages({ arg }: RouteProps) {
   const t = useApi<Trainer>(arg ? `/trainers/${arg}` : null);
+  const { open } = useClient();
   if (!t.data) return <Spinner />;
   const p = t.data;
   const paragraphs = (p.about ?? '').split(/\n{2,}/).map((x) => x.trim()).filter(Boolean);
@@ -23,6 +25,9 @@ export default function TrainerPages({ arg }: RouteProps) {
         </h1>
         {p.bio && <p className="muted" style={{ margin: 0 }}>{p.bio}</p>}
         {p.classes.length > 0 && <div className="small muted">prowadzi {p.classes.join(' · ')}</div>}
+        <button className="btn" style={{ alignSelf: 'flex-start' }} onClick={() => open(`dm/${p.id}`)}>
+          Napisz wiadomość
+        </button>
       </section>
 
       {p.videoUrl && (

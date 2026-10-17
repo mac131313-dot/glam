@@ -1,6 +1,6 @@
 // Konto i ustawienia (3, 2.2, 8, 8.1, 10, 11): powiadomienia per typ, ciche godziny, okolicznościowe,
 // prywatność i zgody, biometria, zmiana numeru, kalendarz, integracje, dostępność, eksport i usunięcie danych,
-// skrzynka, czat z recepcją, pomoc (FAQ, regulamin, telefon), kod QR do wejścia.
+// skrzynka Wiadomości (rozmowy + powiadomienia), czat z recepcją, pomoc (FAQ, regulamin, telefon), kod QR do wejścia.
 import { useEffect, useRef, useState } from 'react';
 import { receptionSlots, WEEKDAY_LONG } from '@glam/core';
 import { api, fmtDay, fmtTime, session, useApi } from '../api.ts';
@@ -8,6 +8,7 @@ import { getAppearance, setAppearance, type Appearance } from '../look.ts';
 import { enablePush, passkeySupported, pushEnabled, pushSupported, registerPasskey } from '../push.ts';
 import { AuthVideo, Empty, Field, ListRow, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
+import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -39,7 +40,7 @@ export default function AccountPages({ route, close }: RouteProps) {
   if (route === 'privacy') return <Privacy close={close} />;
   if (route === 'security') return <Security />;
   if (route === 'a11y') return <Accessibility />;
-  if (route === 'inbox') return <Inbox />;
+  if (route === 'inbox' || route === 'messages') return <Inbox />;
   if (route === 'chat') return <Chat />;
   if (route === 'faq') return <Faq />;
   if (route === 'checkin') return <Checkin />;
@@ -367,7 +368,7 @@ function Security() {
   const passkeys = useApi<{ id: string; label: string; created_at: string; last_used_at: string | null }[]>('/me/passkeys');
   const sessions = useApi<{ device: string; created_at: string; current: boolean }[]>('/me/sessions');
   const calendar = useApi<{ hasToken: boolean }>('/calendar-sync');
-  const integrations = useApi<{ music: { provider: string; label: string }[]; health: { provider: string; enabled: number }[] }>('/me/integrations');
+  const integrations = useApi<{ music: { provider: string; label: string }[] }>('/me/integrations');
   const { run, busy } = useAction();
   const [phone, setPhone] = useState('');
   const [codes, setCodes] = useState<{ old: string; new: string } | null>(null);
@@ -458,18 +459,6 @@ function Security() {
             </div>
           );
         })}
-        {(['apple_health', 'google_fit'] as const).map((p) => {
-          const on = !!integrations.data?.health.find((h) => h.provider === p)?.enabled;
-          return (
-            <Toggle
-              key={p}
-              label={p === 'apple_health' ? 'Apple Health' : 'Google Fit'}
-              hint="Zapis zajęć jako treningów – w aplikacji natywnej"
-              checked={on}
-              onChange={(v) => run(() => api(`/me/health-sync/${p}`, { method: 'PUT', global: true, body: { enabled: v } }).then(integrations.reload))}
-            />
-          );
-        })}
         <p className="tiny muted" style={{ margin: 0 }}>Logujesz się u dostawcy – nie przechowujemy haseł ani historii słuchania.</p>
       </section>
 
@@ -541,13 +530,38 @@ function Accessibility() {
   );
 }
 
+/** Gdzie otwiera się rozmowa z listy – te same trasy, które przychodzą w powiadomieniach. */
+const threadRoute = (t: ThreadItem) => (t.kind === 'reception' ? 'chat' : t.kind === 'dm' ? `dm/${t.id}` : `groups/${t.id}`);
+
+/**
+ * Skrzynka „Wiadomości” (wejście z Start): wszystkie rozmowy na jednej liście – recepcja, trenerki, grupy –
+ * a pod nimi powitania i powiadomienia studia. Grupy, do których jeszcze nie należy, są w Razem → Grupy.
+ */
 function Inbox() {
-  const { follow } = useClient();
+  const { follow, open } = useClient();
+  const threads = useApi<{ threads: ThreadItem[]; unread: number }>('/threads');
   const inbox = useApi<{ id: string; title: string | null; body: string; action: string | null; deliver_at: string }[]>('/inbox');
   const welcomes = useApi<{ id: string; body: string; kind: string; trainer_name: string | null; created_at: string; video_id: string | null }[]>('/welcome');
-  if (!inbox.data) return <Spinner />;
+  // Po powrocie z rozmowy liczniki same się odświeżą.
+  const reload = threads.reload;
+  useEffect(() => {
+    const t = setInterval(() => document.visibilityState === 'visible' && reload(), 15_000);
+    return () => clearInterval(t);
+  }, [reload]);
+  if (!inbox.data || !threads.data) return <Spinner />;
   return (
     <div className="stack-lg">
+      <section>
+        <ul className="thread-list">
+          {threads.data.threads.map((t) => (
+            <ThreadRow
+              key={`${t.kind}:${t.id}`}
+              g={t.kind === 'reception' ? { ...t, kind: undefined, hint: 'Pytania, zmiany – odpowiadamy w godzinach recepcji' } : t}
+              onOpen={() => open(threadRoute(t))}
+            />
+          ))}
+        </ul>
+      </section>
       {welcomes.data && welcomes.data.length > 0 && (
         <section className="stack">
           <div className="eyebrow">Od Twojej trenerki</div>
@@ -590,7 +604,9 @@ function Inbox() {
 function Chat() {
   const chat = useApi<{ open: boolean; next: string | null; messages: ChatMessage[] }>('/chat');
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [chat.data]);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'end' });
+  }, [chat.data]);
   if (!chat.data) return <Spinner />;
   return (
     <div className="stack">

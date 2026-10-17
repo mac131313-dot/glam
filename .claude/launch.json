@@ -14,6 +14,13 @@
       "autoPort": true
     },
     {
+      "name": "api-3002",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "process.env.PORT='3002'; require('child_process').spawn('npm run dev -w @glam/api', { stdio: 'inherit', shell: true }).on('exit', (c) => process.exit(c ?? 0))"],
+      "port": 3002,
+      "autoPort": false
+    },
+    {
       "name": "web",
       "runtimeExecutable": "env",
       "runtimeArgs": [
@@ -43,8 +50,8 @@
     },
     {
       "name": "web-win",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "set API_PORT=3002&& npm run dev -w @glam/web"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "process.env.API_PORT='3002'; require('child_process').spawn('npm', ['run', 'dev', '-w', '@glam/web'], { stdio: 'inherit', shell: true }).on('exit', (c) => process.exit(c ?? 0))"],
       "port": 5173,
       "autoPort": true
     }
