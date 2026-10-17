@@ -1,5 +1,5 @@
 // Grafik – dodatki (4.1, 4.11, M5): zajęcia specjalne i tematyczne poza szablonem, nieobecności trenerek
-// z propozycją zastępstwa (kwalifikacje, brak kolizji), moje ustawienia trenerki (osobiste życzenia urodzinowe).
+// z propozycją zastępstwa (kwalifikacje, brak kolizji). Ustawienia trenerki (bio, życzenia urodzinowe) są w „Mój profil”.
 import { useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { api, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
@@ -8,19 +8,17 @@ import { Empty, Field, Select, Spinner, Tabs, Toggle, useAction } from '../ui.ts
 type Absence = { id: string; trainer_name: string; date_from: string; date_to: string; note: string | null; sessions: { id: string; starts_at: string; class_name: string; suggestions: { id: string; name: string }[] }[] };
 
 export default function ScheduleExtras({ roles }: { roles: Role[] }) {
-  const options: ['absences' | 'special' | 'me', string][] = [
+  const options: ['absences' | 'special', string][] = [
     ['absences', 'Nieobecności i zastępstwa'],
     ...(can(roles, 'schedule.edit') ? ([['special', 'Zajęcia specjalne i tematyczne']] as ['special', string][]) : []),
-    ...(roles.includes('trainer') ? ([['me', 'Moje ustawienia']] as ['me', string][]) : []),
   ];
   const [tab, setTab] = useState(options[0][0]);
   return (
     <div className="stack-lg">
       <h1>Zastępstwa i zajęcia specjalne</h1>
-      <Tabs label="Grafik" value={tab} onChange={setTab} options={options} />
+      {options.length > 1 && <Tabs label="Grafik" value={tab} onChange={setTab} options={options} />}
       {tab === 'absences' && <Absences roles={roles} />}
       {tab === 'special' && <Special />}
-      {tab === 'me' && <TrainerSettings />}
     </div>
   );
 }
@@ -148,29 +146,6 @@ function Special() {
       <Toggle label="Widoczne w grafiku klientek" checked={f.public} onChange={(v) => setF({ ...f, public: v })} />
       <button className="btn" disabled={!f.classTypeId || !f.trainerId || busy} onClick={() => run(() => api('/staff/sessions', { method: 'POST', body: { ...f, themeId: f.themeId || null } }), 'Zajęcia dodane do grafiku')}>
         Dodaj zajęcia
-      </button>
-    </section>
-  );
-}
-
-function TrainerSettings() {
-  const me = useApi<{ prefs: { birthdayWishes?: boolean }; bio: string | null }>('/staff/me');
-  const [bio, setBio] = useState<string | null>(null);
-  const { run } = useAction();
-  if (!me.data) return <Spinner />;
-  return (
-    <section className="card stack" style={{ maxWidth: 560 }}>
-      <Toggle
-        label="Osobiste życzenia urodzinowe"
-        hint="W dniu urodzin Twoich klientek wyślemy życzenia podpisane Twoim imieniem (szablon z sekcji 8.1). Zawsze możesz wyłączyć."
-        checked={!!me.data.prefs.birthdayWishes}
-        onChange={(v) => run(() => api('/staff/me', { method: 'PUT', body: { birthdayWishes: v } }).then(me.reload), 'Zapisane')}
-      />
-      <Field label="O mnie (widoczne dla klientek przy wyborze trenerki)">
-        <textarea className="input" value={bio ?? me.data.bio ?? ''} onChange={(e) => setBio(e.target.value)} />
-      </Field>
-      <button className="btn sm" style={{ alignSelf: 'flex-start' }} disabled={bio === null} onClick={() => run(() => api('/staff/me', { method: 'PUT', body: { bio } }).then(me.reload), 'Zapisane')}>
-        Zapisz
       </button>
     </section>
   );

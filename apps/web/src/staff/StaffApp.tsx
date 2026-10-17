@@ -1,13 +1,13 @@
 // Panele ról (3, 2.1): menu budowane z siatki uprawnień (core/roles.ts) – to samo, co sprawdza serwer.
-// Trenerka: Dziś · Klientki · Wiadomości · Powitania · Mój profil · Kursy · Kartki · Mój grafik.
-// Recepcja: Wejście · Dziś · Klientki · Grafik · Wiadomości · Kasa · Sklep · Wydarzenia.
-// Koordynatorka: Społeczność · Edycje sezonowe · Muzyka. Właścicielka: wszystko (panel w stylu Shopify).
+// Pokrewne ekrany to zakładki jednej sekcji (Recepcja: Wejście/Kasa, Pulpit: Przegląd/KPI, Grafik: sale/zastępstwa),
+// żeby menu było krótkie. Adres: #sekcja albo #sekcja/zakładka; dawne #entrance, #desk, #analytics, #extras działają dalej.
+// Właścicielka: wszystko (panel w stylu Shopify); pozostałe role widzą tylko to, na co pozwala siatka uprawnień.
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { can, ROLE_LABEL, type Permission, type Role } from '@glam/core';
 import type { Me, MeStudio } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
-import { Select, Spinner, Watermark } from '../ui.tsx';
+import { Select, Spinner, Tabs, Watermark } from '../ui.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { Desk } from './Desk.tsx';
 import { Entrance } from './Entrance.tsx';
@@ -35,55 +35,103 @@ const Finance = lazy(() => import('./Finance.tsx'));
 const Settings = lazy(() => import('./Settings.tsx'));
 const TrainerProfile = lazy(() => import('./TrainerProfile.tsx'));
 
-/** role – sekcja tylko dla osób z tą rolą (np. profil trenerki nie dotyczy właścicielki, która nie prowadzi zajęć). */
-type Section = { id: string; label: string; icon: IconName; perms: Permission[]; group: string; role?: Role };
+/** Zakładka sekcji – ekran pokazywany pod paskiem zakładek, jeśli rola ma do niego uprawnienie. */
+type Tab = { id: string; label: string; perms: Permission[] };
+/** role – sekcja tylko dla osób z tą rolą (np. profil trenerki nie dotyczy właścicielki, która nie prowadzi zajęć).
+ *  tabs – sekcja złożona z kilku ekranów; widoczna, gdy widać choć jedną zakładkę. */
+type Section = { id: string; label: string; icon: IconName; perms: Permission[]; group: string; role?: Role; tabs?: Tab[] };
 const SECTIONS: Section[] = [
-  { id: 'dashboard', label: 'Pulpit', icon: 'chart', perms: ['finance.view'], group: 'Studio' },
-  { id: 'analytics', label: 'Analityka i KPI', icon: 'chart', perms: ['finance.view'], group: 'Studio' },
-  { id: 'entrance', label: 'Wejście', icon: 'ticket', perms: ['participants.manage'], group: 'Codziennie' },
+  {
+    id: 'dashboard',
+    label: 'Pulpit',
+    icon: 'chart',
+    perms: ['finance.view'],
+    group: 'Studio',
+    tabs: [
+      { id: 'overview', label: 'Przegląd', perms: ['finance.view'] },
+      { id: 'kpi', label: 'KPI', perms: ['finance.view'] },
+    ],
+  },
+  {
+    id: 'reception',
+    label: 'Recepcja',
+    icon: 'ticket',
+    perms: ['participants.manage', 'desk.sell'],
+    group: 'Codziennie',
+    tabs: [
+      { id: 'entrance', label: 'Wejście', perms: ['participants.manage'] },
+      { id: 'desk', label: 'Kasa', perms: ['desk.sell'] },
+    ],
+  },
   { id: 'today', label: 'Dziś', icon: 'sun', perms: ['day.own', 'day.all'], group: 'Codziennie' },
   { id: 'clients', label: 'Klientki', icon: 'people', perms: ['clients.view', 'notes.write'], group: 'Codziennie' },
   { id: 'messages', label: 'Wiadomości', icon: 'chat', perms: ['messages.group.own', 'messages.group.all', 'chat.answer'], group: 'Codziennie' },
-  { id: 'desk', label: 'Kasa i wejściówki', icon: 'gift', perms: ['desk.sell'], group: 'Codziennie' },
+  {
+    id: 'schedule',
+    label: 'Grafik',
+    icon: 'calendar',
+    perms: ['schedule.edit', 'schedule.view'],
+    group: 'Codziennie',
+    tabs: [
+      { id: 'plan', label: 'Grafik i sale', perms: ['schedule.edit'] },
+      { id: 'extras', label: 'Zastępstwa i specjalne', perms: ['schedule.view'] },
+    ],
+  },
   { id: 'welcomes', label: 'Powitania', icon: 'mail', perms: ['welcomes.write', 'welcomes.approve'], group: 'Relacje' },
   { id: 'profile', label: 'Mój profil', icon: 'user', perms: ['day.own'], group: 'Relacje', role: 'trainer' },
   { id: 'gifts', label: 'Kartki i vouchery', icon: 'pen', perms: ['cards.write', 'cards.manage'], group: 'Relacje' },
   { id: 'events', label: 'Wydarzenia', icon: 'sparkle', perms: ['events.manage', 'day.own'], group: 'Relacje' },
-  { id: 'schedule', label: 'Grafik i sale', icon: 'grid', perms: ['schedule.edit'], group: 'Grafik' },
-  { id: 'extras', label: 'Zastępstwa i specjalne', icon: 'calendar', perms: ['schedule.view'], group: 'Grafik' },
+  { id: 'marketing', label: 'Kampanie i życzenia', icon: 'bell', perms: ['campaigns.edit'], group: 'Relacje' },
   { id: 'courses', label: 'Kursy', icon: 'cap', perms: ['courses.create', 'courses.approve'], group: 'Treści' },
   { id: 'community', label: 'Społeczność', icon: 'heart', perms: ['community.moderate', 'challenges.edit'], group: 'Treści' },
   { id: 'music', label: 'Muzyka', icon: 'music', perms: ['playlists.moderate'], group: 'Treści' },
-  { id: 'themes', label: 'Edycje sezonowe', icon: 'season', perms: ['themes.edit'], group: 'Marketing' },
-  { id: 'marketing', label: 'Kampanie i życzenia', icon: 'bell', perms: ['campaigns.edit'], group: 'Marketing' },
+  { id: 'look', label: 'Wygląd', icon: 'type', perms: ['config.edit'], group: 'Marka' },
+  { id: 'site', label: 'Strona WWW', icon: 'grid', perms: ['config.edit'], group: 'Marka' },
+  { id: 'themes', label: 'Edycje sezonowe', icon: 'season', perms: ['themes.edit'], group: 'Marka' },
   { id: 'shop', label: 'Sklep', icon: 'bag', perms: ['shop.manage'], group: 'Sprzedaż' },
   { id: 'products', label: 'Karnety', icon: 'ticket', perms: ['config.edit'], group: 'Sprzedaż' },
   { id: 'finance', label: 'Finanse', icon: 'card', perms: ['finance.view', 'finance.export'], group: 'Sprzedaż' },
   { id: 'settings', label: 'Ustawienia', icon: 'settings', perms: ['config.edit'], group: 'Ustawienia' },
-  { id: 'look', label: 'Wygląd', icon: 'type', perms: ['config.edit'], group: 'Ustawienia' },
-  { id: 'site', label: 'Strona WWW', icon: 'grid', perms: ['config.edit'], group: 'Ustawienia' },
 ];
+
+/** Dawne sekcje, dziś zakładki – stare linki i zakładki przeglądarki trafiają we właściwe miejsce. */
+const ALIASES: Record<string, string> = {
+  entrance: 'reception/entrance',
+  desk: 'reception/desk',
+  analytics: 'dashboard/kpi',
+  extras: 'schedule/extras',
+};
 
 export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; reloadMe: () => Promise<void>; onSwitchStudio: () => void; onPreviewClient: () => void; onLogout: () => void }) {
   const roles = props.studio.roles as Role[];
-  const visible = SECTIONS.filter((s) => s.perms.some((p) => can(roles, p)) && (!s.role || roles.includes(s.role)));
+  const allowed = (perms: Permission[]) => perms.some((p) => can(roles, p));
+  const tabsOf = (s: Section) => (s.tabs ?? []).filter((t) => allowed(t.perms));
+  const visible = SECTIONS.filter((s) => allowed(s.perms) && (!s.role || roles.includes(s.role)) && (!s.tabs || tabsOf(s).length > 0));
   const fallback = visible[0]?.id ?? 'today';
-  const fromHash = () => {
-    const id = location.hash.slice(1);
-    return visible.some((s) => s.id === id) ? id : fallback;
+  /** „sekcja” albo „sekcja/zakładka” (także dawne id z ALIASES) → miejsce, które ta rola może zobaczyć. */
+  const resolve = (raw: string) => {
+    const [id, tabId] = (ALIASES[raw] ?? raw).split('/');
+    const sec = visible.find((s) => s.id === id) ?? visible.find((s) => s.id === fallback);
+    const tabs = sec ? tabsOf(sec) : [];
+    const tab = tabs.find((t) => t.id === tabId)?.id ?? tabs[0]?.id;
+    return tab ? `${sec?.id ?? fallback}/${tab}` : (sec?.id ?? fallback);
   };
-  const [section, setSectionState] = useState(fromHash);
-  const setSection = (id: string) => {
-    if (id === section) return;
-    history.pushState(null, '', `${location.pathname}${location.search}#${id}`);
-    setSectionState(id);
+  const [place, setPlace] = useState(() => resolve(location.hash.slice(1)));
+  const [section, tab] = place.split('/');
+  const setSection = (raw: string) => {
+    const next = resolve(raw);
+    if (next === place) return;
+    history.pushState(null, '', `${location.pathname}${location.search}#${next}`);
+    setPlace(next);
     window.scrollTo({ top: 0 });
   };
   useEffect(() => {
-    const onPop = () => setSectionState(fromHash());
+    const onPop = () => setPlace(resolve(location.hash.slice(1)));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   });
+  const current = visible.find((s) => s.id === section);
+  const tabs = current ? tabsOf(current) : [];
   const mainRole = (['owner', 'reception', 'coordinator', 'trainer'] as Role[]).find((r) => roles.includes(r))!;
   const groups = [...new Set(visible.map((s) => s.group))];
 
@@ -108,7 +156,7 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
             {visible
               .filter((s) => s.group === g)
               .map((s) => (
-                <button key={s.id} className="side-link" aria-current={section === s.id ? 'page' : undefined} onClick={() => setSection(s.id)}>
+                <button key={s.id} className="side-link" aria-current={section === s.id ? 'page' : undefined} onClick={() => s.id !== section && setSection(s.id)}>
                   <Icon name={s.icon} size={18} /> {s.label}
                 </button>
               ))}
@@ -157,20 +205,25 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
         </button>
       </nav>
       <main className="main">
+        {current && tabs.length > 1 && (
+          <div style={{ marginBottom: 20 }}>
+            <Tabs label={current.label} value={tab} onChange={(t) => setSection(`${current.id}/${t}`)} options={tabs.map((t) => [t.id, t.label])} />
+          </div>
+        )}
         <Suspense fallback={<Spinner />}>
-          {section === 'dashboard' && <Dashboard go={setSection} />}
-          {section === 'analytics' && <Analytics />}
-          {section === 'entrance' && <Entrance />}
+          {place === 'dashboard/overview' && <Dashboard go={setSection} />}
+          {place === 'dashboard/kpi' && <Analytics />}
+          {place === 'reception/entrance' && <Entrance />}
+          {place === 'reception/desk' && <Desk />}
           {section === 'today' && <Today roles={roles} />}
           {section === 'clients' && <Clients roles={roles} />}
           {section === 'messages' && <Messages roles={roles} />}
           {section === 'welcomes' && <Welcomes me={props.me} isOwner={roles.includes('owner')} />}
           {section === 'profile' && <TrainerProfile me={props.me} reloadMe={props.reloadMe} />}
           {section === 'gifts' && <Gifts roles={roles} />}
-          {section === 'desk' && <Desk />}
           {section === 'events' && <EventsAdmin roles={roles} />}
-          {section === 'schedule' && <ScheduleAdmin />}
-          {section === 'extras' && <ScheduleExtras roles={roles} />}
+          {place === 'schedule/plan' && <ScheduleAdmin />}
+          {place === 'schedule/extras' && <ScheduleExtras roles={roles} />}
           {section === 'courses' && <CreatorStudio roles={roles} />}
           {section === 'community' && <CommunityAdmin />}
           {section === 'music' && <MusicAdmin />}

@@ -97,8 +97,8 @@ export function trainerRoutes(app: FastifyInstance, deps: Deps) {
 
   app.get('/api/staff/profile', trainer, async (req) => {
     const { scope, user } = ctx(req);
-    const m = scope.get<{ bio: string | null; about: string | null; intro_video_id: string | null }>(
-      "SELECT bio, about, intro_video_id FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'",
+    const m = scope.get<{ bio: string | null; about: string | null; intro_video_id: string | null; prefs_json: string | null }>(
+      "SELECT bio, about, intro_video_id, prefs_json FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'",
       { u: user.id },
     )!;
     // Terminy, na które można zaprosić: własne, publiczne, w ciągu 3 tygodni.
@@ -114,21 +114,38 @@ export function trainerRoutes(app: FastifyInstance, deps: Deps) {
       bio: m.bio,
       about: m.about,
       videoUrl: m.intro_video_id ? `/api/media/${m.intro_video_id}` : null,
+      birthdayWishes: !!(m.prefs_json ? JSON.parse(m.prefs_json) : {}).birthdayWishes,
       invites: trainerInvites(scope, user.id, { trainerId: user.id }),
       sessions: sessions.map((s) => ({ id: s.id, startsAt: s.starts_at, className: s.class_name, zone: s.zone_name })),
       limits: { bio: TRAINER_BIO_MAX, about: TRAINER_ABOUT_MAX, invite: TRAINER_INVITE_MAX, videoSec: TRAINER_VIDEO_MAX_SEC },
     };
   });
 
-  app.put<{ Body: { about?: string | null; bio?: string | null } }>('/api/staff/profile', trainer, async (req) => {
+  // Zapis częściowy: pola, których nie ma w body, zostają bez zmian (opis i przełącznik życzeń zapisują się osobno).
+  app.put<{ Body: { about?: string | null; bio?: string | null; birthdayWishes?: boolean } }>('/api/staff/profile', trainer, async (req) => {
     const { scope, user } = ctx(req);
-    // Zachowujemy akapity – opis własny to kilka zdań, nie jedna linijka.
-    const about = String(req.body?.about ?? '').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').replace(/\n{3,}/g, '\n\n').trim();
-    if (about) checkText(about, TRAINER_ABOUT_MAX);
-    // Bio – jedna linijka pod imieniem (jak w /api/staff/me, max 300 znaków).
-    const bio = String(req.body?.bio ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, TRAINER_BIO_MAX);
-    if (bio) checkText(bio, TRAINER_BIO_MAX);
-    scope.run("UPDATE memberships SET about = $a, bio = $b WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'", { a: about || null, b: bio || null, u: user.id });
+    const body = req.body ?? {};
+    const where = "WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'";
+    tx(db, () => {
+      if (body.about !== undefined) {
+        // Zachowujemy akapity – opis własny to kilka zdań, nie jedna linijka.
+        const about = String(body.about ?? '').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+        if (about) checkText(about, TRAINER_ABOUT_MAX);
+        scope.run(`UPDATE memberships SET about = $a ${where}`, { a: about || null, u: user.id });
+      }
+      if (body.bio !== undefined) {
+        // Bio – jedna linijka pod imieniem.
+        const bio = String(body.bio ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, TRAINER_BIO_MAX);
+        if (bio) checkText(bio, TRAINER_BIO_MAX);
+        scope.run(`UPDATE memberships SET bio = $b ${where}`, { b: bio || null, u: user.id });
+      }
+      if (body.birthdayWishes !== undefined) {
+        // Osobiste życzenia urodzinowe (8.1.1 – opt-in trenerki).
+        const m = scope.get<{ prefs_json: string | null }>(`SELECT prefs_json FROM memberships ${where}`, { u: user.id });
+        const prefs = { ...(m?.prefs_json ? JSON.parse(m.prefs_json) : {}), birthdayWishes: !!body.birthdayWishes };
+        scope.run(`UPDATE memberships SET prefs_json = $p ${where}`, { p: JSON.stringify(prefs), u: user.id });
+      }
+    });
     return { ok: true };
   });
 
