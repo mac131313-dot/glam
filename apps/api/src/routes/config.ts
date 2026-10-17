@@ -473,21 +473,6 @@ export function configRoutes(app: FastifyInstance, deps: Deps) {
     return { ok: true };
   });
 
-  // Ustawienia trenerki: osobiste życzenia urodzinowe (8.1.1 – opt-in trenerki), bio.
-  app.put<{ Body: { birthdayWishes?: boolean; bio?: string } }>('/api/staff/me', { preHandler: requireStudio(db, ['trainer']) }, async (req) => {
-    const { scope, user } = ctx(req);
-    const m = scope.get<{ prefs_json: string | null }>("SELECT prefs_json FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'", { u: user.id });
-    const prefs = { ...(m?.prefs_json ? JSON.parse(m.prefs_json) : {}), ...(req.body?.birthdayWishes !== undefined ? { birthdayWishes: !!req.body.birthdayWishes } : {}) };
-    scope.run("UPDATE memberships SET prefs_json = $p, bio = COALESCE($b, bio) WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'", { p: JSON.stringify(prefs), b: req.body?.bio !== undefined ? clean(req.body.bio, 300) : null, u: user.id });
-    return { prefs };
-  });
-
-  app.get('/api/staff/me', { preHandler: requireStudio(db, ['trainer', 'reception', 'owner', 'coordinator']) }, async (req) => {
-    const { scope, user } = ctx(req);
-    const m = scope.get<{ prefs_json: string | null; bio: string | null }>("SELECT prefs_json, bio FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'trainer'", { u: user.id });
-    return { prefs: m?.prefs_json ? JSON.parse(m.prefs_json) : {}, bio: m?.bio ?? null };
-  });
-
   // Manifest PWA studia – pełny white-label (T5): nazwa, kolory i ikona studia zamiast GLAM.
   app.get<{ Params: { id: string } }>('/api/studios/:id/manifest.webmanifest', async (req, reply) => {
     const s = db.prepare('SELECT id, name, white_label_json, look_json, logo_mime, logo_version FROM studios WHERE id = ?').get(req.params.id) as

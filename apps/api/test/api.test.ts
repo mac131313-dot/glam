@@ -630,6 +630,12 @@ test('profil trenerki: opis własny, film i zaproszenia na jej zajęcia', async 
   assert.equal((await call(marzena, R, 'PUT', '/api/staff/profile', { about: 'Pierwszy akapit.\n\nDrugi akapit.' })).statusCode, 200);
   assert.equal((await call(magda, R, 'PUT', '/api/staff/profile', { about: 'x' })).statusCode, 403, 'klientka nie ma profilu trenerki');
 
+  // Przełącznik życzeń urodzinowych zapisuje się osobno i nie rusza opisu.
+  assert.equal((await call(marzena, R, 'PUT', '/api/staff/profile', { birthdayWishes: true })).statusCode, 200);
+  const afterWishes = (await call(marzena, R, 'GET', '/api/staff/profile')).json();
+  assert.equal(afterWishes.birthdayWishes, true);
+  assert.equal(afterWishes.about, 'Pierwszy akapit.\n\nDrugi akapit.');
+
   // Zaproszenie tylko na własne zajęcia.
   const own = (await call(marzena, R, 'GET', '/api/staff/profile')).json();
   assert.ok(own.sessions.length > 0);

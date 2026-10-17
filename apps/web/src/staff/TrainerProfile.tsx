@@ -1,10 +1,10 @@
 // Mój profil (trenerka): opis własny na stronę WWW i do aplikacji, film „poznajmy się” i zaproszenia na własne zajęcia.
-// Zdjęcie i krótkie bio pochodzą z konta (Ustawienia → O mnie) – tu jest to, co trenerka chce opowiedzieć o sobie szerzej.
+// Jedno miejsce na wszystko, co trenerka ustawia o sobie: zdjęcie, bio, opis, film, zaproszenia i osobiste życzenia urodzinowe.
 // Formularze same pilnują wartości: licznik znaków, długość filmu sprawdzana od razu po wybraniu pliku.
 import { useState } from 'react';
 import { api, fmtDay, fmtTime, useApi } from '../api.ts';
 import type { Me } from '../App.tsx';
-import { AuthVideo, Empty, Field, readFile, Select, Spinner, useAction, useToast } from '../ui.tsx';
+import { AuthVideo, Empty, Field, readFile, Select, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
 import { preparePhoto } from './logoUpload.ts';
 
 type Invite = { id: string; body: string; sessionId: string; startsAt: string; className: string; zone: string; spotsLeft: number };
@@ -12,6 +12,7 @@ type Profile = {
   bio: string | null;
   about: string | null;
   videoUrl: string | null;
+  birthdayWishes: boolean;
   invites: Invite[];
   sessions: { id: string; startsAt: string; className: string; zone: string }[];
   limits: { bio: number; about: number; invite: number; videoSec: number };
@@ -31,6 +32,7 @@ export default function TrainerProfile({ me, reloadMe }: { me: Me; reloadMe: () 
       <About profile={p} onSaved={profile.reload} />
       <Video profile={p} onSaved={profile.reload} />
       <Invites profile={p} onSaved={profile.reload} />
+      <Wishes profile={p} onSaved={profile.reload} />
     </div>
   );
 }
@@ -89,6 +91,20 @@ function About({ profile, onSaved }: { profile: Profile; onSaved: () => void }) 
       >
         Zapisz
       </button>
+    </section>
+  );
+}
+
+function Wishes({ profile, onSaved }: { profile: Profile; onSaved: () => void }) {
+  const { run } = useAction();
+  return (
+    <section className="card stack">
+      <Toggle
+        label="Osobiste życzenia urodzinowe"
+        hint="W dniu urodzin Twoich klientek wyślemy życzenia podpisane Twoim imieniem (szablon z sekcji 8.1). Zawsze możesz wyłączyć."
+        checked={profile.birthdayWishes}
+        onChange={(v) => run(() => api('/staff/profile', { method: 'PUT', body: { birthdayWishes: v } }).then(onSaved), 'Zapisane')}
+      />
     </section>
   );
 }
