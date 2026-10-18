@@ -56,7 +56,7 @@ function Reports({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
           <div className="eyebrow">Prośby o dołączenie do grup</div>
           {hub.requests.map((r) => (
             <div key={`${r.group_id}:${r.user_id}`} className="card flat row between" style={{ alignItems: 'flex-start' }}>
-              <span className="stack" style={{ gap: 4 }}>
+              <span className="stack gap-1">
                 <span>
                   <b>{r.name}</b> <span className="small muted">→ {r.group_name}</span>
                 </span>
@@ -66,7 +66,7 @@ function Reports({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
                   {r.goal && ` · cel: ${r.goal}`}
                 </span>
               </span>
-              <span className="row" style={{ gap: 6 }}>
+              <span className="row gap-2">
                 <button className="btn sm" onClick={() => decide(r, 'accept')}>
                   Akceptuj
                 </button>
@@ -85,7 +85,7 @@ function Reports({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
         <Empty>Żadnych zgłoszeń. Spokojnie jak po stretchingu 🌿</Empty>
       ) : (
         list.data.map((r) => (
-          <section key={r.id} className="card flat stack" style={{ gap: 6, opacity: r.status === 'open' ? 1 : 0.6 }}>
+          <section key={r.id} className="card flat stack gap-2" style={{ opacity: r.status === 'open' ? 1 : 0.6 }}>
             <div className="tiny muted">
               {KIND[r.target_kind] ?? r.target_kind} · zgłosiła {r.reporter} · {fmtDay(r.created_at)} {r.reason && `· ${r.reason}`}
             </div>
@@ -139,7 +139,7 @@ function Groups({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
             <b>{g.name}</b> <span className="small muted">· {g.members} członkiń{g.approval ? ' · dołączanie za zgodą' : ''}</span>
             {g.description && <span className="small muted" style={{ display: 'block' }}>{g.description}</span>}
           </span>
-          <span className="row" style={{ gap: 8 }}>
+          <span className="row gap-2">
           <Select
             ariaLabel={`Opiekunka grupy ${g.name}`}
             value={g.trainer_id ?? ''}
@@ -166,8 +166,7 @@ function Groups({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
 }
 
 function Challenges({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) {
-  const themes = useApi<{ id: string; name: string }[]>('/owner/themes');
-  const [f, setF] = useState({ title: '', description: '', metric: 'trainings', target: 8, startsOn: localDate(), endsOn: addDaysStr(localDate(), 30), badgeCode: '', themeId: '' });
+  const [f, setF] = useState({ title: '', description: '', metric: 'trainings', target: 8, startsOn: localDate(), endsOn: addDaysStr(localDate(), 30), badgeCode: '' });
   const { run, busy } = useAction();
   return (
     <div className="stack-lg">
@@ -206,24 +205,16 @@ function Challenges({ hub, reload }: { hub: Hub; reload: () => Promise<void> }) 
             <input className="input" type="date" value={f.endsOn} onChange={(e) => setF({ ...f, endsOn: e.target.value })} />
           </Field>
         </div>
-        <div className="row">
-          <Select
-            ariaLabel="Odznaka"
-            value={f.badgeCode}
-            onChange={(v) => setF({ ...f, badgeCode: v })}
-            options={[{ value: '', label: 'Odznaka za ukończenie (opcjonalnie)' }, ...BADGES.map((b) => ({ value: b.code, label: b.name }))]}
-          />
-          <Select
-            ariaLabel="Motyw"
-            value={f.themeId}
-            onChange={(v) => setF({ ...f, themeId: v })}
-            options={[{ value: '', label: 'Motyw (opcjonalnie)' }, ...(themes.data ?? []).map((t) => ({ value: t.id, label: t.name }))]}
-          />
-        </div>
+        <Select
+          ariaLabel="Odznaka"
+          value={f.badgeCode}
+          onChange={(v) => setF({ ...f, badgeCode: v })}
+          options={[{ value: '', label: 'Odznaka za ukończenie (opcjonalnie)' }, ...BADGES.map((b) => ({ value: b.code, label: b.name }))]}
+        />
         <button
           className="btn"
           disabled={!f.title || busy}
-          onClick={() => run(() => api('/staff/challenges', { method: 'POST', body: { ...f, badgeCode: f.badgeCode || null, themeId: f.themeId || null } }).then(reload), 'Wyzwanie startuje – klientki dostaną zaproszenie')}
+          onClick={() => run(() => api('/staff/challenges', { method: 'POST', body: { ...f, badgeCode: f.badgeCode || null } }).then(reload), 'Wyzwanie startuje – klientki dostaną zaproszenie')}
         >
           Utwórz wyzwanie
         </button>

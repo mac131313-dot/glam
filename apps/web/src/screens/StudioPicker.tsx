@@ -76,7 +76,7 @@ export function StudioPicker(props: { me: Me; onPick: (id: string) => void; onJo
                   {s.name} <span className="muted small">· {s.city}</span>
                 </span>
                 <span className="muted small">{s.tagline}</span>
-                <span className="row wrap" style={{ marginTop: 6, gap: 6 }}>
+                <span className="row wrap gap-2" style={{ marginTop: 6 }}>
                   {s.roles.map((r) => (
                     <span key={r} className="badge">
                       {ROLE[r] ?? r}

@@ -50,7 +50,7 @@ function Threads({ list }: { list: ReturnType<typeof useApi<{ threads: ThreadIte
   const rest = list.data.threads.filter((t) => !t.mine);
   const back = () => (setOpen(null), reload());
   return (
-    <div className="stack" style={{ maxWidth: 640, gap: 0 }}>
+    <div className="stack gap-0" style={{ maxWidth: 640 }}>
       {mine.length === 0 && rest.length === 0 && <Empty>Na razie cisza. Gdy klientka napisze, rozmowa pojawi się tutaj.</Empty>}
       {mine.length > 0 && (
         <ul className="thread-list">
@@ -108,7 +108,7 @@ function GroupMessage({ roles }: { roles: Role[] }) {
         </button>
         <p className="tiny muted" style={{ margin: 0 }}>Wiadomość trafi do aplikacji klientek jako powiadomienie.</p>
       </section>
-      <section className="stack" style={{ gap: 6 }}>
+      <section className="stack gap-2">
         <div className="eyebrow">Wysłane</div>
         {history.data?.map((m) => (
           <div key={m.id} className="card flat small">
@@ -144,7 +144,7 @@ function ReceptionChatPage({ clientId, name, onBack }: { clientId: string; name:
         {!msgs.data ? (
           <Spinner />
         ) : (
-          <div className="stack" style={{ gap: 8 }}>
+          <div className="stack gap-2">
             {msgs.data.map((m) => (
               <div key={m.id} className={`chat-bubble ${m.from_staff ? 'me' : ''} ${m.auto ? 'auto' : ''}`}>
                 {m.attachment && <AttachmentView a={m.attachment} />}
@@ -189,7 +189,7 @@ function Followups() {
               </span>
             </span>
             {contacting === f.id ? (
-              <span className="row" style={{ gap: 8, flex: 'none' }}>
+              <span className="row gap-2" style={{ flex: 'none' }}>
                 <a className="btn ghost sm" href={`tel:${f.phone}`}>
                   Zadzwoń
                 </a>
@@ -213,7 +213,7 @@ function StaffInbox() {
   const inbox = useApi<{ id: string; body: string; deliver_at: string }[]>('/staff/inbox');
   if (!inbox.data) return <Spinner />;
   return (
-    <div className="stack" style={{ gap: 6 }}>
+    <div className="stack gap-2">
       {inbox.data.length === 0 && <Empty>Brak powiadomień.</Empty>}
       {inbox.data.map((n) => (
         <div key={n.id} className="card flat small row between">

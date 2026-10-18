@@ -53,7 +53,7 @@ export default function ShopAdmin() {
           <Empty>Brak zamówień.</Empty>
         ) : (
           shop.data.orders.map((o) => (
-            <section key={o.id} className="card flat stack" style={{ gap: 6 }}>
+            <section key={o.id} className="card flat stack gap-2">
               <div className="row between">
                 <b>{o.name ?? 'Sprzedaż przy ladzie'}</b>
                 <span className="badge">{STATUS[o.status] ?? o.status}</span>
@@ -69,7 +69,7 @@ export default function ShopAdmin() {
                   {o.address.line}, {o.address.zip} {o.address.city}
                 </div>
               )}
-              <div className="row" style={{ gap: 6 }}>
+              <div className="row gap-2">
                 {o.status === 'reserved' && (
                   <button className="btn sm" onClick={() => set(o, 'ready')}>
                     Gotowe do odbioru
@@ -102,16 +102,16 @@ export default function ShopAdmin() {
             const items = shop.data!.products.filter((p) => p.category === c.id);
             if (!items.length) return null;
             return (
-              <section key={c.id} className="stack" style={{ gap: 10 }}>
+              <section key={c.id} className="stack gap-2">
                 <div className="eyebrow" style={{ margin: 0 }}>
                   {c.label}
                 </div>
                 <div className="grid-2">
                   {items.map((p) => (
                     <button key={p.id} className="card stack" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setEdit(p)}>
-                      <div className="row" style={{ gap: 12, alignItems: 'stretch' }}>
+                      <div className="row gap-3" style={{ alignItems: 'stretch' }}>
                         <div className="shop-admin-thumb">{p.photoUrl && <img src={p.photoUrl} alt="" />}</div>
-                        <div className="grow stack" style={{ gap: 4 }}>
+                        <div className="grow stack gap-1">
                           <div className="row between">
                             <b>{p.name}</b>
                             <b>{p.price}</b>
@@ -257,7 +257,7 @@ function ProductEditor({ product, sets, onClose, onDone }: { product: Product | 
           {photos.map((p, i) => (
             <div key={p.id} className="shop-admin-shot">
               <img src={p.url} alt="" />
-              <div className="row" style={{ gap: 4 }}>
+              <div className="row gap-1">
                 {i > 0 && (
                   <button type="button" className="link tiny" onClick={() => setPhotos(photos.map((x, k) => (k === i ? photos[i - 1] : k === i - 1 ? p : x)))}>
                     ←
@@ -288,13 +288,13 @@ function ProductEditor({ product, sets, onClose, onDone }: { product: Product | 
         </Field>
         <div className="eyebrow">{scale.name ?? 'Warianty i stan'}</div>
         {variants.map((v, i) => (
-          <div key={i} className="stack" style={{ gap: 8, paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
+          <div key={i} className="stack gap-2" style={{ paddingBottom: 8, borderBottom: '1px solid var(--line)' }}>
             <div className="row wrap">
               <input className="input" placeholder={scale.name ?? 'Wariant'} value={v.size} onChange={(e) => patch(i, { size: e.target.value })} aria-label={scale.name ?? 'Wariant'} />
               <input className="input" placeholder="Kolor" value={v.color} onChange={(e) => patch(i, { color: e.target.value })} aria-label="Kolor" />
             </div>
             <div className="row wrap">
-              <label className="row" style={{ gap: 8, flex: 'none' }}>
+              <label className="row gap-2" style={{ flex: 'none' }}>
                 <input type="checkbox" checked={v.unlimited} onChange={(e) => patch(i, { unlimited: e.target.checked })} />
                 <span className="small">bez limitu</span>
               </label>
@@ -330,7 +330,7 @@ function ProductEditor({ product, sets, onClose, onDone }: { product: Product | 
             <Field label="Porcja">
               <input className="input" value={nutrition.serving ?? ''} onChange={(e) => setNutrition({ ...nutrition, serving: e.target.value })} placeholder="400 ml" />
             </Field>
-            <div className="grid-2" style={{ gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div className="grid-2 gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
               {NUTRIENTS.map((n) => (
                 <Field key={n.key} label={`${n.label} (${n.unit})`}>
                   <input className="input" inputMode="decimal" value={nutrition[n.key] ?? ''} onChange={(e) => setNutrition({ ...nutrition, [n.key]: e.target.value })} />

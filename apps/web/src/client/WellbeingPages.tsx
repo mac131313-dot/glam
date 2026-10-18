@@ -84,7 +84,7 @@ function Journal() {
             →
           </button>
         </div>
-        <div className="card soft stack" style={{ gap: 8 }}>
+        <div className="card soft stack gap-2">
           <div className="eyebrow">Podsumowanie tygodnia</div>
           {data.summary.count === 0 ? (
             <p className="small muted" style={{ margin: 0 }}>Brak wpisów w tym tygodniu.</p>
@@ -126,7 +126,7 @@ function Cycle() {
   return (
     <div className="stack-lg">
       {data.today && (
-        <section className="card soft stack" style={{ gap: 6 }}>
+        <section className="card soft stack gap-2">
           <div className="eyebrow">Dzień {data.today.day} · {data.today.label}</div>
           <div className="card-title">Intensywność: {data.today.intensity}</div>
           <p className="small" style={{ margin: 0 }}>{data.today.hint}</p>
@@ -439,7 +439,7 @@ function Health() {
             </span>
           </div>
         ))}
-        <div className="grid-2" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+        <div className="grid-2 gap-2" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
           <input className="input" inputMode="decimal" placeholder="Waga (kg)" value={m.weight} onChange={(e) => setM({ ...m, weight: e.target.value })} />
           <input className="input" inputMode="decimal" placeholder="Talia (cm)" value={m.waist} onChange={(e) => setM({ ...m, waist: e.target.value })} />
           <input className="input" inputMode="decimal" placeholder="Biodra (cm)" value={m.hips} onChange={(e) => setM({ ...m, hips: e.target.value })} />
@@ -475,9 +475,9 @@ function Health() {
           <ConsentGate kind="photos" text="Zdjęcia postępów są prywatne. Możesz je usunąć w każdej chwili i nigdy nie publikujemy ich bez Twojej zgody." onGranted={reload} />
         ) : (
           <>
-            <div className="grid-3" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            <div className="grid-3 gap-2" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
               {data.photos?.map((ph) => (
-                <div key={ph.id} className="stack" style={{ gap: 4 }}>
+                <div key={ph.id} className="stack gap-1">
                   <AuthImg src={ph.url} alt={`Zdjęcie z ${ph.taken_on}`} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: 12 }} />
                   <button className="link tiny" onClick={() => run(() => api(`/my/photos/${ph.id}`, { method: 'PATCH', body: { share: !ph.shared } }).then(reload))}>
                     {ph.shared ? 'widzi trenerka' : 'tylko ja'}

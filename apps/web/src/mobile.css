@@ -1,8 +1,8 @@
 /* Poprawki dotykowe i dostępności aplikacji klientki (audyt, październik 2026). */
 
-/* Okno dostaje fokus po otwarciu (czytnik ekranu), ale bez obwódki wokół całego arkusza. */
-.sheet:focus,
-.page:focus { outline: none; }
+/* Okno dostaje fokus po otwarciu (czytnik ekranu). Obrys widać tylko przy fokusie z klawiatury, do środka, żeby nie poszerzał arkusza. */
+.sheet:focus-visible,
+.page:focus-visible { outline: 2px solid var(--ink); outline-offset: -3px; }
 
 /* Cel dotyku min. 44 × 44 px (WCAG 2.5.5 / zalecenia iOS i Androida) bez zmiany wyglądu:
    niewidoczne pole wokół linków, chipów i przełącznika widoku. */

@@ -2,6 +2,16 @@
 import { DEFAULT_TZ, localParts } from './time.ts';
 
 /** plural(3, 'wejście', 'wejścia', 'wejść') → 'wejścia' */
+/** Postęp celu tygodnia: licznik nie przekracza celu („3/3”, nie „4/3”). */
+export function goalCount(done: number, goal: number): string {
+  return goal > 0 ? `${Math.min(done, goal)}/${goal}` : String(done);
+}
+
+/** Nadwyżka ponad cel jako „ +1” (z odstępem na początku), pusty napis, gdy jej nie ma. */
+export function goalExtra(done: number, goal: number): string {
+  return goal > 0 && done > goal ? ` +${done - goal}` : '';
+}
+
 export function plural(n: number, one: string, few: string, many: string): string {
   if (n === 1) return one;
   const tens = n % 100;

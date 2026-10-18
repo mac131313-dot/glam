@@ -140,6 +140,8 @@ export type StudioSettings = {
   ownerSeesTrainerNotes: boolean;
   communityPublicProfiles: boolean;
   commissionPct: number;
+  /** kolor przewodni panelu studia (id z PANEL_TINTS) – wspólny dla całego zespołu */
+  panelTint: string;
 };
 
 export const DEFAULT_SETTINGS: StudioSettings = {
@@ -203,6 +205,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   ownerSeesTrainerNotes: false,
   communityPublicProfiles: false,
   commissionPct: 0,
+  panelTint: 'grafit',
 };
 
 /** Scala zapisane ustawienia z domyślnymi (głęboko dla obiektów, płytko dla tablic). */

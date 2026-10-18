@@ -77,7 +77,7 @@ function Rules({ settings, reload }: { settings: StudioSettings; reload: () => P
       <div className="row wrap">
         {s.loyalty.levels.map((l, i) => (
           <Field key={l.id} label={`Poziom ${i + 1}`}>
-            <div className="row" style={{ gap: 4 }}>
+            <div className="row gap-1">
               <input className="input" value={l.name} onChange={(e) => setS({ ...s, loyalty: { ...s.loyalty, levels: s.loyalty.levels.map((x, k) => (k === i ? { ...x, name: e.target.value } : x)) } })} />
               <input className="input" type="number" style={{ maxWidth: 90 }} disabled={i === 0} value={l.minPoints} onChange={(e) => setS({ ...s, loyalty: { ...s.loyalty, levels: s.loyalty.levels.map((x, k) => (k === i ? { ...x, minPoints: Number(e.target.value) } : x)) } })} aria-label="Od punktów" />
             </div>

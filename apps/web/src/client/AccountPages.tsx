@@ -18,7 +18,6 @@ const CATEGORIES: [string, string, string][] = [
   ['motivation', 'Cel tygodnia i serie', 'Delikatnie, bez presji'],
   ['community', 'Społeczność', 'Zaproszenia, wyzwania, komentarze'],
   ['courses', 'Kursy i trenerka', 'Nowe lekcje, wiadomości od trenerki'],
-  ['theme', 'Edycje sezonowe', 'Start motywu, odznaki sezonowe'],
   ['loyalty', 'Lojalność i nagrody', 'Nowy poziom, nagroda po 10 treningach'],
   ['reactivation', 'Gdy dawno Cię nie było', 'Ankieta „Co się stało?”, oferta powrotu'],
   ['marketing', 'Promocje', 'Tylko za Twoją zgodą'],
@@ -107,7 +106,7 @@ function Settings() {
 
       <section className="stack">
         <div className="eyebrow">Adres do wysyłki</div>
-        <p className="tiny muted" style={{ margin: 0 }}>Tylko za Twoją zgodą – do nagród, kartki od trenerki i zamówień ze sklepu. Przechowujemy go zaszyfrowany i usuwasz go jednym kliknięciem.</p>
+        <p className="tiny muted m-0">Tylko za Twoją zgodą – do nagród, kartki od trenerki i zamówień ze sklepu. Przechowujemy go zaszyfrowany i usuwasz go jednym kliknięciem.</p>
         <input className="input" placeholder="Ulica i numer" value={addr.line} onChange={(e) => setAddr({ ...addr, line: e.target.value })} />
         <div className="row">
           <input className="input" placeholder="Kod" style={{ maxWidth: 120 }} value={addr.zip} onChange={(e) => setAddr({ ...addr, zip: e.target.value })} />
@@ -154,8 +153,6 @@ function Settings() {
             </button>
           ))}
         </div>
-        <Toggle label="Zawsze standardowy wygląd" hint="Wyłącza motywy sezonowe" checked={me.user.themeOptOut} onChange={(v) => save({ themeOptOut: v })} />
-        <Toggle label="Dźwięki motywu" hint="Krótki dźwięk przy rezerwacji i odznace (wyciszalny)" checked={me.user.prefs.sounds ?? false} onChange={(v) => save({ prefs: { sounds: v } })} />
         <Field label="Język">
           <select className="input" value="pl" disabled>
             <option value="pl">Polski</option>
@@ -185,7 +182,7 @@ function ThisDevice() {
     return (
       <section className="card soft stack">
         <div className="card-title">Powiadomienia na tym telefonie</div>
-        <p className="small muted" style={{ margin: 0 }}>
+        <p className="small muted m-0">
           {ios ? 'Na iPhonie: w Safari stuknij „Udostępnij” → „Do ekranu początkowego”, otwórz aplikację z ikonki i wróć tutaj.' : 'Ta przeglądarka nie obsługuje powiadomień. Otwórz aplikację w Chrome albo Safari.'}
         </p>
       </section>
@@ -204,10 +201,10 @@ function ThisDevice() {
           </button>
         </div>
       ) : blocked ? (
-        <p className="small muted" style={{ margin: 0 }}>Powiadomienia są zablokowane w ustawieniach telefonu. Zezwól na nie dla tej strony i wróć tutaj.</p>
+        <p className="small muted m-0">Powiadomienia są zablokowane w ustawieniach telefonu. Zezwól na nie dla tej strony i wróć tutaj.</p>
       ) : (
         <>
-          <p className="small muted" style={{ margin: 0 }}>Bez tego przypomnienia przed treningiem nie dotrą.</p>
+          <p className="small muted m-0">Bez tego przypomnienia przed treningiem nie dotrą.</p>
           <button
             className="btn sm"
             style={{ alignSelf: 'flex-start' }}
@@ -243,7 +240,7 @@ function Notifications() {
     <div className="stack-lg">
       <ThisDevice />
       <section className="stack">
-        <h2 style={{ margin: 0 }}>Przypomnienie przed treningiem</h2>
+        <h2 className="m-0">Przypomnienie przed treningiem</h2>
         <Toggle
           label="Przypominaj o moich zajęciach"
           hint={lead.length ? `Wyślemy: ${CLASS_REMINDER_OPTIONS.filter((o) => lead.includes(o.minutes)).map((o) => o.label.toLowerCase()).join(', ')}` : 'Bez przypomnień – sama pilnujesz grafiku'}
@@ -262,7 +259,7 @@ function Notifications() {
             })}
           </div>
         )}
-        <p className="tiny muted" style={{ margin: 0 }}>Jeśli zapiszesz się w ostatniej chwili, nie przypominamy – wiesz najlepiej. Prośba o potwierdzenie obecności przychodzi zawsze, gdy studio jej wymaga.</p>
+        <p className="tiny muted m-0">Jeśli zapiszesz się w ostatniej chwili, nie przypominamy – wiesz najlepiej. Prośba o potwierdzenie obecności przychodzi zawsze, gdy studio jej wymaga.</p>
       </section>
       <section>
         <div className="eyebrow">Rodzaje (każdy osobno)</div>
@@ -278,7 +275,7 @@ function Notifications() {
       </section>
       <section className="stack">
         <div className="eyebrow">Ciche godziny</div>
-        <p className="tiny muted" style={{ margin: 0 }}>W tych godzinach nie wysyłamy niczego poza ważnymi zmianami w Twoich zajęciach.</p>
+        <p className="tiny muted m-0">W tych godzinach nie wysyłamy niczego poza ważnymi zmianami w Twoich zajęciach.</p>
         <div className="row">
           <input className="input" type="time" value={from} onChange={(e) => setFrom(e.target.value)} onBlur={() => saveQuiet(from, to)} aria-label="Od" />
           <span className="muted">–</span>
@@ -354,7 +351,7 @@ function Privacy({ close }: { close: () => void }) {
             </button>
           ))}
         </div>
-        <p className="tiny muted" style={{ margin: 0 }}>Prywatny: przy Twoich wpisach widać tylko inicjał. Społeczność jest zamknięta w obrębie studia.</p>
+        <p className="tiny muted m-0">Prywatny: przy Twoich wpisach widać tylko inicjał. Społeczność jest zamknięta w obrębie studia.</p>
       </section>
       {!consents.data ? (
         <Spinner />
@@ -385,8 +382,8 @@ function Privacy({ close }: { close: () => void }) {
         </a>
         <details>
           <summary className="small" style={{ cursor: 'pointer' }}>Usuń konto</summary>
-          <div className="stack" style={{ marginTop: 12 }}>
-            <p className="small muted" style={{ margin: 0 }}>Usuniemy Twoje dane osobowe, dziennik, zdjęcia i zgody. Rozliczenia studia zostaną zanonimizowane. Tego nie da się cofnąć.</p>
+          <div className="stack" style={{ marginTop: 'var(--space-3)' }}>
+            <p className="small muted m-0">Usuniemy Twoje dane osobowe, dziennik, zdjęcia i zgody. Rozliczenia studia zostaną zanonimizowane. Tego nie da się cofnąć.</p>
             <input className="input" placeholder="Wpisz USUŃ" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
             <button
               className="btn danger"
@@ -424,7 +421,7 @@ function Security() {
     <div className="stack-lg">
       <section className="stack">
         <div className="eyebrow">Face ID / odcisk palca</div>
-        <p className="small muted" style={{ margin: 0 }}>Na tym urządzeniu zalogujesz się bez kodu SMS. Klucz zostaje w telefonie – my go nie znamy.</p>
+        <p className="small muted m-0">Na tym urządzeniu zalogujesz się bez kodu SMS. Klucz zostaje w telefonie – my go nie znamy.</p>
         {passkeys.data?.map((p) => (
           <div key={p.id} className="row between card flat">
             <span className="small">
@@ -442,7 +439,7 @@ function Security() {
 
       <section className="stack">
         <div className="eyebrow">Zmiana numeru telefonu</div>
-        <p className="tiny muted" style={{ margin: 0 }}>Wyślemy kod na obecny ({me.user.phone}) i na nowy numer.</p>
+        <p className="tiny muted m-0">Wyślemy kod na obecny ({me.user.phone}) i na nowy numer.</p>
         {!codes ? (
           <div className="row">
             <input className="input" inputMode="tel" placeholder="Nowy numer" value={phone} onChange={(e) => setPhone(e.target.value)} />
@@ -466,7 +463,7 @@ function Security() {
 
       <section className="stack">
         <div className="eyebrow">Kalendarz w telefonie</div>
-        <p className="tiny muted" style={{ margin: 0 }}>Twoje zajęcia same pojawią się w kalendarzu (Apple, Google, Outlook) i będą się aktualizować.</p>
+        <p className="tiny muted m-0">Twoje zajęcia same pojawią się w kalendarzu (Apple, Google, Outlook) i będą się aktualizować.</p>
         {calUrl ? (
           <>
             <input className="input" readOnly value={location.origin + calUrl} onFocus={(e) => e.target.select()} />
@@ -506,7 +503,7 @@ function Security() {
             </div>
           );
         })}
-        <p className="tiny muted" style={{ margin: 0 }}>Logujesz się u dostawcy – nie przechowujemy haseł ani historii słuchania.</p>
+        <p className="tiny muted m-0">Logujesz się u dostawcy – nie przechowujemy haseł ani historii słuchania.</p>
       </section>
 
       <section className="stack">
@@ -613,15 +610,15 @@ function Inbox() {
         <section className="stack">
           <div className="eyebrow">Od Twojej trenerki</div>
           {welcomes.data.map((w) => (
-            <div key={w.id} className="card soft stack" style={{ gap: 8 }}>
+            <div key={w.id} className="card soft stack" style={{ gap: 'var(--space-2)' }}>
               <div className="small muted">{w.kind === 'studio' ? 'Od studia' : w.trainer_name} · {fmtDay(w.created_at)}</div>
               {w.video_id && <AuthVideo className="video-916" src={`/api/media/${w.video_id}`} controls playsInline />}
-              <p style={{ margin: 0 }}>{w.body}</p>
+              <p className="m-0">{w.body}</p>
             </div>
           ))}
         </section>
       )}
-      <section className="stack" style={{ gap: 8 }}>
+      <section className="stack" style={{ gap: 'var(--space-2)' }}>
         <div className="eyebrow">Powiadomienia</div>
         {inbox.data.length === 0 && <Empty>Cisza i spokój.</Empty>}
         {inbox.data.map((n) => (
@@ -658,19 +655,19 @@ function Chat() {
   return (
     <div className="stack">
       <p className="tiny muted center">{chat.data.open ? 'Recepcja jest teraz w studiu' : chat.data.next ? `Recepcja odpisze ${chat.data.next}` : 'Recepcja odpisze w godzinach pracy studia'}</p>
-      <div className="stack" style={{ gap: 8 }}>
+      <div className="stack" style={{ gap: 'var(--space-2)' }}>
         {chat.data.messages.map((m) => (
           <div key={m.id} className={`chat-bubble ${m.from_staff ? '' : 'me'} ${m.auto ? 'auto' : ''}`}>
             {m.attachment && <AttachmentView a={m.attachment} />}
             {m.body}
-            <div className="tiny" style={{ opacity: 0.7, marginTop: 4 }}>
+            <div className="tiny" style={{ opacity: 0.7, marginTop: 'var(--space-1)' }}>
               {m.from_staff ? (m.auto ? 'Automatyczna odpowiedź' : m.author ?? 'Recepcja') : 'Ty'} · {fmtTime(m.created_at)}
             </div>
           </div>
         ))}
         <div ref={end} />
       </div>
-      <div style={{ position: 'sticky', bottom: 0, background: 'var(--bg)', paddingTop: 8 }}>
+      <div style={{ position: 'sticky', bottom: 0, background: 'var(--bg)', paddingTop: 'var(--space-2)' }}>
         <ChatComposer placeholder="Napisz do recepcji…" onSend={(msg) => api('/chat', { method: 'POST', body: msg }).then(chat.reload)} />
       </div>
     </div>
@@ -686,15 +683,15 @@ function Faq() {
         <ListRow title="Czat z recepcją" hint="Pytania, zmiany – odpowiadamy w godzinach recepcji" onClick={() => open('chat')} />
         {studio.phone && <ListRow title="Zadzwoń do studia" hint={studio.phone} onClick={() => (location.href = `tel:${studio.phone.replace(/\s/g, '')}`)} />}
       </section>
-      <section className="stack" style={{ gap: 0 }}>
+      <section className="stack gap-0">
         {studio.support.faq.map((f) => (
           <details key={f.q} className="list-row" style={{ display: 'block' }}>
             <summary className="card-title" style={{ cursor: 'pointer', fontSize: '1rem' }}>{f.q}</summary>
-            <p className="small" style={{ margin: '10px 0 0' }}>{f.a}</p>
+            <p className="small" style={{ margin: 'var(--space-3) 0 0' }}>{f.a}</p>
           </details>
         ))}
       </section>
-      <section className="card stack" style={{ gap: 6 }}>
+      <section className="card stack" style={{ gap: 'var(--space-2)' }}>
         <div className="eyebrow">Godziny recepcji</div>
         {WEEKDAY_LONG.slice(1).map((day, i) => {
           const slots = receptionSlots(studio.support.hours).filter((s) => s.weekday === i + 1);

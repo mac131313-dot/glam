@@ -12,7 +12,7 @@ export const PERSONAS: Record<'panel' | 'app', Record<string, { phone: string; l
   },
   app: {
     julia: { phone: '500000212', label: 'Julia · klientka SS&G' },
-    magda: { phone: '500000005', label: 'Magda · klientka w 2 studiach (demo)' },
+    magda: { phone: '500000005', label: 'Magda · klientka w 3 studiach (demo)' },
     ania: { phone: '500000006', label: 'Ania · nowa klientka (demo)' },
   },
 };

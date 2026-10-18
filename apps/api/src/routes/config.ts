@@ -8,6 +8,7 @@ import {
   initialBalances,
   LEVEL_TEXT,
   localParts,
+  PANEL_TINTS,
   parseCsv,
   PRESETS,
   resolveLook,
@@ -31,6 +32,8 @@ import { audit } from '../services/audit.ts';
 import { issuePass } from '../services/passes.ts';
 import { addException, createSlots, fillSchedule, removeSlot, updateSlot, type SlotPatch } from '../services/schedule.ts';
 import { applyPreset } from '../services/presets.ts';
+import { connectStripe } from '../services/stripe.ts';
+import type { StudioScope } from '../scope.ts';
 import { PHOTO_URL } from './client.ts';
 
 const clean = (v: unknown, max = 120) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -225,6 +228,7 @@ export function configRoutes(app: FastifyInstance, deps: Deps) {
     if (s.guestPass.variants.some((v) => !(v.priceGrosze >= 0) || !(v.entries >= 1) || !v.label)) throw badRequest('Każda wejściówka potrzebuje nazwy, ceny i liczby wejść.');
     if (s.invoice.vatRate < 0 || s.invoice.vatRate > 23) throw badRequest('Stawka VAT od 0 do 23%.');
     if (s.commissionPct < 0 || s.commissionPct > 30) throw badRequest('Prowizja od 0 do 30%.');
+    if (!PANEL_TINTS.some((t) => t.id === s.panelTint)) throw badRequest('Wybierz kolor przewodni z listy.');
     scope.run('UPDATE studios SET settings_json = $s WHERE id = $studio', { s: JSON.stringify(merged) });
     audit(scope, { actorId: user.id, action: 'settings.updated', entity: 'studio', details: { keys: Object.keys(req.body ?? {}) } });
     return { settings: s };
@@ -292,11 +296,30 @@ export function configRoutes(app: FastifyInstance, deps: Deps) {
   app.put<{ Body: { provider: 'p24' | 'stripe' | 'payu' | 'tpay'; merchantId: string; apiKey: string; crc?: string } }>('/api/owner/gateway', owner, async (req) => {
     const { scope, user } = ctx(req);
     const b = req.body;
+    if (b?.provider === 'stripe') return connectStripeGateway(scope, user.id, b.apiKey?.trim() ?? '', b.crc?.trim());
     if (!['p24', 'stripe', 'payu', 'tpay'].includes(b?.provider) || !b.merchantId?.trim() || !b.apiKey?.trim()) throw badRequest('Podaj dostawcę, identyfikator sprzedawcy i klucz API.');
     scope.run('UPDATE studios SET gateway_enc = $g WHERE id = $studio', { g: seal({ provider: b.provider, merchantId: b.merchantId.trim(), apiKey: b.apiKey.trim(), crc: b.crc?.trim() ?? '' }) });
     audit(scope, { actorId: user.id, action: 'gateway.connected', entity: 'studio', details: { provider: b.provider } });
     return { ok: true, webhook: `${deps.publicUrl ?? ''}/api/payments/webhook/${scope.studioId}` };
   });
+
+  // Stripe: wystarczy klucz tajny – webhook i domeny pod Apple Pay / Google Pay zakładamy przez API.
+  // Lokalnie (Stripe nie dosięgnie localhost) można podać sekret z `stripe listen` (whsec_…) w polu crc.
+  async function connectStripeGateway(scope: StudioScope, actorId: string, apiKey: string, manualSecret?: string) {
+    if (!/^(sk|rk)_(test|live)_/.test(apiKey)) throw badRequest('Wklej klucz tajny Stripe (zaczyna się od sk_live_ albo sk_test_).');
+    const webhookUrl = `${deps.publicUrl ?? ''}/api/payments/stripe/${scope.studioId}`;
+    const custom = scope.get<{ d: string | null }>('SELECT custom_domain AS d FROM studios WHERE id = $studio')?.d;
+    const appHost = deps.publicUrl ? new URL(deps.publicUrl).hostname : null;
+    const domains = [appHost, custom, custom && `www.${custom}`].filter((d): d is string => !!d && d !== 'localhost');
+    const linked = manualSecret?.startsWith('whsec_')
+      ? { webhookId: undefined, webhookSecret: manualSecret, domains: [] as { domain: string; ok: boolean }[] }
+      : await connectStripe(deps.http ?? fetch, apiKey, { webhookUrl, domains });
+    scope.run('UPDATE studios SET gateway_enc = $g WHERE id = $studio', {
+      g: seal({ provider: 'stripe', merchantId: '', apiKey, crc: '', webhookSecret: linked.webhookSecret, webhookId: linked.webhookId }),
+    });
+    audit(scope, { actorId, action: 'gateway.connected', entity: 'studio', details: { provider: 'stripe', domains: linked.domains } });
+    return { ok: true, webhook: webhookUrl, domains: linked.domains };
+  }
 
   // ——— Szablony branżowe (C6) ———
 

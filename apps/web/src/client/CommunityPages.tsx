@@ -1,8 +1,8 @@
 // Społeczność (4.5, 4.3, 4.12.4): feed z kalendarzem wydarzeń, grupy, wyzwania, wspólna playlista, zaproszenia
 // (polecenie z pierwszymi zajęciami gratis, wejściówka-prezent z QR i przepisaniem, zaproszenia na zajęcia).
 import { useEffect, useState } from 'react';
-import { api, fmtDay, fmtLongDay, fmtTime, useApi } from '../api.ts';
-import { AuthImg, Avatar, Empty, Field, PAYMENT_LABELS, Progress, QrCode, readFile, Sheet, Spinner, Tabs, Toggle, useAction, useToast } from '../ui.tsx';
+import { api, fmtDay, goToCheckout, fmtLongDay, fmtTime, useApi } from '../api.ts';
+import { AuthImg, Avatar, Empty, Field, availableMethods, PAYMENT_LABELS, Progress, QrCode, readFile, Sheet, Spinner, Tabs, Toggle, useAction, useToast } from '../ui.tsx';
 import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
@@ -46,10 +46,10 @@ export function Feed({ group }: { group?: string | null }) {
   return (
     <div className="stack-lg">
       {!group && events.data && events.data.length > 0 && (
-        <section className="stack" style={{ gap: 8 }}>
+        <section className="stack" style={{ gap: 'var(--space-2)' }}>
           <div className="eyebrow">Kalendarz wydarzeń</div>
           {events.data.map((e) => (
-            <div key={e.id} className="card soft row" style={{ gap: 14 }}>
+            <div key={e.id} className="card soft row" style={{ gap: 'var(--space-4)' }}>
               <div className="center" style={{ minWidth: 48 }}>
                 <div className="serif" style={{ fontSize: '1.6rem', lineHeight: 1 }}>{new Date(e.event_at).getDate()}</div>
                 <div className="tiny muted">{fmtTime(e.event_at)}</div>
@@ -91,7 +91,7 @@ export function Feed({ group }: { group?: string | null }) {
         <Empty>Jeszcze tu cicho. Napisz pierwsza</Empty>
       ) : (
         feed.data.map((p) => (
-          <article key={p.id} className={`card ${p.kind === 'announcement' ? 'soft' : ''} stack`} style={{ gap: 10, opacity: p.hidden ? 0.5 : 1 }}>
+          <article key={p.id} className={`card ${p.kind === 'announcement' ? 'soft' : ''} stack`} style={{ gap: 'var(--space-3)', opacity: p.hidden ? 0.5 : 1 }}>
             <div className="row">
               <Avatar name={p.author.name} size="sm" />
               <div className="grow">
@@ -119,10 +119,10 @@ export function Feed({ group }: { group?: string | null }) {
               )}
             </div>
             {p.commentsList.map((c) => (
-              <div key={c.id} className="small" style={{ paddingLeft: 12, borderLeft: '2px solid var(--line)' }}>
+              <div key={c.id} className="small" style={{ paddingLeft: 'var(--space-3)', borderLeft: '2px solid var(--line)' }}>
                 <b>{c.author.name}</b> {c.body}
                 {!c.mine && (
-                  <button className="link tiny" style={{ marginLeft: 6 }} onClick={() => setReport({ kind: 'comment', id: c.id })}>
+                  <button className="link tiny" style={{ marginLeft: 'var(--space-2)' }} onClick={() => setReport({ kind: 'comment', id: c.id })}>
                     zgłoś
                   </button>
                 )}
@@ -152,7 +152,7 @@ function CommentBox({ postId, onDone }: { postId: string; onDone: () => void }) 
   const { run, busy } = useAction();
   return (
     <div className="row">
-      <input className="input" style={{ minHeight: 40, padding: '8px 16px' }} placeholder="Skomentuj…" value={t} onChange={(e) => setT(e.target.value)} />
+      <input className="input" style={{ minHeight: 40, padding: 'var(--space-2) var(--space-4)' }} placeholder="Skomentuj…" value={t} onChange={(e) => setT(e.target.value)} />
       <button className="btn ghost sm" disabled={!t.trim() || busy} onClick={() => run(() => api(`/posts/${postId}/comments`, { method: 'POST', body: { body: t } }).then(() => (setT(''), onDone())))}>
         Dodaj
       </button>
@@ -216,7 +216,7 @@ function Groups() {
                   {g.description && <span className="session-meta">{g.description}</span>}
                   <span className="session-meta">
                     {g.trainer ? `prowadzi ${g.trainer} · ` : ''}
-                    {g.members} {osoby(g.members)}
+                    {g.members > 0 ? `${g.members} ${osoby(g.members)}` : 'bądź pierwsza'}
                     {g.approval ? ' · dołączanie za zgodą studia' : ''}
                   </span>
                 </span>
@@ -258,7 +258,7 @@ function Challenges({ focus }: { focus: string | null }) {
     <div className="stack">
       {list.data.length === 0 && <Empty>Nowe wyzwania pojawią się wkrótce.</Empty>}
       {[...list.data].sort((a, b) => Number(b.id === focus) - Number(a.id === focus)).map((c) => (
-        <section key={c.id} className={`card ${c.joined_at ? 'soft' : 'flat'} stack`} style={{ gap: 8 }}>
+        <section key={c.id} className={`card ${c.joined_at ? 'soft' : 'flat'} stack`} style={{ gap: 'var(--space-2)' }}>
           <div className="row between">
             <b>{c.title}</b>
             {c.completed_at ? <span className="badge ok">ukończone</span> : !c.active && <span className="badge">zakończone</span>}
@@ -315,10 +315,10 @@ function Music() {
   const { run, busy } = useAction();
   if (data.error?.code === 'feature_off') return <Empty>Studio nie udostępnia jeszcze playlist.</Empty>;
   if (!data.data) return <Spinner />;
-  const PURPOSE: Record<string, string> = { class: 'Na zajęcia', meditation: 'Medytacja', stretch: 'Stretch', sleep: 'Na sen', theme: 'Motyw', shared: 'Wspólna' };
+  const PURPOSE: Record<string, string> = { class: 'Na zajęcia', meditation: 'Medytacja', stretch: 'Stretch', sleep: 'Na sen', shared: 'Wspólna' };
   return (
     <div className="stack-lg">
-      <section className="stack" style={{ gap: 8 }}>
+      <section className="stack" style={{ gap: 'var(--space-2)' }}>
         <div className="eyebrow">Playlisty studia</div>
         {data.data.playlists.map((p) => (
           <a key={p.id} className="card flat row between" href={p.url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
@@ -332,9 +332,9 @@ function Music() {
           </a>
         ))}
       </section>
-      <section className="stack" style={{ gap: 8 }}>
+      <section className="stack" style={{ gap: 'var(--space-2)' }}>
         <div className="eyebrow">Wspólna playlista – głosuj</div>
-        <p className="tiny muted" style={{ margin: 0 }}>Najpopularniejsze utwory trafiają na zajęcia w tym tygodniu. Trenerka zatwierdza propozycje.</p>
+        <p className="tiny muted m-0">Najpopularniejsze utwory trafiają na zajęcia w tym tygodniu. Trenerka zatwierdza propozycje.</p>
         {data.data.shared.map((t) => (
           <div key={t.id} className="row between card flat">
             <a href={t.track_url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
@@ -414,10 +414,10 @@ function Referrals({ studioName, free, name }: { studioName: string; free: boole
   return (
     <div className="stack">
       <div className="welcome-hero stack">
-        <h2 style={{ margin: 0 }}>
+        <h2 className="m-0">
           Zaproś <span className="serif">znajomą</span>
         </h2>
-        <p style={{ margin: 0 }}>
+        <p className="m-0">
           {free ? 'Znajoma dostaje pierwsze zajęcia gratis, a Ty – wejście, gdy kupi swój pierwszy karnet.' : `Zaproś znajomą do ${studioName}.`}
         </p>
       </div>
@@ -445,7 +445,7 @@ function Referrals({ studioName, free, name }: { studioName: string; free: boole
         <div className="card soft stack center">
           <QrCode text={created.link} size={160} label="Kod zaproszenia" />
           <div className="code" style={{ fontSize: '1.3rem' }}>{created.code}</div>
-          <p className="tiny muted" style={{ margin: 0 }}>Na Instagramie wklej link w wiadomości do znajomej.</p>
+          <p className="tiny muted m-0">Na Instagramie wklej link w wiadomości do znajomej.</p>
         </div>
       )}
       <div className="eyebrow">Moje zaproszenia</div>
@@ -487,7 +487,7 @@ function GiftPasses() {
       <div className="eyebrow">Moje wejściówki</div>
       {mine.data?.length === 0 && <Empty>Tu zobaczysz wysłane prezenty.</Empty>}
       {mine.data?.map((g) => (
-        <div key={g.id} className="card flat stack" style={{ gap: 6 }}>
+        <div key={g.id} className="card flat stack" style={{ gap: 'var(--space-2)' }}>
           <div className="row between">
             <span className="code" style={{ fontWeight: 500 }}>{g.code}</span>
             <span className={`badge ${GP_STATUS[g.status]?.[1] ?? ''}`}>{GP_STATUS[g.status]?.[0] ?? g.status}</span>
@@ -529,7 +529,7 @@ function GiftPasses() {
                   </button>
                 ))}
               </div>
-              <p className="tiny muted" style={{ margin: 0 }}>Ważna {studio.guestPassValidityDays} dni na aktywację. Znajoma aktywuje ją swoim numerem telefonu.</p>
+              <p className="tiny muted m-0">Ważna {studio.guestPassValidityDays} dni na aktywację. Znajoma aktywuje ją swoim numerem telefonu.</p>
               <Field label="Numer znajomej (opcjonalnie)" hint="Bez numeru dostaniesz kod i QR do przekazania.">
                 <input className="input" inputMode="tel" placeholder="500 600 700" value={phone} onChange={(e) => setPhone(e.target.value)} />
               </Field>
@@ -537,7 +537,7 @@ function GiftPasses() {
                 <textarea className="input" maxLength={300} placeholder="Chodź ze mną na Reformer" value={message} onChange={(e) => setMessage(e.target.value)} />
               </Field>
               <div className="pill-row">
-                {['blik', 'apple_pay', 'google_pay', 'p24', 'card'].map((m) => (
+                {availableMethods(['blik', 'apple_pay', 'google_pay', 'p24', 'card']).map((m) => (
                   <button key={m} className="chip" aria-pressed={method === m} onClick={() => setMethod(m)}>
                     {PAYMENT_LABELS[m]}
                   </button>
@@ -548,7 +548,8 @@ function GiftPasses() {
                 disabled={busy}
                 onClick={() =>
                   run(async () => {
-                    const r = await api<{ code: string }>('/guest-passes', { method: 'POST', body: { variantId: variant, recipientPhone: phone || undefined, message, method } });
+                    const r = await api<{ code: string; checkoutUrl?: string }>('/guest-passes', { method: 'POST', body: { variantId: variant, recipientPhone: phone || undefined, message, method } });
+                    if (goToCheckout(r)) return;
                     setCreated(r.code);
                     mine.reload();
                   })
@@ -583,10 +584,10 @@ function SessionInvites() {
   if (!invites.data) return <Spinner />;
   return (
     <div className="stack">
-      <p className="small muted" style={{ margin: 0 }}>Chcesz iść z koleżanką? W grafiku wybierz zajęcia i „Umów się z dziewczynami”.</p>
+      <p className="small muted m-0">Chcesz iść z koleżanką? W grafiku wybierz zajęcia i „Umów się z dziewczynami”.</p>
       {invites.data.length === 0 && <Empty>Brak zaproszeń na zajęcia.</Empty>}
       {invites.data.map((i) => (
-        <div key={i.id} className="card flat stack" style={{ gap: 8 }}>
+        <div key={i.id} className="card flat stack" style={{ gap: 'var(--space-2)' }}>
           <div>
             <b>{i.from_name}</b> zaprasza na <b>{i.class_name}</b>
             <div className="small muted">

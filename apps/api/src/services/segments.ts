@@ -59,7 +59,7 @@ export function clientFacts(scope: StudioScope, now = new Date(), onlyUserId?: s
   });
 }
 
-/** Segmenty jednej klientki (motyw dla segmentu M3, kampanie). Grupy tematyczne też są segmentami. */
+/** Segmenty jednej klientki (kampanie, kursy). Grupy tematyczne też są segmentami. */
 export function segmentsForUser(scope: StudioScope, userId: string, now = new Date()): string[] {
   const f = clientFacts(scope, now, userId)[0];
   return f ? [...segmentsOf(f, now), ...f.groups.map((g) => `group:${g}`)] : [];

@@ -8,7 +8,6 @@ import { api, useApi } from '../api.ts';
 import { BreathCalendar } from './BreathCalendar.tsx';
 import { ForMeBoard } from './ForMeBoard.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
-import { hapticsSupported, loadSenses, saveSenses, type SenseSettings } from './senses.ts';
 
 export function ForMe() {
   const { openBreath, open, studio, me, reloadMe } = useClient();
@@ -20,19 +19,12 @@ export function ForMe() {
   }, [reloadRitual]);
   const [{ patternId, minutes }] = useState(loadChoice);
   const [calendar, setCalendar] = useState(false);
-  const [senses, setSensesState] = useState<SenseSettings>(loadSenses);
-  const setSenses = (s: SenseSettings) => {
-    setSensesState(s);
-    saveSenses(s);
-  };
   const [category, setCategory] = useState('Wszystkie');
-  // Medytacja tematyczna z pakietu motywu (7.2) widoczna, gdy motyw jest aktywny.
-  const themeEdition = (studio.theme?.pack as { edition?: string } | undefined)?.edition;
   const [showAll, setShowAll] = useState(false);
   const catRow = useScrollRow<HTMLDivElement>();
-  const sessions = SESSIONS.filter((x) => category === 'Wszystkie' || x.category === category).filter((x) => !x.edition || x.edition === themeEdition);
+  const sessions = SESSIONS.filter((x) => category === 'Wszystkie' || x.category === category);
   // Przy „Wszystkie” na start tylko kilka – reszta pod „Pokaż wszystkie”, żeby lista nie przytłaczała.
-  const visibleSessions = showAll || category !== 'Wszystkie' ? sessions : sessions.slice(0, 5);
+  const visibleSessions = showAll || category !== 'Wszystkie' ? sessions : sessions.slice(0, 3);
   const more: [string, string][] = [
     ['7 dni spokoju', 'calm7'],
     ['Rozciąganie', 'stretch'],
@@ -63,24 +55,6 @@ export function ForMe() {
 
       {/* Panel tygodnia: pierścienie, podpowiedź na dziś, mój dzień, sesje i wykres. */}
       <ForMeBoard breath={{ patternId, minutes }} />
-
-      {/* Ustawienia sesji jako dwie pigułki – bez długich opisów. */}
-      <section className="forme-list">
-        <h2 className="forme-h">Podczas sesji</h2>
-        <div className="chips" role="group" aria-label="Podczas sesji">
-          <button
-            className="chip"
-            aria-pressed={senses.haptics}
-            title={hapticsSupported() ? 'Delikatna wibracja przy wdechu i wydechu' : 'Wibracja zadziała w aplikacji mobilnej'}
-            onClick={() => setSenses({ ...senses, haptics: !senses.haptics })}
-          >
-            Haptyka
-          </button>
-          <button className="chip" aria-pressed={senses.noise} title="Miękki szum, który oddycha razem z kwiatem" onClick={() => setSenses({ ...senses, noise: !senses.noise })}>
-            Szum
-          </button>
-        </div>
-      </section>
 
       {/* Medytacje: tytuł, rytm i czas – bez powtarzania kategorii i bez przycisków; cały wiersz startuje sesję. */}
       <section className="forme-list">

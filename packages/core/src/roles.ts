@@ -18,9 +18,9 @@ export type Permission =
   | 'blocks.edit'
   | 'finance.view'
   | 'finance.export'
+  /** Zwrot pieniędzy i podmiana karnetu z panelu – tylko właścicielka. */
+  | 'finance.refund'
   | 'campaigns.edit'
-  | 'themes.edit'
-  | 'themes.view'
   | 'courses.create'
   | 'courses.approve'
   | 'roles.manage'
@@ -49,7 +49,6 @@ const MATRIX: Record<Exclude<Role, 'client'>, Permission[]> = {
     'messages.group.own',
     'notes.write',
     'clients.create',
-    'themes.view',
     'courses.create',
     'welcomes.write',
     'cards.write',
@@ -74,8 +73,8 @@ const MATRIX: Record<Exclude<Role, 'client'>, Permission[]> = {
     'cards.manage',
     'chat.answer',
   ],
-  // Koordynatorka: wyzwania, grupy, zaproszenia, edycje sezonowe, playlista. Bez finansów, telefonów i kampanii push.
-  coordinator: ['schedule.view', 'community.moderate', 'challenges.edit', 'themes.edit', 'themes.view', 'playlists.moderate'],
+  // Koordynatorka: wyzwania, grupy, zaproszenia, playlista. Bez finansów, telefonów i kampanii push.
+  coordinator: ['schedule.view', 'community.moderate', 'challenges.edit', 'playlists.moderate'],
   owner: [
     'schedule.view',
     'schedule.edit',
@@ -87,9 +86,8 @@ const MATRIX: Record<Exclude<Role, 'client'>, Permission[]> = {
     'blocks.edit',
     'finance.view',
     'finance.export',
+    'finance.refund',
     'campaigns.edit',
-    'themes.edit',
-    'themes.view',
     'courses.approve',
     'roles.manage',
     'clients.view',

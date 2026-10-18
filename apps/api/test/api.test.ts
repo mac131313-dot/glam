@@ -66,10 +66,10 @@ test('nowa klientka: konto + dołączenie do studia kodem', async () => {
   assert.deepEqual(me.json().studios.map((s: { id: string }) => s.id), [R]);
 });
 
-test('Magda: dwa studia, osobne karnety', async () => {
+test('Magda: trzy studia, osobne karnety', async () => {
   const token = await login(DEMO.magda);
   const me = (await call(token, null, 'GET', '/api/me')).json();
-  assert.deepEqual(me.studios.map((s: { id: string }) => s.id).sort(), [K, R]);
+  assert.deepEqual(me.studios.map((s: { id: string }) => s.id).sort(), [K, R, SSG_STUDIO].sort());
   const pr = (await call(token, R, 'GET', '/api/my/passes')).json();
   const pk = (await call(token, K, 'GET', '/api/my/passes')).json();
   assert.equal(pr[0].productName, 'Pilates Reformer 9');
@@ -215,19 +215,6 @@ test('powitanie od trenerki: lista „bez powitania”, zapis, popup u klientki'
   const aniaToken = await login(DEMO.ania);
   const home = (await call(aniaToken, R, 'GET', '/api/home')).json();
   assert.equal(home.welcome.trainer_name, 'Marzena');
-});
-
-test('motywy: jeden aktywny naraz, opt-out „Zawsze standard”', async () => {
-  const owner = await login(DEMO.owner);
-  await call(owner, R, 'POST', '/api/owner/themes/th_hall/activate');
-  const active = db.prepare('SELECT id FROM themes WHERE studio_id = ? AND is_active = 1').all(R) as { id: string }[];
-  assert.deepEqual(active.map((t) => t.id), ['th_hall']);
-  const magda = await login(DEMO.magda);
-  assert.equal((await call(magda, R, 'GET', '/api/studio')).json().theme.id, 'th_hall');
-  await call(magda, null, 'PATCH', '/api/me', { themeOptOut: true });
-  assert.equal((await call(magda, R, 'GET', '/api/studio')).json().theme, null);
-  await call(magda, null, 'PATCH', '/api/me', { themeOptOut: false });
-  await call(owner, R, 'POST', '/api/owner/themes/th_oct/activate');
 });
 
 test('blokada sali: odwołanie sesji, zwrot wejść, powiadomienie', async () => {
@@ -825,4 +812,18 @@ test('grupy za zgodą: prośba czeka w panelu, akceptacja dodaje do grupy, a kli
   assert.equal(after.requested, 0);
   assert.equal((await call(julia, SSG_STUDIO, 'GET', '/api/groups/ss_g_split/chat')).statusCode, 200);
   assert.equal((await call(owner, SSG_STUDIO, 'POST', `/api/staff/group-requests/ss_g_split/${juliaId}`, { action: 'accept' })).statusCode, 404, 'drugi raz – już rozpatrzona');
+});
+
+test('płatność bez opisu pokazuje nazwę kupionego karnetu (pulpit i historia klientki)', async () => {
+  const magdaId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(DEMO.magda) as { id: string }).id;
+  const pass = db.prepare('SELECT id, product_name FROM passes WHERE studio_id = ? AND user_id = ? LIMIT 1').get(R, magdaId) as { id: string; product_name: string };
+  db.prepare("INSERT INTO payments (id, studio_id, user_id, kind, reference_id, amount_grosze, method, status, created_at) VALUES ('pay_nodesc', ?, ?, 'pass', ?, 100, 'blik', 'paid', ?)").run(R, magdaId, pass.id, new Date().toISOString());
+
+  const owner = await login(DEMO.owner);
+  const dash = (await call(owner, R, 'GET', '/api/owner/dashboard')).json();
+  assert.equal(dash.payments[0].description, pass.product_name);
+
+  const magda = await login(DEMO.magda);
+  const mine = (await call(magda, R, 'GET', '/api/my/payments')).json() as { id: string; description: string }[];
+  assert.equal(mine.find((p) => p.id === 'pay_nodesc')?.description, pass.product_name);
 });

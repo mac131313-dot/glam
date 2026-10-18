@@ -554,7 +554,7 @@ function VisibleRow({ visible, onChange }: { visible: boolean; onChange: (v: boo
 
 const SYSTEM_NOTES: Partial<Record<SiteSection['type'], string>> = {
   schedule: 'Zajęcia biorą się z grafiku studia (Grafik i sale).',
-  classes: 'Lista zajęć to oferta studia (Grafik i sale → typy zajęć). Nowe zajęcia same pojawiają się na stronie.',
+  classes: 'Lista zajęć to oferta studia (Grafik → Typy zajęć). Nowe zajęcia same pojawiają się na stronie.',
   trainers: 'Trenerki, ich opisy i zdjęcia – z kont zespołu.',
   about: 'Godziny recepcji, kontakt i pytania – z Ustawień studia.',
   shop: 'Produkty, ceny i zdjęcia – z panelu: Sklep → Produkty i stany. Sekcja pokazuje się, gdy sklep jest włączony.',

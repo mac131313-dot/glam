@@ -1,13 +1,14 @@
-// Sesja oddechu / medytacji prowadzona przez aplikację: tempo wyznacza piwonia, która rozkwita na wdechu
-// i mięknie na wydechu. Bez licznika i paska postępu – długość klientka wybrała na początku, w trakcie liczy się
-// tylko oddech. Haptyka na początku każdej fazy i spokojny szum – oba do włączenia i wyłączenia w trakcie.
+// Sesja oddechu / medytacji prowadzona przez aplikację. Tempo wyznacza obraz zależny od rytmu: przy wyciszeniu
+// piwonia, która rozkwita na wdechu i mięknie na wydechu, przy skupieniu (rytm pudełkowy) kwadrat oddechu z kropką.
+// Bez cyfr, licznika i paska postępu – długość klientka wybrała na początku, w trakcie liczy się tylko oddech. Haptyka na początku każdej fazy i spokojny szum – oba do włączenia i wyłączenia w trakcie.
 // Na końcu podziękowanie, rytuał tygodnia i myśl na dziś – zaproszenie, żeby wrócić jutro.
 import { useEffect, useRef, useState } from 'react';
-import { breathAt, patternById, promptAt, sessionById, type BreathRitual } from '@glam/core';
+import { breathAt, patternById, promptAt, sessionById, visualFor, type BreathRitual } from '@glam/core';
 import { Icon } from '../icons.tsx';
 import { api } from '../api.ts';
 import { useLayer } from '../back.ts';
 import { BreathBloom, MiniBloom } from './BreathBloom.tsx';
+import { BreathSquare } from './BreathSquare.tsx';
 import { useClient } from './ClientApp.tsx';
 import { CalmNoise, hapticPhase, hapticsSupported, loadSenses, saveSenses, useWakeLock, type SenseSettings } from './senses.ts';
 
@@ -15,7 +16,7 @@ export type BreathRequest = { sessionId?: string; patternId?: string; minutes?: 
 
 type Ritual = BreathRitual & { affirmation: string };
 
-const PHASE_WORD = { in: 'wdech', hold: 'zatrzymaj', out: 'wydech' } as const;
+const PHASE_WORD = { in: 'wdech', hold: 'przytrzymaj', out: 'wydech' } as const;
 const WEEKDAYS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
 
 export function BreathPlayer({ request, onClose }: { request: BreathRequest; onClose: () => void }) {
@@ -23,6 +24,7 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   const pattern = patternById(session?.pattern ?? request.patternId ?? 'calm');
   const totalSec = (session?.minutes ?? request.minutes ?? 3) * 60;
   const title = session?.title ?? pattern.label;
+  const visual = visualFor(pattern);
 
   const [senses, setSenses] = useState<SenseSettings>(loadSenses);
   const [paused, setPaused] = useState(false);
@@ -31,8 +33,9 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   const [view, setView] = useState({ index: 0, elapsed: 0, left: 0 });
   const [round, setRound] = useState(0);
 
-  // Poziom kwiatu 0..1 i postęp fazy – zapisywane w pętli, czytane co klatkę przez kwiat i koła oddechu.
+  // Poziom kwiatu 0..1, bieżąca faza i jej postęp – zapisywane w pętli, czytane co klatkę przez kwiat albo kwadrat.
   const level = useRef(0);
+  const phaseIndex = useRef(0);
   const progress = useRef(0);
   const noise = useRef(new CalmNoise());
   const sensesRef = useRef(senses);
@@ -82,6 +85,7 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
       }
       const st = breathAt(pattern, elapsedMs);
       level.current = st.level;
+      phaseIndex.current = st.index;
       progress.current = st.progress;
       noise.current.breathe(st.level);
       // Nowa faza (także ta sama faza w kolejnym cyklu) → jeden sygnał haptyczny.
@@ -127,6 +131,8 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
 
   const again = () => {
     level.current = 0;
+    phaseIndex.current = 0;
+    progress.current = 0;
     setRitual(null);
     setView({ index: 0, elapsed: 0, left: 0 });
     setRound((r) => r + 1);
@@ -138,16 +144,16 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   const phase = pattern.phases[view.index];
   const prompt = session ? promptAt(session, view.elapsed) : undefined;
 
+  const word = (
+    <div key={paused ? 'p' : view.index} className="breath-word" aria-live="polite">
+      {paused ? 'pauza' : PHASE_WORD[phase.kind]}
+    </div>
+  );
+
   return (
-    <div className="player player-photo" role="dialog" aria-modal="true" aria-label={title}>
-      {/* Tryb oddechu jest minimalny: piwonia w różowych kołach oddechu, pod nią słowo fazy i trzy szklane ikony. */}
-      <BreathBloom
-        variant="full"
-        level={() => level.current}
-        hold={!paused && phase.kind === 'hold'}
-        className={paused ? 'is-paused' : ''}
-        behind={<BreathRings level={() => level.current} progress={() => progress.current} seconds={phase.seconds} left={view.left || phase.seconds} paused={paused} />}
-      />
+    <div className={`player ${visual === 'square' ? 'player-focus' : 'player-photo'}`} role="dialog" aria-modal="true" aria-label={title}>
+      {/* Wyciszenie: sama piwonia, bez kół – kwiat jest rytmem. Łodyga gaśnie nad napisami (styles.css). */}
+      {visual === 'bloom' && <BreathBloom variant="full" level={() => level.current} hold={!paused && phase.kind === 'hold'} className={paused ? 'is-paused' : ''} />}
       <header className="row" style={{ justifyContent: 'flex-end' }}>
         <button className="icon-btn glass-icon" onClick={onClose} aria-label="Zakończ sesję">
           <Icon name="close" />
@@ -155,22 +161,21 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
       </header>
 
       <div className="player-stage breath-stage">
-        {/* Łodyga przechodzi za napisem; cienki obrys liter (styles.css) trzyma litery i liczby czytelne. */}
-        <div className="breath-label">
-          <div key={paused ? 'p' : view.index} className="breath-word serif" aria-live="polite">
-            {paused ? 'pauza' : PHASE_WORD[phase.kind]}
-          </div>
-          {!paused && <div className="breath-count">{view.left || phase.seconds}</div>}
-        </div>
-        {prompt?.text && (
-          <p key={prompt.at} className="breath-prompt serif">
-            {prompt.text}
-          </p>
+        {visual === 'square' ? (
+          <BreathSquare pattern={pattern} index={() => phaseIndex.current} progress={() => progress.current}>
+            {word}
+          </BreathSquare>
+        ) : (
+          <div className="breath-label">{word}</div>
         )}
+        {/* Jedna podpowiedź naraz, zawsze w tym samym miejscu – miejsce jest zarezerwowane, więc nic nie skacze. */}
+        <p key={prompt?.at ?? 'none'} className="breath-prompt">
+          {prompt?.text ?? ''}
+        </p>
       </div>
 
       <footer className="player-controls glass">
-        <div className="row" style={{ gap: 14 }}>
+        <div className="row gap-4">
           <button
             className="icon-btn glass-icon"
             aria-pressed={senses.haptics}
@@ -192,61 +197,6 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   );
 }
 
-// Geometria kół (viewBox 200×200): koło oddechu rośnie od wewnętrznego okręgu do R_MAX, a kropki
-// na zewnątrz odliczają sekundy fazy – po jednej na sekundę, z cienkim łukiem postępu. Okręgi się nie przecinają.
-const R_MIN = 46;
-const R_MAX = 80;
-const R_TICKS = 96;
-
-/** Różowe koła oddechu za piwonią – wielkość i łuk liczone co klatkę z tego samego zegara co kwiat. */
-function BreathRings({ level, progress, seconds, left, paused }: { level: () => number; progress: () => number; seconds: number; left: number; paused: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const read = useRef({ level, progress });
-  read.current = { level, progress };
-
-  useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      raf = requestAnimationFrame(tick);
-      const el = ref.current;
-      if (!el) return;
-      const lv = read.current.level();
-      el.style.setProperty('--ring', ((R_MIN + (R_MAX - R_MIN) * lv) / R_MAX).toFixed(4));
-      el.style.setProperty('--rlv', lv.toFixed(4));
-      el.style.setProperty('--arc', (1 - read.current.progress()).toFixed(4));
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  const passed = seconds - left; // pełne sekundy, które minęły w tej fazie
-  return (
-    <div ref={ref} className={`breath-rings ${paused ? 'is-paused' : ''}`} aria-hidden>
-      <svg viewBox="0 0 200 200">
-        <defs>
-          <linearGradient id="ringStroke" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#f07fa6" />
-            <stop offset="1" stopColor="#f9b28c" />
-          </linearGradient>
-          <radialGradient id="ringFill" cx="0.5" cy="0.5" r="0.5">
-            <stop offset="0.7" stopColor="#f7a8c2" stopOpacity="0" />
-            <stop offset="1" stopColor="#f7a8c2" stopOpacity="0.12" />
-          </radialGradient>
-        </defs>
-        <circle className="ring-guide g-inner" cx="100" cy="100" r={R_MIN} />
-        <circle className="ring-arc" cx="100" cy="100" r={R_TICKS} pathLength={1} />
-        {Array.from({ length: seconds }, (_, i) => {
-          const a = (i / seconds) * 2 * Math.PI - Math.PI / 2;
-          return <circle key={`${seconds}-${i}`} className={`ring-tick ${i < passed ? 'on' : ''}`} cx={100 + R_TICKS * Math.cos(a)} cy={100 + R_TICKS * Math.sin(a)} r="2" />;
-        })}
-        <g className="ring-breath">
-          <circle cx="100" cy="100" r={R_MAX} fill="url(#ringFill)" stroke="url(#ringStroke)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-        </g>
-      </svg>
-    </div>
-  );
-}
-
 function Thanks({ ritual, onAgain, onClose }: { ritual: Ritual | null; onAgain: () => void; onClose: () => void }) {
   const { me, studio } = useClient();
   const name = me.user.name;
@@ -254,7 +204,7 @@ function Thanks({ ritual, onAgain, onClose }: { ritual: Ritual | null; onAgain: 
     <div className="player player-soft" role="dialog" aria-modal="true" aria-label="Sesja zakończona">
       <div className="player-stage thanks">
         <BreathBloom style={{ width: 132, height: 172 }} />
-        <div className="stack center" style={{ gap: 6 }}>
+        <div className="stack center gap-2">
           <div className="eyebrow">Twój rytuał</div>
           <div className="serif" style={{ fontSize: '2.4rem', lineHeight: 1.05 }}>
             Dziękuję{name ? `, ${name}` : ''}
@@ -280,7 +230,7 @@ function Thanks({ ritual, onAgain, onClose }: { ritual: Ritual | null; onAgain: 
           </>
         )}
       </div>
-      <div className="stack" style={{ gap: 10 }}>
+      <div className="stack gap-2">
         <button className="btn block" onClick={onClose}>
           Do jutra
         </button>

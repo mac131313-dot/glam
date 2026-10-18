@@ -53,7 +53,7 @@ export type ProductRules = {
 /** Karnet „od aktywacji” trzeba aktywować (pierwsze wejście) w tym czasie od zakupu. */
 export const ACTIVATION_DEADLINE_DAYS = 180;
 
-export type PassStatus = 'active' | 'frozen' | 'expired' | 'used';
+export type PassStatus = 'active' | 'frozen' | 'expired' | 'used' | 'cancelled';
 
 export type Pass = {
   id: string;
@@ -231,7 +231,8 @@ export function listPl(items: string[]): string {
 
 function scopeLabel(scope: Scope, names: Record<string, string>, all: string): string {
   if (scope === 'all') return all;
-  return listPl(scope.map((id) => names[id] ?? id));
+  // Dwa typy o tej samej nazwie (np. Pilates Klasyczny na dwóch poziomach) klientka widzi jako jedną pozycję.
+  return listPl([...new Set(scope.map((id) => names[id] ?? id))]);
 }
 
 /** Podgląd „Jak to widzi klientka” (C4) – reguły produktu w języku klientki. */
@@ -282,4 +283,18 @@ export function describePass(pass: Pass, tz = DEFAULT_TZ, classTypeNames: Record
   const left = Object.values(pass.balances).reduce((a, b) => a + b, 0);
   const verb = plural(left, 'pozostało', 'pozostały', 'pozostało');
   return `${pass.productName} – ${verb} ${left}, ważny do ${until}`;
+}
+
+/** Karta karnetu: duża cyfra + jednostka + data. Null, gdy stan nie mieści się w jednej liczbie (zawieszony, wygasł, kilka pul). */
+export type PassMeter = { value: string; unit: string; until: string };
+
+export function passMeter(pass: Pass, tz = DEFAULT_TZ): PassMeter | null {
+  if (pass.status !== 'active') return null;
+  const until = `ważny do ${shortDate(pass.validUntil, tz)}`;
+  if (pass.rules.unlimited) return { value: '∞', unit: 'bez limitu wejść', until };
+  const pools = pass.rules.pools ?? [];
+  if (pools.length !== 1) return null;
+  const left = pass.balances[pools[0].id] ?? 0;
+  const total = pools[0].entries;
+  return { value: String(left), unit: `z ${total} ${total === 1 ? 'wejścia' : 'wejść'}`, until };
 }

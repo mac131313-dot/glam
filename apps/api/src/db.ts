@@ -74,7 +74,6 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT,
   birthday TEXT,
   nameday TEXT,
-  theme_opt_out INTEGER NOT NULL DEFAULT 0,
   need_quiet INTEGER NOT NULL DEFAULT 0,
   rest_day TEXT,
   push_disabled_json TEXT NOT NULL DEFAULT '[]',
@@ -266,7 +265,6 @@ CREATE TABLE IF NOT EXISTS class_sessions (
   status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'cancelled')),
   kind TEXT NOT NULL DEFAULT 'regular' CHECK (kind IN ('regular', 'themed', 'special', 'event', 'live')),
   title TEXT,
-  theme_id TEXT,
   playlist_id TEXT,
   substitute_for TEXT,
   public INTEGER NOT NULL DEFAULT 1,
@@ -305,7 +303,7 @@ CREATE TABLE IF NOT EXISTS passes (
   balances_json TEXT NOT NULL,
   valid_from TEXT NOT NULL,
   valid_until TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('active', 'frozen', 'expired', 'used', 'pending')),
+  status TEXT NOT NULL CHECK (status IN ('active', 'frozen', 'expired', 'used', 'pending', 'cancelled')),
   source TEXT NOT NULL CHECK (source IN ('purchase', 'desk', 'guest_pass', 'referral', 'reward', 'renewal', 'import', 'test')),
   auto_renew INTEGER NOT NULL DEFAULT 0,
   frozen_until TEXT,
@@ -443,6 +441,49 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 CREATE INDEX IF NOT EXISTS idx_payments_studio_time ON payments (studio_id, created_at);
 
+-- Zwroty z panelu (services/refunds.ts) i zsynchronizowane z bramki (webhook charge.refunded).
+-- 'pending' zapisujemy przed wywołaniem bramki, żeby webhook tego samego zwrotu nie policzył go drugi raz.
+CREATE TABLE IF NOT EXISTS refunds (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  payment_id TEXT NOT NULL REFERENCES payments(id),
+  amount_grosze INTEGER NOT NULL CHECK (amount_grosze > 0),
+  reason TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'succeeded', 'failed')),
+  channel TEXT NOT NULL CHECK (channel IN ('gateway', 'manual', 'external')),
+  provider_ref TEXT,
+  actor_id TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_refunds_payment ON refunds (studio_id, payment_id);
+
+-- Sesja Stripe Checkout (services/stripe.ts): zakup czeka tu na webhook, zanim towar trafi na konto.
+-- payload_json to wycena z chwili zakupu – po zapłacie nie liczymy ceny od nowa.
+-- user_id pusty tylko dla kursu kupionego na www bez konta (course_web) – konto powstaje po zapłacie.
+CREATE TABLE IF NOT EXISTS checkout_sessions (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  user_id TEXT REFERENCES users(id),
+  kind TEXT NOT NULL CHECK (kind IN ('pass', 'shop', 'course', 'course_web', 'event', 'guest_pass')),
+  payload_json TEXT NOT NULL,
+  amount_grosze INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('open', 'paid', 'failed', 'expired')),
+  provider_ref TEXT,
+  result_ref TEXT,
+  result_message TEXT,
+  created_at TEXT NOT NULL
+);
+
+-- Klientka Stripe w danym studiu i karta zapisana przy zakupie subskrypcji (odnowienia off_session, C9).
+CREATE TABLE IF NOT EXISTS stripe_customers (
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  customer_id TEXT NOT NULL,
+  payment_method_id TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (studio_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS payment_links (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
@@ -521,25 +562,6 @@ CREATE TABLE IF NOT EXISTS welcome_messages (
   booked_after INTEGER NOT NULL DEFAULT 0,
   UNIQUE (studio_id, trainer_id, client_id, kind)
 );
-
-CREATE TABLE IF NOT EXISTS themes (
-  id TEXT PRIMARY KEY,
-  studio_id TEXT NOT NULL REFERENCES studios(id),
-  name TEXT NOT NULL,
-  tagline TEXT,
-  emoji TEXT,
-  palette_json TEXT NOT NULL,
-  effect TEXT,
-  starts_on TEXT,
-  ends_on TEXT,
-  is_active INTEGER NOT NULL DEFAULT 0,
-  auto INTEGER NOT NULL DEFAULT 0,
-  segment TEXT,
-  pack_json TEXT,
-  sound TEXT,
-  icon TEXT
-);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_one_active_theme ON themes (studio_id) WHERE is_active = 1;
 
 CREATE TABLE IF NOT EXISTS notifications (
   id TEXT PRIMARY KEY,
@@ -815,7 +837,6 @@ CREATE TABLE IF NOT EXISTS challenges (
   starts_on TEXT NOT NULL,
   ends_on TEXT NOT NULL,
   badge_code TEXT,
-  theme_id TEXT,
   -- wyzwanie od trenerki (NULL = od studia) i dla uczestniczek konkretnych zajęć (NULL = dla wszystkich)
   author_id TEXT REFERENCES users(id),
   class_type_id TEXT REFERENCES class_types(id),
@@ -1171,7 +1192,6 @@ CREATE TABLE IF NOT EXISTS playlists (
   name TEXT NOT NULL,
   purpose TEXT NOT NULL CHECK (purpose IN ('class', 'meditation', 'stretch', 'sleep', 'theme', 'shared')),
   class_type_id TEXT,
-  theme_id TEXT,
   created_by TEXT,
   created_at TEXT NOT NULL
 );

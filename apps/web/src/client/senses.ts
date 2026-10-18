@@ -38,7 +38,7 @@ export function hapticPhase(kind: PhaseKind) {
 
 /**
  * Spokojny szum generowany na żywo (bez plików audio): biały szum przepuszczony przez łagodny filtr,
- * więc brzmi miękko, jak odległy wiatr. Szum „oddycha” razem z kołem: narasta na wdechu, cichnie na wydechu.
+ * więc brzmi miękko, jak odległy wiatr. Szum „oddycha” razem z sesją: narasta na wdechu, cichnie na wydechu.
  */
 export class CalmNoise {
   private ctx: AudioContext | null = null;

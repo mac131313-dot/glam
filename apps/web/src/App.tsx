@@ -18,7 +18,7 @@ import { StaffApp } from './staff/StaffApp.tsx';
 import { SiteEditor } from './staff/site-editor/SiteEditor.tsx';
 import { Spinner } from './ui.tsx';
 
-export type MeStudio = { id: string; name: string; city: string; logo: string; logoUrl: string | null; logoWide: boolean; accent: string; tagline: string; roles: string[]; look: Look };
+export type MeStudio = { id: string; name: string; city: string; logo: string; logoUrl: string | null; logoWide: boolean; accent: string; tagline: string; roles: string[]; look: Look; panelTint?: string };
 export type UserPrefs = {
   occasionsOff?: string[];
   reminderTime?: string | null;
@@ -27,8 +27,6 @@ export type UserPrefs = {
   classReminders?: number[];
   visibility?: 'public' | 'studio' | 'private';
   language?: 'pl';
-  sounds?: boolean;
-  appIcon?: string;
   a11y?: { fontScale?: number; contrast?: boolean; reduceMotion?: boolean };
   quiz?: { answers: Record<string, unknown>; takenAt: string };
   goal?: string;
@@ -44,7 +42,6 @@ export type Me = {
     email: string | null;
     birthday: string | null;
     nameday: string | null;
-    themeOptOut: boolean;
     needQuiet: boolean;
     restToday: boolean;
     quietFrom: string;
@@ -163,7 +160,7 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
   const studio = me?.studios.find((s) => s.id === studioId);
 
   useEffect(() => {
-    if (surface === 'panel') applySystemLook();
+    if (surface === 'panel') applySystemLook(studio?.panelTint);
     else if (!studio) applyLook(null);
   }, [surface, studio]);
 

@@ -10,8 +10,10 @@ import { unseal } from '../crypto.ts';
 import { id, nowIso, tx } from '../db.ts';
 import { HttpError, badRequest, forbidden, notFound } from '../errors.ts';
 import { StudioScope } from '../scope.ts';
-import { purchaseProduct } from '../services/payments.ts';
+import { checkoutStatus, completeCheckout, purchaseProduct, type CheckoutRow } from '../services/payments.ts';
 import { fillSchedule } from '../services/schedule.ts';
+import { syncGatewayRefund } from '../services/refunds.ts';
+import { stripeGateway, verifyStripeSignature } from '../services/stripe.ts';
 import { applyPreset } from '../services/presets.ts';
 import { loadStudio } from '../services/studio.ts';
 import { guestCode } from './client.ts';
@@ -277,9 +279,8 @@ export function platformRoutes(app: FastifyInstance, deps: Deps) {
     if (!l || Date.parse(l.expires_at) < Date.now()) throw new HttpError(410, 'expired', 'Ten link wygasł. Poproś recepcję o nowy.');
     const studio = loadStudio(db, l.studio_id);
     const scope = new StudioScope(db, studio.id);
-    const res = await purchaseProduct(deps, scope, studio, { userId: l.user_id, productId: l.product_id, method: req.body?.method, channel: 'desk', actorId: l.created_by });
-    db.prepare("UPDATE payment_links SET status = 'paid' WHERE id = ?").run(l.id);
-    return res;
+    // Link oznacza się jako opłacony razem z wydaniem karnetu – od razu albo po webhooku Stripe.
+    return purchaseProduct(deps, scope, studio, { userId: l.user_id, productId: l.product_id, method: req.body?.method, channel: 'desk', actorId: l.created_by, linkId: l.id });
   });
 
   // Webhook bramki studia (decyzja 23) – podpis sprawdzany kluczem CRC studia (schemat Przelewy24: SHA-384).
@@ -292,6 +293,41 @@ export function platformRoutes(app: FastifyInstance, deps: Deps) {
     if (expected !== b.sign) throw forbidden();
     db.prepare("UPDATE payments SET status = 'paid', provider_ref = ? WHERE studio_id = ? AND id = ?").run(String(b.orderId), req.params.studioId, b.sessionId);
     return { ok: true };
+  });
+
+  // Webhook Stripe (services/stripe.ts). Podpis liczony z surowego body, więc ta trasa ma własny parser JSON.
+  app.register(async (sub) => {
+    sub.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => done(null, body));
+    sub.post<{ Params: { studioId: string }; Body: string }>('/api/payments/stripe/:studioId', async (req) => {
+      const gw = stripeGateway(db, req.params.studioId);
+      if (!gw?.webhookSecret) throw notFound();
+      if (!verifyStripeSignature(req.body, req.headers['stripe-signature'] as string | undefined, gw.webhookSecret)) throw forbidden();
+      const event = JSON.parse(req.body) as { type: string; data: { object: { id: string; payment_status?: string; payment_intent?: string | null; amount_refunded?: number } } };
+      const s = event.data.object;
+      if (event.type === 'charge.refunded') {
+        if (s.payment_intent) syncGatewayRefund(new StudioScope(db, req.params.studioId), loadStudio(db, req.params.studioId), s.payment_intent, s.amount_refunded ?? 0);
+        return { received: true };
+      }
+      const outcome =
+        event.type === 'checkout.session.async_payment_succeeded' || (event.type === 'checkout.session.completed' && s.payment_status === 'paid')
+          ? 'paid'
+          : event.type === 'checkout.session.async_payment_failed'
+            ? 'failed'
+            : event.type === 'checkout.session.expired'
+              ? 'expired'
+              : null;
+      // completed z payment_status 'unpaid' = BLIK/P24 jeszcze w drodze – czekamy na async_payment_*.
+      if (outcome) await completeCheckout(deps, new StudioScope(db, req.params.studioId), loadStudio(db, req.params.studioId), s.id, outcome, s.payment_intent ?? null);
+      return { received: true };
+    });
+  });
+
+  // Powrót z Checkout: aplikacja pyta, czy webhook już dotarł (zwykle w ciągu sekund).
+  app.get<{ Params: { id: string } }>('/api/checkout/:id', { preHandler: requireStudio(db) }, async (req) => {
+    const { scope, user } = ctx(req);
+    const row = scope.get<CheckoutRow>('SELECT kind, status, payload_json, result_message FROM checkout_sessions WHERE studio_id = $studio AND id = $id AND user_id = $u', { id: req.params.id, u: user.id });
+    if (!row) throw notFound('Nie znaleziono płatności.');
+    return checkoutStatus(row);
   });
 
   // Uzupełnienie grafiku ręcznie z platformy (np. po migracji studia).

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { can, SEGMENT_LABEL, type Role } from '@glam/core';
 import { api, fmtDay, fmtTime, useApi } from '../api.ts';
 import { AuthImg, Avatar, Empty, Field, Page, PAYMENT_LABELS, Select, Spinner, Tabs, useAction } from '../ui.tsx';
+import { RefundSheet, SwapSheet } from './RefundSheet.tsx';
 
 type Row = { id: string; name: string | null; phone?: string; goal: string | null; lastVisit: string | null; visits: number; hasActivePass: boolean; segments: string[]; groups: string[] };
 
@@ -69,7 +70,7 @@ export default function Clients({ roles }: { roles: Role[] }) {
                 <td className="muted">{c.lastVisit ? fmtDay(c.lastVisit) : '—'}</td>
                 <td>{c.visits}</td>
                 <td>
-                  <div className="pill-row" style={{ gap: 4 }}>
+                  <div className="pill-row gap-1">
                     {c.segments.map((s) => (
                       <span key={s} className={`badge ${s === 'churn_risk' ? 'warn' : s === 'ambassador' ? 'accent' : ''}`}>
                         {SEGMENT_LABEL[s as keyof typeof SEGMENT_LABEL] ?? s}
@@ -153,7 +154,7 @@ type Card = {
   goal: string | null;
   trainerId: string | null;
   segments: string[];
-  passes?: { id: string; productName: string; status: string; summary: string; canUndo: boolean }[];
+  passes?: { id: string; productName: string; status: string; summary: string; canUndo: boolean; paymentId?: string | null }[];
   bookings: { id: string; status: string; rating: number | null; rating_comment: string | null; starts_at: string; class_name: string; trainer_name: string }[];
   notes: { id: string; body: string; created_at: string; trainer_name: string; trainer_id: string }[];
   health: { goals?: string; limitations?: string; injuries?: string; pregnancy?: boolean; postpartum?: boolean } | null;
@@ -168,6 +169,9 @@ type Card = {
 const ACTION: Record<string, string> = {
   'pass.sold_at_desk': 'Karnet sprzedany w recepcji',
   'pass.sale_undone': 'Cofnięta sprzedaż karnetu',
+  'pass.swapped': 'Podmieniony karnet',
+  'payment.refunded': 'Zwrot pieniędzy',
+  'payment.refunded_externally': 'Zwrot w panelu bramki',
   'booking.added_by_staff': 'Dodana do zajęć przez recepcję',
   'booking.removed_by_staff': 'Wypisana z zajęć przez recepcję',
   'client.trainer_assigned': 'Przypisana trenerka',
@@ -187,6 +191,8 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
   const [note, setNote] = useState('');
   const [plan, setPlan] = useState<{ title: string; items: { day: string; text: string }[] } | null>(null);
   const [sell, setSell] = useState({ productId: '', method: 'terminal' });
+  const [refund, setRefund] = useState<string | null>(null);
+  const [swap, setSwap] = useState<{ id: string; productName: string } | null>(null);
   const { run, busy } = useAction();
   if (!data) return <Spinner />;
   const currentPlan = plan ?? (data.plan ? { title: data.plan.title, items: JSON.parse(data.plan.items_json) as { day: string; text: string }[] } : { title: '', items: [{ day: '', text: '' }] });
@@ -216,9 +222,11 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
       {tab === 'overview' && (
         <>
           {data.passes && (
-            <section className="stack" style={{ gap: 6 }}>
+            <section className="stack gap-2">
               <div className="eyebrow">Karnety</div>
               {data.passes.length === 0 && <span className="small muted">Brak karnetów.</span>}
+              {refund && <RefundSheet paymentId={refund} onClose={() => setRefund(null)} onDone={reload} />}
+              {swap && <SwapSheet userId={id} pass={swap} onClose={() => setSwap(null)} onDone={reload} />}
               {data.passes.map((p) => (
                 <div key={p.id} className="small">
                   <b>{p.productName}</b> · {p.summary} <span className="badge">{p.status}</span>
@@ -234,6 +242,22 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
                         }
                       >
                         Cofnij sprzedaż
+                      </button>
+                    </>
+                  )}
+                  {!p.canUndo && p.paymentId && (
+                    <>
+                      {' '}
+                      <button className="link tiny" onClick={() => setRefund(p.paymentId!)}>
+                        Zwróć
+                      </button>
+                    </>
+                  )}
+                  {p.paymentId !== undefined && ['active', 'frozen'].includes(p.status) && (
+                    <>
+                      {' '}
+                      <button className="link tiny" onClick={() => setSwap({ id: p.id, productName: p.productName })}>
+                        Podmień
                       </button>
                     </>
                   )}
@@ -272,7 +296,7 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
               />
             </Field>
           )}
-          <section className="stack" style={{ gap: 4 }}>
+          <section className="stack gap-1">
             <div className="eyebrow">Ostatnie zajęcia</div>
             {data.bookings.map((b) => (
               <div key={b.id} className="row between small">
@@ -287,7 +311,7 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
             ))}
           </section>
           {(data.nps.length > 0 || data.surveys.length > 0) && (
-            <section className="stack" style={{ gap: 4 }}>
+            <section className="stack gap-1">
               <div className="eyebrow">Opinie</div>
               {data.nps.map((n, i) => (
                 <div key={i} className="small">
@@ -349,7 +373,7 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
       {tab === 'health' && (
         <>
           {data.health ? (
-            <section className="card soft stack" style={{ gap: 4 }}>
+            <section className="card soft stack gap-1">
               <div className="eyebrow">Ankieta startowa (za zgodą klientki)</div>
               {data.health.goals && <div className="small">Cele: {data.health.goals}</div>}
               {data.health.limitations && <div className="small">Ograniczenia: {data.health.limitations}</div>}
@@ -361,7 +385,7 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
             <p className="small muted">Klientka nie udostępniła ankiety zdrowia.</p>
           )}
           {data.measurements.length > 0 && (
-            <section className="stack" style={{ gap: 4 }}>
+            <section className="stack gap-1">
               <div className="eyebrow">Pomiary udostępnione przez klientkę</div>
               {data.measurements.map((m, i) => (
                 <div key={i} className="small">
@@ -381,7 +405,7 @@ function ClientCard({ id, roles }: { id: string; roles: Role[] }) {
         </>
       )}
       {tab === 'log' && (
-        <section className="stack" style={{ gap: 4 }}>
+        <section className="stack gap-1">
           {data.log.length === 0 && <span className="small muted">Brak zmian.</span>}
           {data.log.map((l, i) => (
             <div key={i} className="small row between">

@@ -74,7 +74,7 @@ apps/web        React + Vite, mobile-first PWA: klientka (5 zakładek) + panele 
 
 Estetyka: minimalizm i miękkość z moodboardów (Isola, Unbound). Neutralne tony, geometryczny sans, a jedynym ozdobnikiem jest szeryf w kursywie. Zaokrąglone płaszczyzny, przyciski-pigułki, pływający pasek nawigacji. W interfejsie nie ma emoji; zostają tylko w treściach pisanych przez ludzi (powitania, życzenia).
 
-Wygląd to **dane studia** (`packages/core/src/look.ts`): paleta, cztery role czcionek (akcent / nagłówki / tekst / etykiety i kody) i miękkość. Właścicielka zmienia go w panelu: **Wygląd**, z podglądem telefonu na żywo. Motyw sezonowy zmienia tylko kolory.
+Wygląd to **dane studia** (`packages/core/src/look.ts`): paleta, cztery role czcionek (akcent / nagłówki / tekst / etykiety i kody) i miękkość. Właścicielka zmienia go w panelu: **Wygląd**, z podglądem telefonu na żywo.
 
 **Czcionki w rejestrze:**
 - Dostępne od razu (Google Fonts, OFL): Plus Jakarta Sans, Ballet, DM Mono (zastępczo za Apercu Mono) oraz zastępniki z moodboardu.

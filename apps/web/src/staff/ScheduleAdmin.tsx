@@ -26,9 +26,6 @@ export function ScheduleAdmin() {
   const [date, setDate] = useState(localDate());
   const [zone, setZone] = useState('');
   const [reason, setReason] = useState('');
-  const [uploading, setUploading] = useState<string | null>(null);
-  /** 'new' – nowe zajęcia; obiekt – edycja „Dla kogo” */
-  const [editing, setEditing] = useState<ClassTypeRow | 'new' | null>(null);
   const toast = useToast();
 
   if (!data) return <Spinner />;
@@ -46,32 +43,11 @@ export function ScheduleAdmin() {
     }
   };
 
-  const uploadPhoto = async (classTypeId: string, file: File | undefined) => {
-    if (!file) return;
-    setUploading(classTypeId);
-    try {
-      const dataUrl = await preparePhoto(file);
-      await api(`/owner/class-types/${classTypeId}/photo`, { method: 'PUT', body: { dataUrl } });
-      toast('Zdjęcie zapisane – klientki widzą je w grafiku');
-      reload();
-    } catch (e) {
-      toast((e as Error).message, 'error');
-    } finally {
-      setUploading(null);
-    }
-  };
-
-  const removePhoto = async (classTypeId: string) => {
-    await api(`/owner/class-types/${classTypeId}/photo`, { method: 'DELETE' });
-    toast('Zdjęcie usunięte');
-    reload();
-  };
-
   return (
     <div className="stack-lg">
       <div>
         <h1 style={{ marginBottom: 0 }}>Grafik i sale</h1>
-        <p className="muted" style={{ margin: 0 }}>Ustaw tydzień raz – system sam rozpisuje zajęcia na 4 tygodnie do przodu.</p>
+        <p className="muted" style={{ margin: 0 }}>Ustaw tydzień raz – system sam rozpisuje zajęcia na 4 tygodnie do przodu. Zdjęcia i „Dla kogo” są w zakładce Typy zajęć.</p>
       </div>
 
       <WeekBoard config={data} onChange={reload} />
@@ -114,6 +90,51 @@ export function ScheduleAdmin() {
         </section>
       </div>
 
+    </div>
+  );
+}
+
+/** Typy zajęć: zdjęcie karty w grafiku klientek i „Dla kogo”. Osobna zakładka – ustawia się je raz, a grafik ogląda codziennie. */
+export function ClassTypesAdmin() {
+  const { data, reload } = useApi<Config>('/owner/config');
+  const [uploading, setUploading] = useState<string | null>(null);
+  /** 'new' – nowe zajęcia; obiekt – edycja „Dla kogo” */
+  const [editing, setEditing] = useState<ClassTypeRow | 'new' | null>(null);
+  const toast = useToast();
+
+  if (!data) return <Spinner />;
+  const zoneName = (id: string | null) => (id ? data.zones.find((z) => z.id === id)?.name : 'Cały obiekt');
+  /** Linia nad nazwą z prawdziwego grafiku: „3× w tygodniu · 55 min” zamiast przykładowej godziny. */
+  const rhythm = (classTypeId: string) => {
+    const slots = data.templates.filter((t) => t.class_type_id === classTypeId);
+    if (slots.length === 0) return 'poza grafikiem';
+    const minutes = [...new Set(slots.map((t) => t.duration_min))].sort((a, b) => a - b);
+    return `${slots.length}× w tygodniu · ${minutes.join('/')} min`;
+  };
+
+  const uploadPhoto = async (classTypeId: string, file: File | undefined) => {
+    if (!file) return;
+    setUploading(classTypeId);
+    try {
+      const dataUrl = await preparePhoto(file);
+      await api(`/owner/class-types/${classTypeId}/photo`, { method: 'PUT', body: { dataUrl } });
+      toast('Zdjęcie zapisane – klientki widzą je w grafiku');
+      reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const removePhoto = async (classTypeId: string) => {
+    await api(`/owner/class-types/${classTypeId}/photo`, { method: 'DELETE' });
+    toast('Zdjęcie usunięte');
+    reload();
+  };
+
+  return (
+    <div className="stack-lg">
       <section className="card stack">
         <div>
           <div className="row between">
@@ -126,9 +147,9 @@ export function ScheduleAdmin() {
         </div>
         <div className="photo-grid">
           {data.classTypes.map((c) => (
-            <div key={c.id} className="stack" style={{ gap: 8 }}>
-              <ClassCover photoUrl={c.photo_url} photoRatio={c.photo_ratio} eyebrow="18:00 · 55 min" title={c.name} meta={`${zoneName(c.zone_id)} · ${c.level}`} />
-              <div className="row" style={{ gap: 6 }}>
+            <div key={c.id} className="stack gap-2">
+              <ClassCover photoUrl={c.photo_url} photoRatio={c.photo_ratio} eyebrow={rhythm(c.id)} title={c.name} meta={`${zoneName(c.zone_id)} · ${c.level}`} />
+              <div className="row gap-2">
                 <label className="btn sm ghost" aria-disabled={uploading === c.id}>
                   {uploading === c.id ? 'Wgrywam…' : c.photo_url ? 'Zmień zdjęcie' : 'Wgraj zdjęcie'}
                   <input type="file" hidden accept="image/jpeg,image/png,image/webp" disabled={uploading === c.id} onChange={(e) => uploadPhoto(c.id, e.target.files?.[0])} />

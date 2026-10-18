@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { api, fmtDay, useApi } from '../api.ts';
 import { Empty, Select, Spinner, useAction } from '../ui.tsx';
 
-const PURPOSE: Record<string, string> = { class: 'Zajęcia', meditation: 'Medytacja', stretch: 'Rozciąganie', sleep: 'Sen', theme: 'Motyw', shared: 'Wspólna playlista klientek' };
+const PURPOSE: Record<string, string> = { class: 'Zajęcia', meditation: 'Medytacja', stretch: 'Rozciąganie', sleep: 'Sen', shared: 'Wspólna playlista klientek' };
 
 export default function MusicAdmin() {
   const data = useApi<{
@@ -34,7 +34,7 @@ export default function MusicAdmin() {
                 {t.name} · {fmtDay(t.created_at)}
               </span>
             </span>
-            <span className="row" style={{ gap: 6 }}>
+            <span className="row gap-2">
               <button className="btn sm" onClick={() => run(() => api(`/staff/playlists/tracks/${t.id}`, { method: 'POST', body: { approve: true } }).then(data.reload))}>
                 Dodaj
               </button>
@@ -46,7 +46,7 @@ export default function MusicAdmin() {
         ))}
       </section>
       {data.data.topWeek.length > 0 && (
-        <section className="card soft stack" style={{ gap: 4 }}>
+        <section className="card soft stack gap-1">
           <div className="eyebrow">Top tygodnia – na playlistę zajęć</div>
           {data.data.topWeek.map((t, i) => (
             <div key={t.id} className="small">

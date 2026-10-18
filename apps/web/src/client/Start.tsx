@@ -1,11 +1,12 @@
-// Ekran Start (3): powitanie, motyw sezonowy, najbliższe zajęcia, stan karnetu, cel tygodnia.
+// Ekran Start (3): powitanie, najbliższe zajęcia, stan karnetu, cel tygodnia.
 import { useEffect, useState } from 'react';
-import { rewardCounterCopy } from '@glam/core';
+import { goalCount, goalExtra, plural, rewardCounterCopy } from '@glam/core';
 import { api, fmtDay, fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
 import { Empty, ListRow, Progress, QrCode, Sheet, Spinner, useAction } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
+import { PassMeter, type Meter } from './PassMeter.tsx';
 import { InviteCard, type TrainerInvite } from './TrainerInvite.tsx';
 import { WelcomePopup } from './WelcomePopup.tsx';
 
@@ -26,9 +27,8 @@ type Upcoming = {
 type Home = {
   greeting: string;
   dayPart: 'morning' | 'afternoon' | 'evening';
-  theme: { name: string; tagline: string } | null;
   upcoming: Upcoming[];
-  passes: { id: string; summary: string; expiringSoon: boolean; unlimited: boolean }[];
+  passes: { id: string; productName: string; summary: string; meter: Meter | null; expiringSoon: boolean; unlimited: boolean }[];
   week: { goal: { trainings: number; mindful: number }; done: { trainings: number; mindful: number }; achieved: boolean; message: string; restDay: boolean };
   welcome: { id: string; body: string; trainer_name: string; kind?: string; video_id?: string | null } | null;
   unread: number;
@@ -100,7 +100,7 @@ export function Start() {
       </section>
 
       {(home.birthday || home.eventToday) && (
-        <button className="welcome-hero stack" style={{ border: 0, textAlign: 'left', cursor: home.eventToday ? 'pointer' : 'default', gap: 6 }} onClick={() => home.eventToday && open(`event/${home.eventToday.id}`)}>
+        <button className="welcome-hero stack gap-2" style={{ border: 0, textAlign: 'left', cursor: home.eventToday ? 'pointer' : 'default' }} onClick={() => home.eventToday && open(`event/${home.eventToday.id}`)}>
           <div className="eyebrow">{home.birthday ? 'Twój dzień' : 'Dziś'}</div>
           <div className="serif" style={{ fontSize: '1.8rem', lineHeight: 1.15 }}>
             {home.eventToday ? home.eventToday.hero : `Wszystkiego dobrego, ${me.user.name ?? ''}`}
@@ -120,19 +120,7 @@ export function Start() {
         </section>
       )}
 
-      {home.theme && (
-        <div className="theme-banner">
-          <div className="eyebrow">Edycja sezonowa</div>
-          <div className="serif" style={{ fontSize: '1.5rem', lineHeight: 1.2 }}>
-            {home.theme.name}
-          </div>
-          <div className="small muted" style={{ marginTop: 4 }}>
-            {home.theme.tagline}
-          </div>
-        </div>
-      )}
-
-      <section className="stack" style={{ gap: 12 }}>
+      <section className="stack gap-3">
         <div className="eyebrow" style={{ margin: 0 }}>Najbliższe zajęcia</div>
         {next ? (
           <ClassCover
@@ -170,8 +158,8 @@ export function Start() {
           </>
         ) : (
           home.passes.map((p) => (
-            <div key={p.id} className="stack" style={{ gap: 10 }}>
-              <div className="card-title" style={{ fontSize: '1.15rem' }}>{p.summary}</div>
+            <div key={p.id} className="stack gap-2">
+              <PassMeter name={p.productName} summary={p.summary} meter={p.meter} />
               {p.expiringSoon && (
                 <div className="row between">
                   <span className="small muted">Ostatni tydzień ważności</span>
@@ -185,25 +173,21 @@ export function Start() {
         )}
       </section>
 
-      <section className="stack" style={{ gap: 10 }}>
+      <section className="stack gap-2">
         <div className="row between">
           <div className="eyebrow" style={{ margin: 0 }}>Cel tygodnia</div>
           <button className="link small" onClick={() => open('goal')}>
-            {home.week.done.trainings} / {home.week.goal.trainings} treningi · {home.week.done.mindful} / {home.week.goal.mindful} chwile
+            {goalCount(home.week.done.trainings, home.week.goal.trainings)} {plural(home.week.goal.trainings, 'trening', 'treningi', 'treningów')}
+            {goalExtra(home.week.done.trainings, home.week.goal.trainings)} · {goalCount(home.week.done.mindful, home.week.goal.mindful)} {plural(home.week.goal.mindful, 'chwila', 'chwile', 'chwil')}
+            {goalExtra(home.week.done.mindful, home.week.goal.mindful)}
           </button>
         </div>
         <Progress value={Math.min(home.week.done.trainings, home.week.goal.trainings) + Math.min(home.week.done.mindful, home.week.goal.mindful)} max={Math.max(1, home.week.goal.trainings + home.week.goal.mindful)} label="Postęp celu tygodnia" />
         <p className="small muted" style={{ margin: 0 }}>{home.week.message}</p>
       </section>
 
-      {hasFeature(studio, 'shop') && (
-        <div className="list-rows">
-          <ListRow title="Sklep studia" hint="Maty, akcesoria i stroje do domu" onClick={() => open('shop')} />
-        </div>
-      )}
-
       {home.trainerInvites.length > 0 && (
-        <section className="stack" style={{ gap: 8 }}>
+        <section className="stack gap-2">
           <div className="eyebrow">Zaproszenia od trenerek</div>
           {home.trainerInvites.map((i) => (
             <InviteCard key={i.id} invite={i} onChange={reload} onTrainer={() => open(`trainer/${i.trainerId}`)} />
@@ -225,34 +209,18 @@ export function Start() {
 
       <section className="center" style={{ padding: '6px 8px' }}>
         <div className="eyebrow">Rytuał dnia</div>
-        <p className="serif" style={{ fontSize: '1.55rem', lineHeight: 1.3, margin: 0 }}>
+        <p className="serif" style={{ fontSize: 'var(--text-2xl)', lineHeight: 1.3, margin: 0 }}>
           {ritual}
         </p>
       </section>
 
       <hr className="hairline" />
 
+      {/* Na dole tylko skróty do rzeczy dla siebie. Pomoc i telefon do studia są w Profilu → Pomoc, rozmowy pod ikoną u góry. */}
       <div className="list-rows">
-        {/* Od najczęściej potrzebnego: kontakt (czat, telefon), potem dodatki. Kod wejścia – w Profilu i na karcie w dniu zajęć. */}
-        {[
-          // Rozmowy (z licznikiem) są pod ikoną Wiadomości u góry; Pomoc to pytania, regulamin i godziny recepcji.
-          { label: 'Pomoc', hint: 'Pytania, regulamin i godziny recepcji', to: 'faq' as const },
-          ...(studio.phone ? [{ label: 'Zadzwoń do studia', hint: studio.phone, to: 'phone' as const }] : []),
-          { label: 'Trzy minuty oddechu', hint: 'Rytm 4–6, prowadzi aplikacja', to: 'breath' as const },
-          ...(home.eventsEnabled ? [{ label: 'Zorganizuj wydarzenie w naszym studiu', hint: 'Urodziny, babski wieczór, trening w prezencie', to: 'event-new' as const }] : []),
-        ].map((l) => (
-          <button
-            key={l.label}
-            className="list-row"
-            onClick={() => (l.to === 'breath' ? openBreath({ patternId: 'calm', minutes: 3 }) : l.to === 'phone' ? (location.href = `tel:${studio.phone!.replace(/\s/g, '')}`) : open(l.to))}
-          >
-            <span>
-              <span className="card-title" style={{ display: 'block' }}>{l.label}</span>
-              <span className="small muted">{l.hint}</span>
-            </span>
-            <Icon name="chevron" size={18} />
-          </button>
-        ))}
+        <ListRow title="Trzy minuty oddechu" hint="Rytm 4–6, prowadzi aplikacja" onClick={() => openBreath({ patternId: 'calm', minutes: 3 })} />
+        {hasFeature(studio, 'shop') && <ListRow title="Sklep studia" hint="Maty, akcesoria i stroje do domu" onClick={() => open('shop')} />}
+        {home.eventsEnabled && <ListRow title="Zorganizuj wydarzenie w studiu" hint="Urodziny, babski wieczór, trening w prezencie" onClick={() => open('event-new')} />}
       </div>
 
       {home.welcome && !popupDismissed && (
@@ -276,7 +244,7 @@ function ClassTicket({ item, onClose }: { item: Upcoming; onClose: () => void })
   const minutes = Math.round((Date.parse(item.ends_at) - Date.parse(item.starts_at)) / 60_000);
   return (
     <Sheet onClose={onClose} label={`Wejście na ${item.class_name}`}>
-      <div className="stack center" style={{ gap: 14, textAlign: 'center' }}>
+      <div className="stack center gap-4" style={{ textAlign: 'center' }}>
         <p className="eyebrow" style={{ margin: 0 }}>
           {fmtDay(item.starts_at)} · {fmtTime(item.starts_at)} · {minutes} min
         </p>

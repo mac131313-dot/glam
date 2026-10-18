@@ -109,7 +109,7 @@ function Campaigns() {
         <Spinner />
       ) : (
         list.data.map((c) => (
-          <section key={c.id} className="card flat stack" style={{ gap: 6 }}>
+          <section key={c.id} className="card flat stack gap-2">
             <div className="row between">
               <b>{c.name}</b>
               <span className="badge">{c.status === 'sent' ? 'wysłana' : c.status === 'scheduled' ? `zaplanowana ${c.scheduled_at ? fmtDay(c.scheduled_at) : ''}` : 'szkic'}</span>
@@ -211,7 +211,7 @@ function PushCalendar() {
   if (!cal.data) return <Spinner />;
   return (
     <div className="stack-lg">
-      <section className="card soft stack" style={{ gap: 4 }}>
+      <section className="card soft stack gap-1">
         {cal.data.rules.map((r) => (
           <div key={r} className="small">
             · {r}
@@ -230,7 +230,7 @@ function PushCalendar() {
         ))}
       </div>
       {cal.data.triggers.map((t) => (
-        <div key={t.key} className="card flat stack" style={{ gap: 4 }}>
+        <div key={t.key} className="card flat stack gap-1">
           <div className="row between">
             <b>{t.label}</b>
             <span className="tiny muted">{t.when}</span>
@@ -260,7 +260,7 @@ function Greetings() {
     <div className="stack-lg">
       <section className="card stack">
         {(['birthday', 'nameday', 'anniversary', 'studioAnniversary'] as const).map((k) => (
-          <div key={k} className="stack" style={{ gap: 4 }}>
+          <div key={k} className="stack gap-1">
             <Toggle label={LABELS[k]} checked={s[k]} onChange={(v) => save({ [k]: v })} />
             {g.data!.previews[k] && <div className="push-preview small">{g.data!.previews[k]}</div>}
           </div>
@@ -280,7 +280,7 @@ function Greetings() {
       <section className="stack">
         <div className="eyebrow">Święta</div>
         {g.data.holidays.map((h) => (
-          <div key={h.id} className="card flat stack" style={{ gap: 4 }}>
+          <div key={h.id} className="card flat stack gap-1">
             <Toggle label={`${h.date} · ${h.time}`} checked={s.holidays.includes(h.id)} onChange={(v) => save({ holidays: v ? [...s.holidays, h.id] : s.holidays.filter((x) => x !== h.id) })} />
             <div className="push-preview small">{h.body}</div>
             {h.extra && <div className="tiny muted">{h.extra}</div>}

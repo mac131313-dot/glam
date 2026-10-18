@@ -1,5 +1,5 @@
 // Analityka (#15, 4.11) i KPI (sekcja 12): retencja 30/60/90, aktywacja, frekwencja, średnia wejść, LTV, ARPU, NPS,
-// wirusowość (zaproszenia), reaktywacja, dobrostan, motywy, kursy, powitania, życzenia, przychód w czasie.
+// wirusowość (zaproszenia), reaktywacja, dobrostan, wyzwania, kursy, powitania, życzenia, przychód w czasie.
 import { useApi } from '../api.ts';
 import { Spinner, Stat } from '../ui.tsx';
 
@@ -17,7 +17,7 @@ type A = {
   guestPasses: { sold: number; activated: number; conversion: number };
   reactivation: { surveyed: number; returned: number; rate: number };
   mindfulPerActiveWeekly: number;
-  themes: { pushSent: number; pushOpenRate: number; challengeJoined: number; challengeDone: number };
+  challenges: { joined: number; done: number };
   courses: { sales: number; completions: number; rating: number | null };
   welcomes: { total: number; trainer: number; fallback: number; bookedAfterRate: number };
   greetings: { birthdayShare: number; sent: number; openRate: number; optOuts: Record<string, number> };
@@ -67,10 +67,10 @@ export default function Analytics() {
         <Stat label="Wejściówki" value={`${data.guestPasses.conversion}%`} hint={`aktywowane ${data.guestPasses.activated} z ${data.guestPasses.sold}`} />
         <Stat label="Reaktywacja" value={`${data.reactivation.rate}%`} hint={`wróciło ${data.reactivation.returned} z ${data.reactivation.surveyed} ankietowanych`} />
       </div>
-      <div className="eyebrow">Dobrostan, motywy, kursy, relacje</div>
+      <div className="eyebrow">Dobrostan, wyzwania, kursy, relacje</div>
       <div className="kpis">
         <Stat label="Medytacje / tydzień" value={data.mindfulPerActiveWeekly} hint="na aktywną klientkę" />
-        <Stat label="Motywy: otwarcia push" value={`${data.themes.pushOpenRate}%`} hint={`wyzwania: ${data.themes.challengeJoined} uczestniczek, ukończone ${data.themes.challengeDone}`} />
+        <Stat label="Wyzwania" value={data.challenges.joined} hint={`uczestniczek · ukończyło ${data.challenges.done}`} />
         <Stat label="Kursy" value={data.courses.sales} hint={`ukończenia ${data.courses.completions} · ocena ${data.courses.rating ?? '–'}`} />
         <Stat label="Powitania → zapis" value={`${data.welcomes.bookedAfterRate}%`} hint={`od trenerek ${data.welcomes.trainer}, od studia ${data.welcomes.fallback}`} />
         <Stat label="Data urodzin podana" value={pct(data.greetings.birthdayShare, 60)} hint={`cel > 60% · otwarcia życzeń ${data.greetings.openRate}%`} />

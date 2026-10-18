@@ -52,11 +52,11 @@ function PhotoCard({ me, reloadMe }: { me: Me; reloadMe: () => Promise<void> }) 
     run(() => api('/me/avatar', { method: 'PUT', body: { dataUrl } }).then(reloadMe), 'Zdjęcie zapisane');
   };
   return (
-    <section className="card row" style={{ gap: 18, alignItems: 'center' }}>
+    <section className="card row gap-4" style={{ alignItems: 'center' }}>
       <div style={{ width: 96, aspectRatio: '3 / 4', borderRadius: 14, overflow: 'hidden', background: 'var(--soft)', flex: 'none', display: 'grid', placeItems: 'center' }}>
         {url ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="serif" style={{ fontSize: '2rem', color: 'var(--muted)' }}>{(me.user.name ?? '?').charAt(0)}</span>}
       </div>
-      <div className="stack grow" style={{ gap: 8 }}>
+      <div className="stack grow gap-2">
         <h2 style={{ margin: 0 }}>Zdjęcie</h2>
         <p className="small muted" style={{ margin: 0 }}>Najlepiej pionowe, w jasnym świetle. Widać je na stronie studia i w aplikacji.</p>
         <label className={`btn ${url ? 'ghost' : ''} sm`} style={{ alignSelf: 'flex-start' }} aria-disabled={busy}>
@@ -140,7 +140,7 @@ function Video({ profile, onSaved }: { profile: Profile; onSaved: () => void }) 
       <h2>Film „poznajmy się”</h2>
       <p className="small muted">Kilka zdań do kamery: kim jesteś i na co zapraszasz. Do {max} sekund, nagrany telefonem wystarczy.</p>
       {profile.videoUrl && <AuthVideo key={profile.videoUrl} src={profile.videoUrl} controls playsInline style={{ width: '100%', maxWidth: 320, borderRadius: 14, background: 'var(--soft)' }} />}
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
         <label className={`btn ${profile.videoUrl ? 'ghost' : ''} sm`} aria-disabled={busy}>
           {busy ? 'Wgrywam…' : profile.videoUrl ? 'Nagraj nowy' : 'Dodaj film'}
           <input type="file" accept="video/mp4,video/quicktime,video/webm" capture="user" hidden disabled={busy} onChange={(e) => (e.target.files?.[0] && pick(e.target.files[0]), (e.target.value = ''))} />
@@ -192,7 +192,7 @@ function Invites({ profile, onSaved }: { profile: Profile; onSaved: () => void }
       ) : (
         <ul className="stack" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
           {profile.invites.map((i) => (
-            <li key={i.id} className="card flat row between" style={{ alignItems: 'flex-start', gap: 12 }}>
+            <li key={i.id} className="card flat row between gap-3" style={{ alignItems: 'flex-start' }}>
               <div className="grow">
                 <div style={{ fontWeight: 600 }}>{label(i)}</div>
                 <div className="small">{i.body}</div>

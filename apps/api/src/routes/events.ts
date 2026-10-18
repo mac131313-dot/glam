@@ -25,7 +25,7 @@ import { StudioScope } from '../scope.ts';
 import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
 import { notify } from '../services/notify.ts';
-import { recordPayment } from '../services/payments.ts';
+import { checkoutGateway, recordPayment, registerCheckoutKind, startCheckout } from '../services/payments.ts';
 import type { Studio } from '../services/studio.ts';
 import { guestCode } from './client.ts';
 
@@ -86,6 +86,32 @@ function blockSchedule(scope: StudioScope, e: EventRow) {
     { id: id(), ct: ct.id, t: e.trainer_id, s: e.starts_at, end: e.ends_at, cap: e.guests, title: `Wydarzenie prywatne ${e.invite_code}` },
   );
 }
+
+/** Zaliczka albo pełna opłata wydarzenia – kwota z chwili kliknięcia „Zapłać” (także zapisana w Checkout). */
+type EventPayment = { eventId: string; amount: number; deposit: boolean; method: PaymentMethod; by: string };
+
+function fulfillEvent(scope: StudioScope, studio: Studio, pay: EventPayment, providerRef: string) {
+  const e = scope.get<EventRow>('SELECT * FROM private_events WHERE studio_id = $studio AND id = $id', { id: pay.eventId });
+  if (!e) throw notFound();
+  const label = pay.deposit ? 'Zaliczka' : 'Opłata';
+  recordPayment(scope, { userId: e.client_id, kind: 'event', ref: e.id, amount: pay.amount, method: pay.method, providerRef, description: `${label}: wydarzenie ${e.invite_code}` });
+  // Płatność z Checkout może dotrzeć, gdy wydarzenie już odwołano – pieniądze są w historii, a studio decyduje o zwrocie.
+  if (!['offer', 'confirmed'].includes(e.status)) {
+    scope.run('UPDATE private_events SET history_json = $h, updated_at = $now WHERE studio_id = $studio AND id = $id', { h: history(e, { by: pay.by, text: `${label} ${formatPLN(pay.amount)} po zmianie statusu – do wyjaśnienia` }), now: nowIso(), id: e.id });
+    for (const s of scope.all<{ user_id: string }>("SELECT DISTINCT user_id FROM memberships WHERE studio_id = $studio AND role IN ('reception', 'owner')"))
+      notify(scope, { userId: s.user_id, category: 'events', tz: studio.timezone, body: `Wpłynęła płatność za wydarzenie ${e.invite_code}, które nie czeka już na opłatę. Sprawdź, czy trzeba zwrócić pieniądze.`, action: 'staff/events' });
+    return { message: 'Opłacone. Studio odezwie się w sprawie terminu.' };
+  }
+  scope.run("UPDATE private_events SET status = 'paid', history_json = $h, updated_at = $now WHERE studio_id = $studio AND id = $id", { h: history(e, { by: pay.by, text: `${label} ${formatPLN(pay.amount)}` }), now: nowIso(), id: e.id });
+  blockSchedule(scope, e);
+  return { message: 'Opłacone. Dziękujemy!' };
+}
+
+registerCheckoutKind<EventPayment>('event', {
+  fulfill(_deps, scope, studio, _userId, pay, providerRef) {
+    return { ref: pay.eventId, message: fulfillEvent(scope, studio, pay, providerRef).message, action: `event/${pay.eventId}` };
+  },
+});
 
 export function eventRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
@@ -257,15 +283,13 @@ export function eventRoutes(app: FastifyInstance, deps: Deps) {
     if (b.action === 'pay') {
       if (!['offer', 'confirmed'].includes(e.status) || !e.price_grosze) throw conflict('state', 'To wydarzenie nie czeka na płatność.');
       if (!PAYMENT_METHODS.includes(b.method as (typeof PAYMENT_METHODS)[number])) throw badRequest('Wybierz metodę płatności.');
-      const amount = e.payment_mode === 'deposit' && e.deposit_grosze ? e.deposit_grosze : e.price_grosze;
-      const charge = await deps.payments.charge({ amountGrosze: amount, method: b.method!, description: `Wydarzenie ${e.invite_code}`, studioId: studio.id });
+      const pay: EventPayment = { eventId: e.id, amount: e.payment_mode === 'deposit' && e.deposit_grosze ? e.deposit_grosze : e.price_grosze, deposit: e.payment_mode === 'deposit', method: b.method!, by: user.name ?? 'Klientka' };
+      // Studio ze Stripe: wydarzenie zmienia status na opłacone dopiero z webhooka.
+      const gw = checkoutGateway(scope, studio.id, pay.method, pay.amount);
+      if (gw) return startCheckout(deps, scope, studio, gw, { kind: 'event', userId: user.id, name: `${pay.deposit ? 'Zaliczka' : 'Opłata'}: wydarzenie ${e.invite_code}`, amountGrosze: pay.amount, method: pay.method, payload: pay });
+      const charge = await deps.payments.charge({ amountGrosze: pay.amount, method: pay.method, description: `Wydarzenie ${e.invite_code}`, studioId: studio.id });
       if (charge.status !== 'paid') throw new HttpError(402, 'payment_failed', 'Płatność się nie powiodła.');
-      scope.tx(() => {
-        recordPayment(scope, { userId: user.id, kind: 'event', ref: e.id, amount, method: b.method!, providerRef: charge.ref, description: `${e.payment_mode === 'deposit' ? 'Zaliczka' : 'Opłata'}: wydarzenie ${e.invite_code}` });
-        set('paid', e.payment_mode === 'deposit' ? `Zaliczka ${formatPLN(amount)}` : `Opłata ${formatPLN(amount)}`);
-        blockSchedule(scope, e);
-      });
-      return { message: 'Opłacone. Dziękujemy!' };
+      return scope.tx(() => fulfillEvent(scope, studio, pay, charge.ref));
     }
     throw badRequest('Nieznana akcja.');
   });

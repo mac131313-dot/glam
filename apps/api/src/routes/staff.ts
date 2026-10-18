@@ -367,7 +367,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
   });
 
   // Sesje okolicznościowe i tematyczne (4.1, M5) – poza szablonem, np. „Halloween Flow”.
-  app.post<{ Body: { classTypeId: string; trainerId: string; date: string; time: string; durationMin: number; capacity: number; title?: string; kind?: 'special' | 'themed' | 'live'; themeId?: string | null; public?: boolean } }>(
+  app.post<{ Body: { classTypeId: string; trainerId: string; date: string; time: string; durationMin: number; capacity: number; title?: string; kind?: 'special' | 'themed' | 'live'; public?: boolean } }>(
     '/api/staff/sessions',
     perm('schedule.edit'),
     async (req) => {
@@ -380,9 +380,9 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       const start = zonedToUtc(b.date, b.time, studio.timezone);
       const sid = id();
       scope.run(
-        `INSERT INTO class_sessions (id, studio_id, template_id, class_type_id, trainer_id, starts_at, ends_at, capacity, kind, title, theme_id, public)
-         VALUES ($id, $studio, NULL, $ct, $t, $s, $e, $cap, $kind, $title, $theme, $pub)`,
-        { id: sid, ct: b.classTypeId, t: b.trainerId, s: start.toISOString(), e: new Date(start.getTime() + b.durationMin * 60_000).toISOString(), cap: b.capacity, kind: b.kind ?? 'special', title: b.title?.trim() || null, theme: b.themeId ?? null, pub: Number(b.public ?? true) },
+        `INSERT INTO class_sessions (id, studio_id, template_id, class_type_id, trainer_id, starts_at, ends_at, capacity, kind, title, public)
+         VALUES ($id, $studio, NULL, $ct, $t, $s, $e, $cap, $kind, $title, $pub)`,
+        { id: sid, ct: b.classTypeId, t: b.trainerId, s: start.toISOString(), e: new Date(start.getTime() + b.durationMin * 60_000).toISOString(), cap: b.capacity, kind: b.kind ?? 'special', title: b.title?.trim() || null, pub: Number(b.public ?? true) },
       );
       audit(scope, { actorId: user.id, action: 'session.created', entity: 'session', entityId: sid, details: { title: b.title, kind: b.kind } });
       return { id: sid };
@@ -515,7 +515,14 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       trainerId: m.trainer_id,
       segments: facts ? segmentsOf(facts, now) : [],
       passes: can(roles, 'clients.view')
-        ? passesView(scope, studio, u.id).map((p) => ({ ...p, canUndo: can(roles, 'desk.sell') && !deskSaleUndoBlocker(scope, u.id, p.id) }))
+        ? passesView(scope, studio, u.id).map((p) => ({
+            ...p,
+            canUndo: can(roles, 'desk.sell') && !deskSaleUndoBlocker(scope, u.id, p.id),
+            // Zwrot i podmiana (finance.refund): płatność, z której karnet pochodzi – jeśli była.
+            paymentId: can(roles, 'finance.refund')
+              ? (scope.get<{ id: string }>("SELECT id FROM payments WHERE studio_id = $studio AND kind IN ('pass', 'renewal') AND reference_id = $p AND status = 'paid' ORDER BY created_at DESC", { p: p.id })?.id ?? null)
+              : undefined,
+          }))
         : undefined,
       bookings: scope.all(
         `SELECT b.id, b.status, b.rating, b.rating_comment, s.starts_at, COALESCE(s.title, ct.name) AS class_name, t.name AS trainer_name FROM bookings b

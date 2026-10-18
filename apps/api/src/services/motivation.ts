@@ -50,8 +50,6 @@ export function badgeStats(scope: StudioScope, studio: Studio, userId: string, n
   const journal = (scope.db.prepare('SELECT COUNT(*) AS n FROM journal_entries WHERE user_id = ?').get(userId) as { n: number }).n;
   const calm = (scope.db.prepare("SELECT COUNT(*) AS n FROM course_mini_progress WHERE user_id = ? AND program = 'calm7'").get(userId) as { n: number }).n;
   const friends = scope.get<{ n: number }>("SELECT COUNT(*) AS n FROM referrals WHERE studio_id = $studio AND inviter_id = $u AND status IN ('first_class', 'purchased')", { u: userId })!.n;
-  const prefs = scope.db.prepare('SELECT prefs_json FROM users WHERE id = ?').get(userId) as { prefs_json: string | null } | undefined;
-  const themesSeen = (prefs?.prefs_json ? (JSON.parse(prefs.prefs_json).themesSeen as string[] | undefined) : undefined)?.length ?? 0;
   const today = localParts(now, studio.timezone).date;
   return {
     attended: visits.length,
@@ -61,7 +59,6 @@ export function badgeStats(scope: StudioScope, studio: Studio, userId: string, n
     journalEntries: journal,
     calmCourseDone: calm >= 7,
     friendsBrought: friends,
-    themesSeen,
     visits,
   };
 }

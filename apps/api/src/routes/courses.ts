@@ -35,7 +35,7 @@ import { deleteMedia, storeMedia } from '../services/media.ts';
 import { awardPoints, grantBadge } from '../services/motivation.ts';
 import { notify } from '../services/notify.ts';
 import { loadPasses } from '../services/passes.ts';
-import { priceWithCoupon, recordPayment } from '../services/payments.ts';
+import { checkoutGateway, priceWithCoupon, recordPayment, registerCheckoutKind, startCheckout } from '../services/payments.ts';
 import { segmentsForUser } from '../services/segments.ts';
 import type { Studio } from '../services/studio.ts';
 
@@ -158,17 +158,45 @@ function cardView(scope: StudioScope, studio: Studio, userId: string, c: CourseR
   };
 }
 
+function loadCourse(scope: StudioScope, courseId: string) {
+  const c = scope.get<CourseRow>('SELECT * FROM courses WHERE studio_id = $studio AND id = $id', { id: courseId });
+  if (!c) throw notFound('Nie znaleziono kursu.');
+  return c;
+}
+
+/** Zapis na kurs (i kursy z pakietu). Zakup = utrata prawa odstąpienia potwierdzona przy płatności (5.6). */
+function enrollUser(scope: StudioScope, c: CourseRow, userId: string, source: 'pass' | 'free' | 'purchase', paid: number, now: Date) {
+  const ids = c.kind === 'bundle' ? (JSON.parse(c.bundle_ids_json) as string[]) : [];
+  const enroll = (courseId: string, src: string, price: number) =>
+    scope.run(
+      'INSERT OR IGNORE INTO course_enrollments (studio_id, course_id, user_id, source, price_paid_grosze, withdrawal_waived_at, started_at, expires_at) VALUES ($studio, $c, $u, $s, $p, $w, $now, $exp)',
+      { c: courseId, u: userId, s: src, p: price, w: source === 'purchase' ? now.toISOString() : null, now: now.toISOString(), exp: source === 'pass' ? null : accessUntil(c.access_days, now) },
+    );
+  enroll(c.id, source, paid);
+  for (const b of ids) enroll(b, 'bundle', 0);
+}
+
+/** Kurs kupiony w aplikacji – wycena z chwili zakupu (także zapisana w Checkout). */
+type CoursePurchase = { courseId: string; price: number; discount: number; couponId: string | null; method: PaymentMethod };
+
+function fulfillCourse(scope: StudioScope, c: CourseRow, userId: string, p: CoursePurchase, providerRef: string) {
+  recordPayment(scope, { userId, kind: 'course', ref: c.id, amount: p.price, discount: p.discount, method: p.method, providerRef, description: `Kurs: ${c.title}`, couponId: p.couponId });
+  enrollUser(scope, c, userId, 'purchase', p.price, new Date());
+  return { message: `Kurs „${c.title}” jest Twój. Miłej nauki!` };
+}
+
+registerCheckoutKind<CoursePurchase>('course', {
+  fulfill(_deps, scope, _studio, userId, p, providerRef) {
+    const c = loadCourse(scope, p.courseId);
+    return { ref: c.id, message: fulfillCourse(scope, c, userId!, p, providerRef).message, action: `course/${c.id}` };
+  },
+});
+
 export function courseRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
   const member = { preHandler: requireStudio(db) };
   const creator = requirePerm(db, 'courses.create', 'courses.approve');
   const approve = requirePerm(db, 'courses.approve');
-
-  const loadCourse = (scope: StudioScope, courseId: string) => {
-    const c = scope.get<CourseRow>('SELECT * FROM courses WHERE studio_id = $studio AND id = $id', { id: courseId });
-    if (!c) throw notFound('Nie znaleziono kursu.');
-    return c;
-  };
 
   // ——— Katalog (K1) z filtrami: poziom, czas, trenerka, cel, pora dnia ———
 
@@ -253,8 +281,7 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
     if (scope.get('SELECT 1 FROM course_enrollments WHERE studio_id = $studio AND course_id = $c AND user_id = $u', { c: c.id, u: user.id })) return { message: 'Masz już ten kurs.' };
     const s = stats(scope, c.id);
     if (c.seat_limit && s.buyers >= c.seat_limit) throw conflict('full', 'Brak wolnych miejsc w tym kursie.');
-    let source: 'pass' | 'free' | 'purchase' = 'free';
-    let paid = 0;
+    let source: 'pass' | 'free' = 'free';
     if (passCoversCourse(scope, user.id, c) || isStaff(roles)) source = 'pass';
     else if (c.price_grosze && c.price_grosze > 0) {
       if (!studio.has('courses_paid')) throw new HttpError(402, 'course_in_pass', 'Ten kurs jest dostępny w ramach karnetu studia.', { suggestions: true });
@@ -263,24 +290,16 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
       const hasPass = loadPasses(scope, user.id).some((p) => p.status === 'active');
       const base = coursePrice(c.price_grosze, { promoPct: c.promo_pct, passDiscountPct: c.pass_discount, hasActivePass: hasPass }).price;
       const priced = priceWithCoupon(scope, studio, { code: req.body.couponCode, userId: user.id, kind: 'course', amountGrosze: base });
-      const charge = await deps.payments.charge({ amountGrosze: priced.final, method: req.body.method!, description: `Kurs: ${c.title}`, studioId: studio.id });
+      const purchase: CoursePurchase = { courseId: c.id, price: priced.final, discount: priced.discount, couponId: priced.coupon?.id ?? null, method: req.body.method! };
+      // Studio ze Stripe: dostęp daje webhook po zapłacie na stronie Checkout.
+      const gw = checkoutGateway(scope, studio.id, purchase.method, priced.final);
+      if (gw) return startCheckout(deps, scope, studio, gw, { kind: 'course', userId: user.id, name: `Kurs: ${c.title}`, amountGrosze: priced.final, method: purchase.method, payload: purchase, back: '/app' });
+      const charge = priced.final > 0 ? await deps.payments.charge({ amountGrosze: priced.final, method: purchase.method, description: `Kurs: ${c.title}`, studioId: studio.id }) : { status: 'paid' as const, ref: 'free' };
       if (charge.status !== 'paid') throw new HttpError(402, 'payment_failed', 'Płatność się nie powiodła.');
-      recordPayment(scope, { userId: user.id, kind: 'course', ref: c.id, amount: priced.final, discount: priced.discount, method: req.body.method!, providerRef: charge.ref, description: `Kurs: ${c.title}`, couponId: priced.coupon?.id });
-      source = 'purchase';
-      paid = priced.final;
+      return scope.tx(() => fulfillCourse(scope, c, user.id, purchase, charge.ref));
     }
-    const now = new Date();
-    const ids = c.kind === 'bundle' ? (JSON.parse(c.bundle_ids_json) as string[]) : [];
-    scope.tx(() => {
-      const enroll = (courseId: string, src: string, price: number) =>
-        scope.run(
-          'INSERT OR IGNORE INTO course_enrollments (studio_id, course_id, user_id, source, price_paid_grosze, withdrawal_waived_at, started_at, expires_at) VALUES ($studio, $c, $u, $s, $p, $w, $now, $exp)',
-          { c: courseId, u: user.id, s: src, p: price, w: source === 'purchase' ? now.toISOString() : null, now: now.toISOString(), exp: source === 'pass' ? null : accessUntil(c.access_days, now) },
-        );
-      enroll(c.id, source, paid);
-      for (const b of ids) enroll(b, 'bundle', 0);
-    });
-    return { message: source === 'purchase' ? `Kurs „${c.title}” jest Twój. Miłej nauki!` : `Dołączyłaś do kursu „${c.title}”.` };
+    scope.tx(() => enrollUser(scope, c, user.id, source, 0, new Date()));
+    return { message: `Dołączyłaś do kursu „${c.title}”.` };
   });
 
   // K3: zapis postępu i wznowienie od miejsca przerwy.

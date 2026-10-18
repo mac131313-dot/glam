@@ -26,7 +26,8 @@ Format: decyzja → uzasadnienie → konsekwencje dla produktu.
 - **Dlaczego:** brak KYC studiów po stronie GLAM, brak rozdzielania płatności i ryzyka licencji płatniczej. Najszybszy start.
 - **Konsekwencje:**
   - Onboarding studia (1.2.6) musi zawierać podpięcie jego bramki: klucze API, webhook.
-  - Zwroty i chargebacki obsługuje studio w swoim panelu bramki (1.2.8).
+  - Zwroty i chargebacki obsługuje studio w swoim panelu bramki (1.2.8). **Zmiana 2026-10-18:** zwrot (np. przypadkowy zakup) i wyjątkową podmianę karnetu właścicielka może też zlecić z panelu GLAM (`finance.refund`, tylko rola owner) – polecenie idzie kluczem bramki studia, pieniądze wracają z konta studia, GLAM dalej w nich nie pośredniczy. Zwroty zrobione w panelu Stripe wracają do GLAM webhookiem `charge.refunded`; chargebacki nadal tylko w panelu bramki.
+  - Anulowanie przez klientkę = wyłączenie odnawiania, bez zwrotu: opłacony miesiąc i pozostałe wejścia zostają do końca ważności.
   - Plany abonamentowe (T9) do zaprojektowania: kryteria = liczba obiektów, aktywnych klientek, funkcje.
   - Prowizja / split (T10) przesunięta na później.
   - **Napięcie z kursami cyfrowymi:** sklepy wymagają In-App Purchase dla treści cyfrowych, a wtedy pieniądze trafiają do wydawcy aplikacji (GLAM), nie do studia. Rozstrzygamy w bloku B.
@@ -113,20 +114,23 @@ Format: decyzja → uzasadnienie → konsekwencje dla produktu.
 
 ### 9. Medytacje i oddech prowadzi aplikacja, nie osoba
 - **Decyzja:** brak lektorki i nagrań głosu. Sesje prowadzi aplikacja:
-  - animowane koło wyznacza tempo oddechu,
-  - krótkie podpowiedzi pojawiają się na ekranie,
+  - tempo oddechu wyznacza obraz zależny od rytmu: przy wyciszeniu piwonia, która rozkwita na wdechu i mięknie na wydechu; przy skupieniu (rytm pudełkowy 4-4-4-4) kwadrat oddechu, po którym wędruje kropka, a każdy bok to jedna faza,
+  - bez cyfr i licznika sekund – upływ fazy pokazuje sam obraz,
+  - krótkie podpowiedzi pojawiają się na ekranie, jedna naraz, zawsze w tym samym miejscu,
   - haptyka daje sygnał na początku każdej fazy,
   - w tle gra spokojny szum.
   Haptykę i szum można włączyć i wyłączyć osobno, także w trakcie sesji. Wybór jest zapamiętany na urządzeniu.
-- **Gdzie:** zakładka „Dla mnie” uruchamia sesje; skrót „Trzy minuty oddechu” na ekranie Start.
+- **Gdzie:** zakładka „Dla mnie” uruchamia sesje (karty „Wycisz się” i „Skup się”); skrót „Trzy minuty oddechu” na ekranie Start.
 - **Konsekwencje:**
   - Zmiana w 4.4: „lektorka po polsku + tła dźwiękowe” zastępuje sesja prowadzona przez aplikację.
   - Biblioteka (#20, „min. 20 nagrań”) to teraz min. 20 **scenariuszy**: dane w `packages/core/src/mindful.ts`, czyli rytm + podpowiedzi z czasem. Nowa medytacja = nowy wpis, bez nagrań i bez kodu.
   - Pytanie 13 (budżet): odpada koszt nagrań medytacji; zostaje koszt napisania scenariuszy.
   - Haptyka: w natywnej aplikacji przez systemowe API (iOS i Android). W przeglądarce działa tylko na Androidzie (Safari na iOS nie ma Vibration API).
   - Szum generowany na żywo (Web Audio, bez plików). W aplikacji natywnej musi grać także przy wygaszonym ekranie – do sprawdzenia przy wyborze technologii mobilnej.
-  - Dostępność: przy „ogranicz ruch” koło zmienia rozmiar w małym zakresie, a rytm podają tekst i licznik sekund.
-  - Do rozważenia: zaliczanie sesji do celu tygodnia („3 treningi + 2 medytacje”, 4.4) i do KPI „medytacje tygodniowo” (12) – dziś sesje nie są zapisywane na serwerze.
+  - Dostępność: przy „ogranicz ruch” znikają ozdobne animacje (drganie płatków, płynne pojawianie się napisów), ale piwonia dalej rozkwita i mięknie, a kropka dalej obiega kwadrat, bo to one niosą rytm. Rytm podaje też słowo fazy. Licznika sekund nie ma – **do sprawdzenia**, czy przy „ogranicz ruch” go przywrócić.
+  - Ukończona sesja zapisuje się na serwerze i liczy do celu tygodnia („3 treningi + 2 medytacje”, 4.4) oraz do KPI „medytacje tygodniowo” (12).
+  - Obraz wynika z rytmu, nie z miejsca uruchomienia (`visualFor()` w `mindful.ts`): każda sesja pudełkowa dostaje kwadrat, pozostałe piwonię. Wyciszenie to rytmy z dłuższym wydechem (4–6, 4–7–8), skupienie to box.
+  - Aktualizacja 2026-10-18: zamiast animowanego koła piwonia (wyciszenie) i kwadrat oddechu (skupienie); usunięty licznik sekund; podpowiedzi o „kole” przepisane.
 
 ## Do prawnika / księgowej
 

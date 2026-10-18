@@ -3,8 +3,8 @@
 // opinie po 30% kursu, certyfikat po ukończeniu.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PLAYBACK_RATES } from '@glam/core';
-import { api, fmtDay, fmtLongDay, fmtTime, useApi } from '../api.ts';
-import { Empty, PAYMENT_LABELS, Progress, Sheet, Spinner, STARS, Toggle, useAction, useThanks } from '../ui.tsx';
+import { api, fmtDay, goToCheckout, fmtLongDay, fmtTime, useApi } from '../api.ts';
+import { Empty, availableMethods, PAYMENT_LABELS, Progress, Sheet, Spinner, STARS, Toggle, useAction, useThanks } from '../ui.tsx';
 import { CastButton } from './CastButton.tsx';
 import { useClient } from './ClientApp.tsx';
 import { openAuthed } from './PassPages.tsx';
@@ -71,7 +71,7 @@ function Catalog() {
     ) : null;
   return (
     <div className="stack-lg">
-      <div className="grid-2" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+      <div className="grid-2 gap-2" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
         <Filter value={level} set={setLevel} options={uniq(list.data.map((c) => c.level))} label="Poziom" />
         <Filter value={author} set={setAuthor} options={uniq(list.data.map((c) => c.author))} label="Trenerka" />
         <Filter value={goal} set={setGoal} options={uniq(list.data.map((c) => c.goal))} label="Cel" />
@@ -84,7 +84,7 @@ function Catalog() {
       </div>
       {items.length === 0 && <Empty>Nic nie pasuje do filtrów.</Empty>}
       {items.map((c) => (
-        <button key={c.id} className="card stack" style={{ textAlign: 'left', cursor: 'pointer', gap: 8 }} onClick={() => open(`course/${c.id}`)}>
+        <button key={c.id} className="card stack gap-2" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => open(`course/${c.id}`)}>
           {c.coverUrl && <img src={c.coverUrl} alt="" style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 16 }} />}
           <div className="row between">
             <span className="eyebrow" style={{ margin: 0 }}>{c.kindLabel}</span>
@@ -206,7 +206,7 @@ function CourseDetail({ id }: { id: string }) {
       <section className="stack">
         <div className="eyebrow">Program</div>
         {modules.map((m) => (
-          <div key={m} className="stack" style={{ gap: 0 }}>
+          <div key={m} className="stack gap-0">
             <div className="small" style={{ fontWeight: 600, margin: '8px 0 4px' }}>{m}</div>
             {data.lessonsList
               .filter((l) => l.module === m)
@@ -271,7 +271,7 @@ function BuyCourse({ course, onClose, onDone }: { course: Detail; onClose: () =>
         <h2>{course.title}</h2>
         <input className="input" placeholder="Kod rabatowy (opcjonalnie)" value={code} onChange={(e) => setCode(e.target.value)} />
         <div className="pill-row">
-          {['blik', 'apple_pay', 'google_pay', 'p24', 'card'].map((m) => (
+          {availableMethods(['blik', 'apple_pay', 'google_pay', 'p24', 'card']).map((m) => (
             <button key={m} className="chip" aria-pressed={method === m} onClick={() => setMethod(m)}>
               {PAYMENT_LABELS[m]}
             </button>
@@ -281,7 +281,7 @@ function BuyCourse({ course, onClose, onDone }: { course: Detail; onClose: () =>
         <button
           className="btn block"
           disabled={!waive || busy}
-          onClick={() => run(() => api(`/courses/${course.id}/enroll`, { method: 'POST', body: { method, waiveWithdrawal: waive, couponCode: code || undefined } }).then((r) => (onDone(), onClose(), r)))}
+          onClick={() => run(() => api<{ checkoutUrl?: string }>(`/courses/${course.id}/enroll`, { method: 'POST', body: { method, waiveWithdrawal: waive, couponCode: code || undefined } }).then((r) => (goToCheckout(r) || (onDone(), onClose()), r)))}
         >
           Zapłać {course.price?.final}
         </button>
@@ -385,7 +385,7 @@ function LessonView({ lesson, onBack }: { lesson: Lesson; onBack: () => void }) 
         <div className="eyebrow">Pytania pod lekcją</div>
         {lesson.questions.length === 0 && <p className="small muted" style={{ margin: 0 }}>Masz pytanie? Trenerka odpowie tutaj.</p>}
         {lesson.questions.map((x) => (
-          <div key={x.id} className="card flat small stack" style={{ gap: 4 }}>
+          <div key={x.id} className="card flat small stack gap-1">
             <div>
               <b>{x.name}:</b> {x.body}
             </div>

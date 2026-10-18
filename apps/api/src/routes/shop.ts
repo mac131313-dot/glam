@@ -41,8 +41,8 @@ import { DESK_METHODS, PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
 import { deleteMedia, storeMedia } from '../services/media.ts';
 import { notify } from '../services/notify.ts';
-import { priceWithCoupon } from '../services/payments.ts';
-import { loadStudio, logoInfo } from '../services/studio.ts';
+import { checkoutGateway, priceWithCoupon, recordPayment, registerCheckoutKind, startCheckout } from '../services/payments.ts';
+import { loadStudio, logoInfo, type Studio } from '../services/studio.ts';
 
 type ProductRow = {
   id: string;
@@ -211,6 +211,51 @@ function publicShop(db: Db, slug: string) {
 const shopSettings = (s: { reservationDays: number; shipping: boolean; shippingGrosze: number }) => ({ reservationDays: s.reservationDays, shipping: s.shipping, shippingPrice: formatPLN(s.shippingGrosze) });
 const CATALOG_ORDER = "ORDER BY featured DESC, CASE category WHEN 'drink' THEN 0 WHEN 'accessory' THEN 1 WHEN 'apparel' THEN 2 ELSE 3 END, created_at DESC";
 
+/** Zamówienie po zablokowaniu sztuk – zapłacone od razu, z webhooka Stripe albo rezerwacja do odbioru. */
+type OrderDraft = {
+  userId: string;
+  kind: 'online' | 'pickup';
+  items: Item[];
+  total: number;
+  discount: number;
+  couponId: string | null;
+  method: PaymentMethod | null;
+  addressEnc: string | null;
+  expires: string | null;
+  onlyDrinks: boolean;
+};
+
+/** providerRef = null → rezerwacja bez płatności (odbiór w studiu). */
+function placeOrder(scope: StudioScope, studio: Studio, d: OrderDraft, providerRef: string | null) {
+  const paid = providerRef !== null;
+  const oid = id();
+  scope.run(
+    `INSERT INTO shop_orders (id, studio_id, user_id, kind, status, items_json, total_grosze, method, address_enc, expires_at, created_at, updated_at)
+     VALUES ($id, $studio, $u, $k, $s, $items, $total, $m, $addr, $exp, $now, $now)`,
+    { id: oid, u: d.userId, k: d.kind, s: paid ? 'paid' : 'reserved', items: JSON.stringify(d.items), total: d.total, m: paid ? d.method : null, addr: d.addressEnc, exp: d.expires, now: nowIso() },
+  );
+  // Zakup online przez bramkę studia – zapisujemy płatność (bez dokumentu sprzedaży z aplikacji, 4.8.1).
+  if (paid) recordPayment(scope, { userId: d.userId, kind: 'shop', ref: oid, amount: d.total, discount: d.discount, method: d.method!, providerRef, description: 'Sklep studia', couponId: d.couponId });
+  const staff = scope.all<{ user_id: string }>("SELECT DISTINCT user_id FROM memberships WHERE studio_id = $studio AND role IN ('reception', 'owner')");
+  const body = d.kind === 'online' ? 'Nowe zamówienie z wysyłką.' : d.onlyDrinks ? `Zamówienie z baru: ${d.items.map((i) => `${i.name} × ${i.qty}`).join(', ')}.` : `Nowa rezerwacja do odbioru (${d.items.length} poz.).`;
+  for (const s of staff) notify(scope, { userId: s.user_id, category: 'shop', tz: studio.timezone, body, action: 'staff/shop' });
+  const until = d.expires?.split('-').reverse().slice(0, 2).join('.');
+  return {
+    id: oid,
+    total: formatPLN(d.total),
+    message: d.kind === 'online' ? 'Zamówienie opłacone. Damy znać, gdy wyślemy paczkę.' : d.onlyDrinks ? 'Zamówione! Odbierz i zapłać przy barze po treningu.' : `Zarezerwowane do ${until}. Zapłacisz w recepcji – damy znać, gdy będzie czekać.`,
+  };
+}
+
+registerCheckoutKind<OrderDraft>('shop', {
+  fulfill(_deps, scope, studio, _userId, d, providerRef) {
+    const o = placeOrder(scope, studio, d, providerRef);
+    return { ref: o.id, message: o.message, action: 'orders' };
+  },
+  // Checkout przerwany albo wygasły – sztuki wracają na stan.
+  release: (scope, d) => releaseItems(scope, d.items),
+});
+
 export function shopRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
   const member = { preHandler: requireStudio(db) };
@@ -280,58 +325,44 @@ export function shopRoutes(app: FastifyInstance, deps: Deps) {
     const expires = b.kind === 'pickup' ? reservationExpiry(today, onlyDrinks ? 0 : studio.settings.shop.reservationDays) : null;
     let total = reserved.total + (b.kind === 'online' ? studio.settings.shop.shippingGrosze : 0);
     let discount = 0;
+    let couponId: string | null = null;
     if (b.couponCode) {
       const pc = priceWithCoupon(scope, studio, { code: b.couponCode, userId: user.id, kind: 'shop', amountGrosze: total });
       total = pc.final;
       discount = pc.discount;
+      couponId = pc.coupon?.id ?? null;
     }
-    let paid = false;
+    const draft: OrderDraft = {
+      userId: user.id,
+      kind: b.kind,
+      items: reserved.items,
+      total,
+      discount,
+      couponId,
+      method: b.kind === 'online' ? b.method! : null,
+      addressEnc: b.kind === 'online' ? user.address_enc : null,
+      expires,
+      onlyDrinks,
+    };
     if (b.kind === 'online') {
+      // Studio ze Stripe: sztuki zostają zablokowane na czas Checkout, zamówienie powstaje z webhooka.
+      const gw = checkoutGateway(scope, studio.id, b.method, total);
+      if (gw) {
+        try {
+          return await startCheckout(deps, scope, studio, gw, { kind: 'shop', userId: user.id, name: 'Sklep studia', amountGrosze: total, method: b.method!, payload: draft });
+        } catch (err) {
+          scope.tx(() => releaseItems(scope, reserved.items));
+          throw err;
+        }
+      }
       const charge = await deps.payments.charge({ amountGrosze: total, method: b.method!, description: 'Sklep studia', studioId: studio.id });
       if (charge.status !== 'paid') {
         scope.tx(() => releaseItems(scope, reserved.items));
         throw new HttpError(402, 'payment_failed', 'Płatność się nie powiodła – produkty wróciły na stan.');
       }
-      paid = true;
+      return scope.tx(() => placeOrder(scope, studio, draft, charge.ref));
     }
-    const oid = id();
-    scope.run(
-      `INSERT INTO shop_orders (id, studio_id, user_id, kind, status, items_json, total_grosze, method, address_enc, expires_at, created_at, updated_at)
-       VALUES ($id, $studio, $u, $k, $s, $items, $total, $m, $addr, $exp, $now, $now)`,
-      {
-        id: oid,
-        u: user.id,
-        k: b.kind,
-        s: paid ? 'paid' : 'reserved',
-        items: JSON.stringify(reserved.items),
-        total,
-        m: paid ? b.method! : null,
-        addr: b.kind === 'online' ? user.address_enc : null,
-        exp: expires,
-        now: nowIso(),
-      },
-    );
-    if (paid) {
-      // Zakup online przez bramkę studia – zapisujemy płatność (bez dokumentu sprzedaży z aplikacji, 4.8.1).
-      scope.run("INSERT INTO payments (id, studio_id, user_id, kind, reference_id, amount_grosze, discount_grosze, method, status, description, created_at) VALUES ($id, $studio, $u, 'shop', $o, $a, $d, $m, 'paid', 'Sklep studia', $now)", {
-        id: id(),
-        u: user.id,
-        o: oid,
-        a: total,
-        d: discount,
-        m: b.method!,
-        now: nowIso(),
-      });
-    }
-    const staff = scope.all<{ user_id: string }>("SELECT DISTINCT user_id FROM memberships WHERE studio_id = $studio AND role IN ('reception', 'owner')");
-    const body = b.kind === 'online' ? 'Nowe zamówienie z wysyłką.' : onlyDrinks ? `Zamówienie z baru: ${reserved.items.map((i) => `${i.name} × ${i.qty}`).join(', ')}.` : `Nowa rezerwacja do odbioru (${reserved.items.length} poz.).`;
-    for (const s of staff) notify(scope, { userId: s.user_id, category: 'shop', tz: studio.timezone, body, action: 'staff/shop' });
-    const until = expires?.split('-').reverse().slice(0, 2).join('.');
-    return {
-      id: oid,
-      total: formatPLN(total),
-      message: b.kind === 'online' ? 'Zamówienie opłacone. Damy znać, gdy wyślemy paczkę.' : onlyDrinks ? 'Zamówione! Odbierz i zapłać przy barze po treningu.' : `Zarezerwowane do ${until}. Zapłacisz w recepcji – damy znać, gdy będzie czekać.`,
-    };
+    return scope.tx(() => placeOrder(scope, studio, draft, null));
   });
 
   app.get('/api/my/orders', member, async (req) => {

@@ -50,6 +50,8 @@ type Session = {
 type ForYou = { s: Session; fav: boolean; reason: string | null };
 
 const DOW = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
+/** Nazwa dnia w kalendarzu miesiąca (dla czytnika ekranu) – daty to „YYYY-MM-DD” w południe UTC. */
+const MONTH_DAY = new Intl.DateTimeFormat('pl-PL', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
 type View = 'day' | 'week' | 'month';
 
 export function Schedule() {
@@ -147,6 +149,34 @@ export function Schedule() {
   const lateCancel = (s: Session) => Date.parse(s.starts_at) - Date.now() < studio.policy.cancelMinutesBefore * 60_000;
   const days = Array.from({ length: 14 }, (_, i) => addDaysStr(today, i));
 
+  // „Dopasowane do Ciebie”: karuzela, gdy coś pasuje; bez ankiety – zachęta do niej. Ankieta jest, a nic nie pasuje – sekcji nie ma.
+  const forYouSection = (
+    <section className="stack gap-2" aria-label="Dopasowane do Ciebie">
+      <div className="row between">
+        <h2 className="carousel-title">
+          Dopasowane <span className="serif">do Ciebie</span>
+        </h2>
+        {fit && (
+          <button className="link small" style={{ whiteSpace: 'nowrap' }} onClick={() => setAskFit(true)} aria-label="Zmień odpowiedzi z ankiety">
+            Zmień
+          </button>
+        )}
+      </div>
+      {forYou.length > 0 ? (
+        <div className="cover-carousel">
+          {forYou.map(({ s, fav, reason }) => (
+            <SessionCard key={s.id} s={s} fav={fav} onFav={() => toggleFav(s)} onOpen={() => setDetail(s)} reason={reason} />
+          ))}
+        </div>
+      ) : (
+        <button className="fit-prompt" onClick={() => setAskFit(true)}>
+          <b>Trzy pytania i wiemy, co Ci polecić</b>
+          <span className="small muted">Poziom, cel i pora dnia – zajmie mniej niż minutę. Serduszkiem dodasz też ulubione zajęcia.</span>
+        </button>
+      )}
+    </section>
+  );
+
   return (
     <div className="stack">
       <div className="row between">
@@ -192,7 +222,7 @@ export function Schedule() {
         </button>
       </div>
       {showFilters && (
-        <div className="stack" style={{ gap: 6 }}>
+        <div className="stack gap-2">
           {[
             ['Typ', types, type, setType],
             ['Trenerka', trainers, trainer, setTrainer],
@@ -219,37 +249,11 @@ export function Schedule() {
       {view === 'day' && data && dayRest && <DayRest kind={dayRest} next={nextAfterDay} onNext={(d) => setDay(d)} />}
       {view === 'day' && data && !dayRest && (
         <>
-          <section className="stack" style={{ gap: 10 }} aria-label="Dopasowane do Ciebie">
-            <div className="row between">
-              <h2 className="carousel-title">
-                Dopasowane <span className="serif">do Ciebie</span>
-              </h2>
-              {fit && (
-                <button className="link small" style={{ whiteSpace: 'nowrap' }} onClick={() => setAskFit(true)} aria-label="Zmień odpowiedzi z ankiety">
-                  Zmień
-                </button>
-              )}
-            </div>
-            {forYou.length > 0 ? (
-              <div className="cover-carousel">
-                {forYou.map(({ s, fav, reason }) => (
-                  <SessionCard key={s.id} s={s} fav={fav} onFav={() => toggleFav(s)} onOpen={() => setDetail(s)} reason={reason} />
-                ))}
-              </div>
-            ) : !fit ? (
-              <button className="fit-prompt" onClick={() => setAskFit(true)}>
-                <b>Trzy pytania i wiemy, co Ci polecić</b>
-                <span className="small muted">Poziom, cel i pora dnia – zajmie mniej niż minutę. Serduszkiem dodasz też ulubione zajęcia.</span>
-              </button>
-            ) : (
-              <p className="small muted" style={{ margin: 0 }}>
-                {list.length ? 'Tego dnia nic szczególnie pod Ciebie – zerknij niżej albo na kolejny dzień.' : 'Tego dnia nie ma zajęć.'}
-              </p>
-            )}
-          </section>
+          {/* Nic ulubionego ani dopasowanego → najpierw wszystkie zajęcia dnia; zachęta do ankiety ląduje pod nimi. */}
+          {forYou.length > 0 && forYouSection}
 
           {rest.length > 0 && (
-            <section className="stack" style={{ gap: 10 }} aria-label="Pozostałe zajęcia tego dnia">
+            <section className="stack gap-2" aria-label="Pozostałe zajęcia tego dnia">
               <h2 className="carousel-title">{forYou.length ? 'Pozostałe zajęcia' : 'Zajęcia tego dnia'}</h2>
               <div className="cover-carousel">
                 {rest.map((s) => (
@@ -258,6 +262,7 @@ export function Schedule() {
               </div>
             </section>
           )}
+          {forYou.length === 0 && !fit && forYouSection}
           {list.length === 0 && filtered.length > 0 && activeFilters > 0 && <Empty>Nic nie pasuje do filtrów tego dnia.</Empty>}
         </>
       )}
@@ -517,7 +522,7 @@ function MonthGrid({ today, sessions, selected, onPick }: { today: string; sessi
   }
   return (
     <div>
-      <div className="grid-3" style={{ gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+      <div className="month-days">
         {['pn', 'wt', 'śr', 'czw', 'pt', 'sob', 'nd'].map((d) => (
           <div key={d} className="tiny muted center">
             {d}
@@ -526,15 +531,25 @@ function MonthGrid({ today, sessions, selected, onPick }: { today: string; sessi
         {cells.map((d) => {
           const c = count.get(d);
           const past = d < today;
+          const label = `${MONTH_DAY.format(new Date(`${d}T12:00:00Z`))}${c ? ` · zajęcia: ${c.all}${c.mine ? ', jesteś zapisana' : ''}` : ' · brak zajęć'}`;
           return (
-            <button key={d} className="day" disabled={past} aria-pressed={d === selected} onClick={() => onPick(d)} style={{ padding: '6px 0', opacity: past ? 0.35 : 1 }}>
-              <b style={{ fontSize: '0.95rem' }}>{Number(d.slice(8))}</b>
-              <span style={{ fontSize: '0.6rem' }}>{c ? (c.mine ? `● ${c.all}` : c.all) : ''}</span>
+            <button
+              key={d}
+              className={`month-day${c && !past ? ' has-classes' : ''}${c?.mine && !past ? ' mine' : ''}`}
+              disabled={past}
+              aria-pressed={d === selected}
+              aria-label={label}
+              onClick={() => onPick(d)}
+            >
+              {Number(d.slice(8))}
             </button>
           );
         })}
       </div>
-      <p className="tiny muted">● – Twój zapis. Liczba – zajęcia tego dnia.</p>
+      <p className="tiny muted month-legend">
+        <span className="month-swatch has-classes" /> zajęcia
+        <span className="month-swatch mine" /> Twój zapis
+      </p>
     </div>
   );
 }

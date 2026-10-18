@@ -9,7 +9,6 @@ export type PushCategory =
   | 'motivation'
   | 'community'
   | 'courses'
-  | 'theme'
   | 'loyalty'
   | 'reactivation'
   | 'marketing'
@@ -18,7 +17,7 @@ export type PushCategory =
   | 'occasional';
 
 /** Kategorie liczone do wspólnego limitu „marketingowych”. */
-const MARKETING_GROUP: PushCategory[] = ['marketing', 'theme', 'reactivation', 'shop'];
+const MARKETING_GROUP: PushCategory[] = ['marketing', 'reactivation', 'shop'];
 
 const DAILY_LIMITS: { categories: PushCategory[]; max: number }[] = [
   { categories: MARKETING_GROUP, max: 2 },

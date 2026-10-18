@@ -104,7 +104,7 @@ function ShopSale() {
             <b>{p.name}</b> · {p.price}
             <span className="tiny muted" style={{ display: 'block' }}>{p.categoryLabel}</span>
           </span>
-          <span className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+          <span className="row gap-1" style={{ flexWrap: 'wrap' }}>
             {p.variants.map((v) => (
               <button key={v.id} className="chip" disabled={v.stock === 0} onClick={() => setItems([...items, { productId: p.id, variantId: v.id, qty: 1, label: `${p.name} (${v.label})` }])}>
                 + {v.label} ({v.stock === null ? '∞' : v.stock})

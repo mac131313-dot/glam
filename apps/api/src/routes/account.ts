@@ -14,6 +14,7 @@ import {
   passValidity,
   quizResult,
   resolveLook,
+  resolveSettings,
   validEmail,
   validEntry,
   weekStart,
@@ -72,11 +73,8 @@ export type UserPrefs = {
   visibility?: 'public' | 'studio' | 'private';
   frame?: string;
   language?: 'pl';
-  sounds?: boolean;
-  appIcon?: string;
   a11y?: { fontScale?: number; contrast?: boolean; reduceMotion?: boolean };
   quiz?: { answers: QuizAnswers; takenAt: string };
-  themesSeen?: string[];
   goal?: string;
   timePrefs?: string[];
   /** ankieta „Dopasujmy zajęcia” (core/classfit) */
@@ -154,16 +152,17 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/me', auth, async (req) => {
     const studios = db
       .prepare(
-        `SELECT s.id, s.name, s.city, s.logo, s.accent, s.tagline, s.look_json, s.logo_mime, s.logo_ratio, s.logo_version, s.status, s.plan_id, group_concat(m.role) AS roles
+        `SELECT s.id, s.name, s.city, s.logo, s.accent, s.tagline, s.look_json, s.settings_json, s.logo_mime, s.logo_ratio, s.logo_version, s.status, s.plan_id, group_concat(m.role) AS roles
          FROM memberships m JOIN studios s ON s.id = m.studio_id WHERE m.user_id = ? GROUP BY s.id ORDER BY s.name`,
       )
-      .all(me(req).id) as { id: string; roles: string; look_json: string | null; logo_mime: string | null; logo_ratio: number | null; logo_version: number }[];
+      .all(me(req).id) as { id: string; roles: string; look_json: string | null; settings_json: string | null; logo_mime: string | null; logo_ratio: number | null; logo_version: number }[];
     return {
       user: publicUser(me(req)),
-      studios: studios.map(({ look_json, logo_mime, logo_ratio, logo_version, ...s }) => ({
+      studios: studios.map(({ look_json, settings_json, logo_mime, logo_ratio, logo_version, ...s }) => ({
         ...s,
         roles: s.roles.split(','),
         look: resolveLook(look_json ? JSON.parse(look_json) : null),
+        panelTint: resolveSettings(settings_json ? JSON.parse(settings_json) : null).panelTint,
         ...logoInfo({ id: s.id, logo_mime, logo_ratio, logo_version }),
       })),
     };
@@ -175,7 +174,6 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
       email?: string | null;
       birthday?: string | null;
       nameday?: string | null;
-      themeOptOut?: boolean;
       needQuiet?: boolean;
       restToday?: boolean;
       quietFrom?: string;
@@ -199,13 +197,12 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
     if (prefs.a11y?.fontScale && (prefs.a11y.fontScale < 0.9 || prefs.a11y.fontScale > 1.6)) throw badRequest('Rozmiar tekstu: od 90 do 160%.');
     const today = new Date().toISOString().slice(0, 10);
     db.prepare(
-      `UPDATE users SET name = ?, email = ?, birthday = ?, nameday = ?, theme_opt_out = ?, need_quiet = ?, quiet_from = ?, quiet_to = ?, push_disabled_json = ?, prefs_json = ?, rest_day = ?, address_enc = ? WHERE id = ?`,
+      `UPDATE users SET name = ?, email = ?, birthday = ?, nameday = ?, need_quiet = ?, quiet_from = ?, quiet_to = ?, push_disabled_json = ?, prefs_json = ?, rest_day = ?, address_enc = ? WHERE id = ?`,
     ).run(
       b.name?.trim() ?? u.name,
       b.email !== undefined ? b.email || null : u.email,
       b.birthday !== undefined ? b.birthday : u.birthday,
       b.nameday !== undefined ? b.nameday : u.nameday,
-      b.themeOptOut !== undefined ? Number(b.themeOptOut) : u.theme_opt_out,
       b.needQuiet !== undefined ? Number(b.needQuiet) : u.need_quiet,
       b.quietFrom ?? u.quiet_from,
       b.quietTo ?? u.quiet_to,
@@ -657,7 +654,6 @@ export function publicUser(u: AuthUser) {
     email: u.email,
     birthday: u.birthday,
     nameday: u.nameday,
-    themeOptOut: !!u.theme_opt_out,
     needQuiet: !!u.need_quiet,
     restToday: u.rest_day === new Date().toISOString().slice(0, 10),
     quietFrom: u.quiet_from,

@@ -43,7 +43,7 @@ export function Today({ roles }: { roles: Role[] }) {
       {date === localDate() && <CheckinPanel onDone={reload} />}
 
       {data?.events.map((e) => (
-        <section key={e.id} className="card soft stack" style={{ gap: 4 }}>
+        <section key={e.id} className="card soft stack gap-1">
           <div className="eyebrow">Wydarzenie prywatne · {e.status}</div>
           <b>
             {fmtTime(e.starts_at)} · {e.activity} · {e.guests} os.
@@ -114,7 +114,7 @@ export function Today({ roles }: { roles: Role[] }) {
                 ) : p.status === 'no_show' ? (
                   <span className="badge">nieobecna</span>
                 ) : (
-                  <div className="row" style={{ gap: 6 }}>
+                  <div className="row gap-2">
                     <button className="btn sm" onClick={() => run(() => api(`/staff/bookings/${p.booking_id}/checkin`, { method: 'POST' }).then(reload), `${p.name} – obecna ✓`)}>
                       Check-in
                     </button>
@@ -163,7 +163,7 @@ function AddParticipant({ session, onClose, onDone }: { session: Session; onClos
         <input className="input" placeholder="Szukaj: imię lub telefon" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
         <Toggle label="Płatność na miejscu" hint="Zapis bez karnetu – rozliczenie w recepcji" checked={payAtDesk} onChange={setPayAtDesk} />
         <input className="input" placeholder="Gość (trening we dwie) – imię, opcjonalnie" value={guest} onChange={(e) => setGuest(e.target.value)} />
-        <div className="stack" style={{ gap: 4, maxHeight: 260, overflow: 'auto' }}>
+        <div className="stack gap-1" style={{ maxHeight: 260, overflow: 'auto' }}>
           {clients.data?.slice(0, 20).map((c) => (
             <button key={c.id} className="list-row" disabled={busy} onClick={() => addUser(c.id)}>
               <span className="grow" style={{ textAlign: 'left' }}>

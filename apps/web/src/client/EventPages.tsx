@@ -2,8 +2,8 @@
 // dodatki, podsumowanie (cena z cennika albo „do ustalenia”), regulamin; moje wydarzenia z ofertą, zaliczką,
 // notatką dla trenerki, zmianą godziny, odwołaniem i zaproszeniami dla gości (link, QR, RSVP).
 import { useState } from 'react';
-import { api, fmtDay, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Avatar, Empty, Field, PAYMENT_LABELS, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
+import { api, fmtDay, goToCheckout, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
+import { Avatar, Empty, Field, availableMethods, PAYMENT_LABELS, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -177,7 +177,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
     </div>,
     <div key="sum" className="stack">
       <h2>Podsumowanie</h2>
-      <div className="card soft stack" style={{ gap: 4 }}>
+      <div className="card soft stack gap-1">
         <div>{o.kinds.find((k) => k.id === kind)?.label} · {guests} osób</div>
         <div className="small">
           {slot && `${fmtLongDay(slot)}, ${fmtTime(slot)}`} · {o.zones.find((z) => z.id === zone)?.name} · {activity}
@@ -261,7 +261,7 @@ function EventDetail({ id }: { id: string }) {
   const { run, busy } = useAction();
   const toast = useToast();
   if (!data) return <Spinner />;
-  const act = (body: object, msg?: string) => run(() => api(`/events/${id}/client`, { method: 'POST', body }).then((r) => (reload(), r)), msg);
+  const act = (body: object, msg?: string) => run(() => api<{ checkoutUrl?: string }>(`/events/${id}/client`, { method: 'POST', body }).then((r) => (goToCheckout(r) || reload(), r)), msg);
   const yes = data.guestsList.filter((g) => g.rsvp === 'yes').length;
   return (
     <div className="stack-lg">
@@ -273,7 +273,7 @@ function EventDetail({ id }: { id: string }) {
         </p>
       </div>
       {data.offer_text && (
-        <section className="card soft stack" style={{ gap: 6 }}>
+        <section className="card soft stack gap-2">
           <div className="eyebrow">Oferta studia</div>
           <p style={{ margin: 0 }}>{data.offer_text}</p>
           {data.price && <b>{data.price}{data.deposit && data.payment_mode === 'deposit' ? ` · zaliczka ${data.deposit}` : ''}</b>}
@@ -288,7 +288,7 @@ function EventDetail({ id }: { id: string }) {
         <section className="stack">
           <div className="eyebrow">{data.payment_mode === 'deposit' ? 'Zaliczka online' : 'Płatność online (albo na miejscu)'}</div>
           <div className="pill-row">
-            {['blik', 'apple_pay', 'p24', 'card'].map((m) => (
+            {availableMethods(['blik', 'apple_pay', 'p24', 'card']).map((m) => (
               <button key={m} className="chip" aria-pressed={method === m} onClick={() => setMethod(m)}>
                 {PAYMENT_LABELS[m]}
               </button>

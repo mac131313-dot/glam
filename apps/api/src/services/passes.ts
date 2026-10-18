@@ -38,7 +38,7 @@ export function toPass(row: PassRow, now = new Date()): Pass {
 }
 
 export function loadPasses(scope: StudioScope, userId: string, now = new Date()): Pass[] {
-  return scope.all<PassRow>("SELECT * FROM passes WHERE studio_id = $studio AND user_id = $user AND status != 'pending' ORDER BY valid_until", { user: userId }).map((r) => toPass(r, now));
+  return scope.all<PassRow>("SELECT * FROM passes WHERE studio_id = $studio AND user_id = $user AND status NOT IN ('pending', 'cancelled') ORDER BY valid_until", { user: userId }).map((r) => toPass(r, now));
 }
 
 export function passRows(scope: StudioScope, userId: string): PassRow[] {

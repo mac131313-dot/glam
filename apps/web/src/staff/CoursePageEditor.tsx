@@ -77,10 +77,10 @@ function PageTexts({ courseId, page }: { courseId: string; page: CoursePage }) {
       <Field label="Sprzęt">
         <input className="input" value={f.equipment} onChange={(e) => setF({ ...f, equipment: e.target.value })} placeholder="mata, mała piłka i krzesło" />
       </Field>
-      <div className="stack" style={{ gap: 8 }}>
+      <div className="stack gap-2">
         <span className="field-label">Pytania i odpowiedzi</span>
         {faq.map((x, i) => (
-          <div key={i} className="card flat stack" style={{ gap: 6 }}>
+          <div key={i} className="card flat stack gap-2">
             <input className="input" placeholder="Pytanie" value={x.q} onChange={(e) => setFaq(faq.map((y, j) => (j === i ? { ...y, q: e.target.value } : y)))} />
             <textarea className="input" placeholder="Odpowiedź" value={x.a} onChange={(e) => setFaq(faq.map((y, j) => (j === i ? { ...y, a: e.target.value } : y)))} />
             <button className="link tiny" style={{ alignSelf: 'flex-end' }} onClick={() => setFaq(faq.filter((_, j) => j !== i))}>
@@ -168,7 +168,7 @@ function EditionForm({ courseId, edition, done }: { courseId: string; edition?: 
         {date('accessUntil', 'Dostęp do')}
       </div>
       <span className="tiny muted">Puste daty sprzedaży = sprzedaż otwarta. Koniec dostępu skraca „dostęp w dniach” z opisu kursu, jeśli wypada wcześniej.</span>
-      <div className="stack" style={{ gap: 6 }}>
+      <div className="stack gap-2">
         <span className="field-label">Nowości w tej edycji</span>
         {news.map((n, i) => (
           <div key={i} className="row">
@@ -228,7 +228,7 @@ function Tiers({ courseId, tiers, reload }: { courseId: string; tiers: Tier[]; r
                 {t.seatLimit ? ` z ${t.seatLimit}` : ''}
               </span>
             </span>
-            <span className="row" style={{ gap: 6 }}>
+            <span className="row gap-2">
               {t.highlight && <span className="badge">wyróżniony</span>}
               {!t.active && <span className="badge">ukryty</span>}
             </span>
@@ -333,10 +333,10 @@ function People({ courseId, data, reload }: { courseId: string; data: Editor; re
       )}
       {open === 'new' && <PersonForm courseId={courseId} staff={data.staff} done={() => (setOpen(null), reload())} />}
       {data.people.length > 0 && data.lessons.length > 0 && (
-        <div className="stack" style={{ gap: 8 }}>
+        <div className="stack gap-2">
           <span className="field-label">Kto prowadzi lekcje</span>
           {modules.map((m) => (
-            <div key={m} className="stack" style={{ gap: 4 }}>
+            <div key={m} className="stack gap-1">
               <div className="tiny muted">{m}</div>
               {data.lessons
                 .filter((l) => l.module === m)

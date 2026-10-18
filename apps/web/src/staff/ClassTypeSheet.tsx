@@ -1,4 +1,4 @@
-// Nowe zajęcia / „Dla kogo” przy istniejących (Grafik i sale → Typy zajęć). Poziom, cel i grupy trafiają
+// Nowe zajęcia / „Dla kogo” przy istniejących (Grafik → Typy zajęć). Poziom, cel i grupy trafiają
 // do karuzeli „Dopasowane do Ciebie” w Grafiku klientek (core/classfit).
 import { useState } from 'react';
 import { CLASS_LEVELS, FOCUS, FOR_WHOM, FOR_WHOM_CLASS, type ClassAudience } from '@glam/core';
@@ -11,7 +11,7 @@ const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x
 
 export function AudiencePicker({ value, onChange }: { value: ClassAudience; onChange: (a: ClassAudience) => void }) {
   return (
-    <div className="stack" style={{ gap: 14 }}>
+    <div className="stack gap-4">
       <div className="field">
         <span className="field-label">Poziom</span>
         <div className="chips" style={{ flexWrap: 'wrap' }} role="radiogroup" aria-label="Poziom">

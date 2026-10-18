@@ -13,9 +13,8 @@ export function BreathCalendar({ ritual, onClose }: { ritual: BreathRitual; onCl
   const now = new Date();
   const today = isoDay(now);
   const current = now.getFullYear() * 12 + now.getMonth();
-  // Wstecz do pierwszego miesiąca z kwiatkiem (najdalej rok), dalej niż bieżący miesiąc nie ma po co.
-  const first = ritual.days[0] ? Number(ritual.days[0].slice(0, 4)) * 12 + Number(ritual.days[0].slice(5, 7)) - 1 : current;
-  const oldest = Math.max(current - 12, Math.min(first, current));
+  // Zawsze rok wstecz – także miesiące bez kwiatków (blokada do pierwszego kwiatka wyglądała jak zepsuta strzałka); dalej niż bieżący miesiąc nie ma po co.
+  const oldest = current - 12;
   const [month, setMonth] = useState(current);
   const done = new Set(ritual.days);
 

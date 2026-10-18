@@ -467,7 +467,7 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
     return { progress: challengeProgress(scope, studio, ch, user.id), completed: completeIfDone(scope, studio, ch, user.id) };
   });
 
-  app.post<{ Body: { title: string; description?: string; metric: 'trainings' | 'mindful' | 'checkins'; target: number; startsOn: string; endsOn: string; badgeCode?: string | null; themeId?: string | null } }>('/api/staff/challenges', challengesPerm, async (req) => {
+  app.post<{ Body: { title: string; description?: string; metric: 'trainings' | 'mindful' | 'checkins'; target: number; startsOn: string; endsOn: string; badgeCode?: string | null } }>('/api/staff/challenges', challengesPerm, async (req) => {
     const { scope, user } = ctx(req);
     const b = req.body;
     if (!b?.title?.trim() || !['trainings', 'mindful', 'checkins'].includes(b.metric) || !(b.target >= 1 && b.target <= 365)) throw badRequest('Podaj nazwę, miarę i cel (1–365).');
@@ -475,7 +475,7 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
     const m = moderate(`${b.title} ${b.description ?? ''}`, { allowLinks: false });
     if (!m.ok) throw badRequest(MODERATION_COPY[m.reason]);
     const cid = id();
-    scope.run('INSERT INTO challenges (id, studio_id, title, description, metric, target, starts_on, ends_on, badge_code, theme_id, created_at) VALUES ($id, $studio, $t, $d, $m, $target, $s, $e, $b, $th, $now)', {
+    scope.run('INSERT INTO challenges (id, studio_id, title, description, metric, target, starts_on, ends_on, badge_code, created_at) VALUES ($id, $studio, $t, $d, $m, $target, $s, $e, $b, $now)', {
       id: cid,
       t: b.title.trim().slice(0, 80),
       d: b.description?.slice(0, 500) ?? null,
@@ -484,7 +484,6 @@ export function communityRoutes(app: FastifyInstance, deps: Deps) {
       s: b.startsOn,
       e: b.endsOn,
       b: b.badgeCode ?? null,
-      th: b.themeId ?? null,
       now: nowIso(),
     });
     audit(scope, { actorId: user.id, action: 'challenge.created', entity: 'challenge', entityId: cid });

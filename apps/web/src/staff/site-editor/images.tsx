@@ -129,7 +129,7 @@ export function ImageField({
       </button>
       <div className="se-zdjecie-akcje">
         {label && <span className="se-zdjecie-nazwa">{label}</span>}
-        <span className="row" style={{ gap: 6 }}>
+        <span className="row gap-2">
           <button type="button" className="se-przycisk maly" onClick={pick} disabled={!!busy}>
             {value ? 'Zmień' : 'Wgraj'}
           </button>

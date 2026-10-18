@@ -16,7 +16,7 @@ export default function TrainerPages({ arg }: RouteProps) {
   const paragraphs = (p.about ?? '').split(/\n{2,}/).map((x) => x.trim()).filter(Boolean);
   return (
     <div className="stack-lg">
-      <section className="stack" style={{ gap: 14 }}>
+      <section className="stack gap-4">
         <div style={{ width: '100%', aspectRatio: '4 / 5', borderRadius: 'var(--radius, 18px)', overflow: 'hidden', background: 'var(--soft)', display: 'grid', placeItems: 'center' }}>
           {p.avatarUrl ? <img src={p.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="serif" style={{ fontSize: '4rem', color: 'var(--muted)' }}>{p.name.charAt(0)}</span>}
         </div>
@@ -31,7 +31,7 @@ export default function TrainerPages({ arg }: RouteProps) {
       </section>
 
       {p.videoUrl && (
-        <section className="stack" style={{ gap: 8 }}>
+        <section className="stack gap-2">
           <div className="eyebrow">Poznajmy się</div>
           <AuthVideo src={p.videoUrl} controls playsInline preload="metadata" style={{ width: '100%', maxHeight: '70vh', borderRadius: 18, background: 'var(--soft)' }} />
         </section>
@@ -48,7 +48,7 @@ export default function TrainerPages({ arg }: RouteProps) {
         </section>
       )}
 
-      <section className="stack" style={{ gap: 10 }}>
+      <section className="stack gap-2">
         <div className="eyebrow">Zaprasza Cię na</div>
         {p.invites.length === 0 ? <Empty>Na razie bez zaproszeń – zajrzyj do grafiku.</Empty> : p.invites.map((i) => <InviteCard key={i.id} invite={i} onChange={t.reload} showTrainer={false} />)}
       </section>

@@ -7,6 +7,9 @@ import {
   DEFAULT_POLICY,
   DEFAULT_PUSH_PREFS,
   describePass,
+  goalCount,
+  goalExtra,
+  passMeter,
   describeRules,
   localParts,
   planSessions,
@@ -84,6 +87,33 @@ test('dostęp czasowy z oknem 6:00–22:00 i check-in bez typu zajęć', () => {
   assert.equal(checkAccess(p, { classTypeId: null, zoneId: 'pilates', startsAt: at('2026-10-14', '07:00'), usage: noUsage }).ok, false);
 });
 
+test('cel tygodnia: licznik nie przekracza celu, nadwyżka osobno', () => {
+  assert.equal(goalCount(2, 3), '2/3');
+  assert.equal(goalCount(3, 3), '3/3');
+  assert.equal(goalCount(4, 3), '3/3');
+  assert.equal(goalExtra(4, 3), ' +1');
+  assert.equal(goalExtra(3, 3), '');
+  assert.equal(goalCount(2, 0), '2');
+});
+
+test('opis karnetu: typy o tej samej nazwie wymienione raz', () => {
+  const lines = describeRules(
+    { validityDays: 30, pools: [{ id: 'p', label: 'P', entries: 4, classTypeIds: ['a', 'b', 'c'] }] },
+    { classTypes: { a: 'Pilates Klasyczny', b: 'Pilates Klasyczny', c: 'Reformer Flow' }, zones: {} },
+  );
+  assert.equal(lines[0], '4 wejścia na Pilates Klasyczny i Reformer Flow');
+});
+
+test('karta karnetu: duża cyfra tylko, gdy stan mieści się w jednej liczbie', () => {
+  const p = pass({ validityDays: 90, pools: [{ id: 'r', label: 'Reformer', entries: 8, classTypeIds: ['reformer'] }] }, { r: 2 });
+  assert.deepEqual(passMeter(p), { value: '2', unit: 'z 8 wejść', until: 'ważny do 30.11' });
+  assert.equal(passMeter(pass({ validityDays: 30, pools: [{ id: 'r', label: 'R', entries: 1, classTypeIds: 'all' }] }, { r: 1 }))?.unit, 'z 1 wejścia');
+  assert.equal(passMeter(pass({ validityDays: 30, unlimited: { zoneIds: 'all', classTypeIds: 'all' } }, {}))?.value, '∞');
+  assert.equal(passMeter({ ...p, status: 'frozen' }), null);
+  const two = pass({ validityDays: 30, pools: [{ id: 'a', label: 'A', entries: 4, classTypeIds: 'all' }, { id: 'b', label: 'B', entries: 4, classTypeIds: 'all' }] }, { a: 1, b: 2 });
+  assert.equal(passMeter(two), null);
+});
+
 test('limit tygodniowy (Mix 8: max 3 w tygodniu)', () => {
   const p = pass({ validityDays: 30, weeklyLimit: 3, pools: [{ id: 'm', label: 'Mix', entries: 8, classTypeIds: 'all' }] }, { m: 8 });
   const res = checkAccess(p, { classTypeId: 'mat', zoneId: 'z', startsAt: at('2026-10-14', '18:00'), usage: { day: 0, week: 3 } });
@@ -145,7 +175,7 @@ test('push: ciche godziny, limity, potrzebuję ciszy', () => {
   assert.equal(!d.send && d.reason === 'quiet_hours' && d.deferUntil.toISOString(), at('2026-10-15', '07:00').toISOString());
   assert.equal(pushDecision({ category: 'transactional', now: night, prefs: DEFAULT_PUSH_PREFS, sentToday: {} }).send, true);
   const noon = at('2026-10-14', '12:00');
-  assert.deepEqual(pushDecision({ category: 'theme', now: noon, prefs: DEFAULT_PUSH_PREFS, sentToday: { marketing: 1, shop: 1 } }), { send: false, reason: 'daily_limit' });
+  assert.deepEqual(pushDecision({ category: 'reactivation', now: noon, prefs: DEFAULT_PUSH_PREFS, sentToday: { marketing: 1, shop: 1 } }), { send: false, reason: 'daily_limit' });
   assert.deepEqual(pushDecision({ category: 'occasional', now: noon, prefs: { ...DEFAULT_PUSH_PREFS, needQuiet: true }, sentToday: {} }), { send: false, reason: 'need_quiet' });
 });
 
@@ -197,4 +227,20 @@ test('logo: rozstrzygnięcie trybu automatycznego', async () => {
   assert.deepEqual([resolveLogoDisplay(DEFAULT_LOGO_STYLE, true).shape, resolveLogoDisplay(DEFAULT_LOGO_STYLE, true).showName], ['free', false]);
   assert.deepEqual([resolveLogoDisplay(DEFAULT_LOGO_STYLE, false).shape, resolveLogoDisplay(DEFAULT_LOGO_STYLE, false).showName], ['circle', true]);
   assert.equal(resolveLogoDisplay({ ...DEFAULT_LOGO_STYLE, shape: 'rounded', showName: 'no' }, true).showName, false);
+});
+
+test('kwadrat oddechu: kropka obiega kwadrat w rytmie box, inny rytm chodzi po pionowej linii', async () => {
+  const { patternById, squarePoint, visualFor } = await import('../src/mindful.ts');
+  const box = patternById('box');
+  assert.equal(visualFor(box), 'square');
+  assert.equal(visualFor(patternById('calm')), 'bloom');
+  assert.deepEqual(squarePoint(box, 0, 0), { x: 0, y: 1, fromX: 0, fromY: 1 }, 'wdech startuje w lewym dolnym rogu');
+  assert.deepEqual(squarePoint(box, 0, 0.5), { x: 0, y: 0.5, fromX: 0, fromY: 1 }, 'wdech idzie w górę');
+  assert.deepEqual(squarePoint(box, 1, 1), { x: 1, y: 0, fromX: 0, fromY: 0 }, 'przytrzymanie po wdechu: górny bok');
+  assert.deepEqual(squarePoint(box, 3, 1), { x: 0, y: 1, fromX: 1, fromY: 1 }, 'koniec cyklu wraca do startu');
+  const calm = patternById('calm');
+  assert.equal(squarePoint(calm, 0, 1).y, 0, 'wdech kończy się u góry linii');
+  assert.equal(squarePoint(calm, 1, 1).y, 1, 'wydech kończy się na dole');
+  const night = patternById('night');
+  assert.equal(squarePoint(night, 1, 0.5).y, 0, 'przytrzymanie po wdechu stoi u góry');
 });

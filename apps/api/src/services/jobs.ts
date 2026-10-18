@@ -15,7 +15,6 @@ import {
   reminderLead,
   passValidity,
   returnStock,
-  scheduledTheme,
   toMinutes,
   TRIGGERS,
   weekStart,
@@ -34,6 +33,7 @@ import { recordPayment } from './payments.ts';
 import { fillSchedule } from './schedule.ts';
 import { loadStudio, type Studio } from './studio.ts';
 import { weekProgress } from './progress.ts';
+import { chargeSaved, stripeGateway } from './stripe.ts';
 
 type Ctx = { deps: Deps; scope: StudioScope; studio: Studio; now: Date; today: string; minutes: number; weekday: number };
 
@@ -161,6 +161,18 @@ function passExpiry(c: Ctx) {
   c.scope.run("UPDATE passes SET status = 'expired' WHERE studio_id = $studio AND status = 'active' AND valid_until < $now", { now: c.now.toISOString() });
 }
 
+/**
+ * Studio ze Stripe: PaymentIntent off_session na kartę zapisaną przy Checkout subskrypcji.
+ * Bez zapisanej karty (np. karnet kupiony przed podpięciem Stripe) – nieudana próba i prośba o zakup w aplikacji.
+ */
+async function renewalCharge(c: Ctx, userId: string, amountGrosze: number, description: string) {
+  const gw = stripeGateway(c.scope.db, c.studio.id);
+  if (!gw) return c.deps.payments.charge({ amountGrosze, method: 'saved', description, studioId: c.studio.id });
+  const card = c.scope.get<{ customer_id: string; payment_method_id: string | null }>('SELECT customer_id, payment_method_id FROM stripe_customers WHERE studio_id = $studio AND user_id = $u', { u: userId });
+  if (!card?.payment_method_id) return { status: 'failed' as const, ref: 'no_saved_card' };
+  return chargeSaved(c.deps.http ?? fetch, gw, { customerId: card.customer_id, paymentMethodId: card.payment_method_id }, { amountGrosze, description, metadata: { studio: c.studio.id, user: userId, kind: 'renewal' } });
+}
+
 /** Plan miesięczny z automatycznym odnawianiem (C9): nowy okres pobierany z zapisanej metody płatności. */
 async function renewals(c: Ctx) {
   const due = c.scope.all<{ id: string; user_id: string; product_version_id: string | null; product_name: string; rules_json: string; valid_until: string; status: string }>(
@@ -177,7 +189,7 @@ async function renewals(c: Ctx) {
         )
       : undefined;
     if (!product) continue;
-    const charge = await c.deps.payments.charge({ amountGrosze: product.price_grosze, method: 'saved', description: `${p.product_name} – odnowienie`, studioId: c.studio.id });
+    const charge = await renewalCharge(c, p.user_id, product.price_grosze, `${p.product_name} – odnowienie`);
     c.scope.tx(() => {
       c.scope.run('UPDATE passes SET auto_renew = 0 WHERE studio_id = $studio AND id = $id', { id: p.id });
       if (charge.status !== 'paid') {
@@ -261,39 +273,6 @@ function challengesStart(c: Ctx) {
   for (const ch of starting) {
     if (!once(c.scope, `challenge_start:${ch.id}`, c.now)) continue;
     for (const u of clients(c.scope)) notify(c.scope, { userId: u.id, category: 'community', tz: c.studio.timezone, now: c.now, body: TRIGGERS.new_challenge.text({ title: ch.title }), action: `community/challenge/${ch.id}` });
-  }
-}
-
-// ——— Motywy (M1) ———
-
-function themes(c: Ctx) {
-  const rows = c.scope.all<{ id: string; name: string; tagline: string | null; starts_on: string | null; ends_on: string | null; auto: number; is_active: number; segment: string | null; pack_json: string | null }>(
-    'SELECT id, name, tagline, starts_on, ends_on, auto, is_active, segment, pack_json FROM themes WHERE studio_id = $studio',
-  );
-  const target = scheduledTheme(
-    rows.map((t) => ({ id: t.id, startsOn: t.starts_on, endsOn: t.ends_on, auto: !!t.auto, isActive: !!t.is_active, segment: t.segment })),
-    c.today,
-  );
-  const active = rows.find((t) => t.is_active);
-  if (target !== (active?.id ?? null) && (!active || active.auto)) {
-    c.scope.tx(() => {
-      c.scope.run('UPDATE themes SET is_active = 0 WHERE studio_id = $studio AND is_active = 1');
-      if (target) c.scope.run('UPDATE themes SET is_active = 1 WHERE studio_id = $studio AND id = $id', { id: target });
-    });
-  }
-  const current = rows.find((t) => t.id === (target ?? active?.id));
-  if (!current || !atOrAfter(c, '09:00')) return;
-  const pack = current.pack_json ? JSON.parse(current.pack_json) : {};
-  if (current.auto && current.starts_on === c.today) {
-    for (const u of clients(c.scope)) {
-      notify(c.scope, { userId: u.id, category: 'theme', tz: c.studio.timezone, now: c.now, body: TRIGGERS.theme_start.text({ tagline: current.tagline ?? '', name: current.name }), action: 'start', dedupeKey: `theme_start:${current.id}:${c.today}` });
-    }
-  }
-  if (pack.badge && current.ends_on && addDays(current.ends_on, -1) === c.today) {
-    for (const u of clients(c.scope)) {
-      if (c.scope.get('SELECT 1 FROM user_badges WHERE studio_id = $studio AND user_id = $u AND code = $b', { u: u.id, b: pack.badge })) continue;
-      notify(c.scope, { userId: u.id, category: 'theme', tz: c.studio.timezone, now: c.now, body: TRIGGERS.badge_last_chance.text({}), action: 'community', dedupeKey: `badge_last:${current.id}` });
-    }
   }
 }
 
@@ -544,7 +523,7 @@ export const registerCampaignSender = (fn: typeof sendCampaignHook) => {
   sendCampaignHook = fn;
 };
 
-const JOBS = [autofill, closeSessions, classReminders, recurring, passExpiry, freezes, wellbeing, challengesStart, themes, occasions, dormant, firstMonth, courses, welcomes, shopAndPasses, privateEvents, campaigns];
+const JOBS = [autofill, closeSessions, classReminders, recurring, passExpiry, freezes, wellbeing, challengesStart, occasions, dormant, firstMonth, courses, welcomes, shopAndPasses, privateEvents, campaigns];
 
 // ——— Platforma: okres próbny, kopie zapasowe ———
 

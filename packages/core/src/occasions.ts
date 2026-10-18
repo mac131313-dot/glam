@@ -87,36 +87,3 @@ export function isAnniversary(firstIsoDate: string, today: string): number {
   const day = fm === 2 && fd === 29 && !leap(ty) ? 28 : fd;
   return ty > fy && tm === fm && td === day ? ty - fy : 0;
 }
-
-// ——— Kalendarz edycji sezonowych (7.4) – propozycje do biblioteki pakietów ———
-
-export type EditionIdea = { id: string; name: string; tagline: string; from: (y: number) => string; to: (y: number) => string; ideas: string; classes: string; badge?: string };
-
-const shift = (f: (y: number) => string, days: number) => (y: number) => {
-  const d = new Date(`${f(y)}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-};
-
-export const EDITIONS: EditionIdea[] = [
-  { id: 'styczen', name: 'Nowy rok, nowy oddech', tagline: 'Cel roku bez presji.', from: md(1, 2), to: md(1, 31), ideas: 'Cel roku, wyzwanie „Styczeń w ruchu”, ankieta celów', classes: 'Start roku, Flow ogólny' },
-  { id: 'walentynki', name: 'Miłość do siebie', tagline: 'Rytuał samoakceptacji.', from: md(2, 7), to: md(2, 14), ideas: 'Zniżka dla pary, kartka do przyjaciółki', classes: 'Pilates w parze, Stretch' },
-  { id: 'dzien_kobiet', name: 'Siła kobiet', tagline: 'Nie musisz nic udowadniać.', from: md(3, 1), to: md(3, 8), ideas: 'Wyzwanie „Kobieca siła”, rabat dla koleżanki', classes: 'Reformer Power, Stretch', badge: 'women_power' },
-  { id: 'wiosna', name: 'Odrodzenie', tagline: 'Świeży start.', from: shift(easter, -10), to: shift(easter, 1), ideas: 'Medytacja „Świeży start”, wyzwanie „Lekko w ciele”', classes: 'Oddech i mobilność' },
-  { id: 'dzien_matki', name: 'Dla mam i dla Ciebie', tagline: 'Zabierz mamę na trening.', from: md(5, 19), to: md(5, 26), ideas: 'Voucher „Mama + córka”, tryb po porodzie', classes: 'Pilates dla mam, Stretch' },
-  { id: 'lato', name: 'Lekkość', tagline: 'Lato w formie bez pośpiechu.', from: md(6, 1), to: md(6, 30), ideas: 'Zajęcia na świeżym powietrzu, playlisty', classes: 'Outdoor' },
-  { id: 'wakacje', name: 'Urlop dla ciała', tagline: 'Zamrożenie karnetu z uśmiechem.', from: md(7, 1), to: md(8, 31), ideas: 'Tryb urlopowy, medytacje w podróży, pakiet „Wracam po wakacjach”', classes: 'Krótkie zajęcia, Stretch' },
-  { id: 'wrzesien', name: 'Nowy start po wakacjach', tagline: 'Wrzesień na nowo.', from: md(9, 1), to: md(9, 30), ideas: 'Zniżka powrotna, grupy tematyczne', classes: 'Start sezonu, Flow' },
-  { id: 'pazdziernik', name: 'Październik oddechowy', tagline: 'Zwolnij i oddychaj.', from: md(10, 1), to: md(10, 30), ideas: 'Wyzwanie oddechowe, herbaciany rytuał, ciepły dziennik', classes: 'Oddech, Stretch wieczorny', badge: 'breath_october' },
-  { id: 'halloween', name: 'Strasznie dobry trening', tagline: 'Halloween Flow – bez strasznych treści.', from: md(10, 31), to: md(10, 31), ideas: 'Motyw dyniowy, zajęcia „Mroczny Flow”', classes: 'Zajęcia tematyczne Halloween', badge: 'ghost' },
-  { id: 'zaduszki', name: 'Chwila dla siebie', tagline: 'Wyciszenie i wdzięczność.', from: md(11, 1), to: md(11, 2), ideas: 'Medytacja pamięci i wdzięczności, lampion', classes: 'Medytacja, Stretch' },
-  { id: 'niepodleglosc', name: 'Silne kobiety w Polsce', tagline: 'Subtelna biel i czerwień.', from: md(11, 11), to: md(11, 11), ideas: 'Odznaka „Patriotka formy”', classes: 'Flow', badge: 'patriotka' },
-  { id: 'black_friday', name: 'Dla siebie', tagline: 'Prezent dla przyjaciółki.', from: shift(blackFriday, -3), to: blackFriday, ideas: 'Kampania karnetów (bez presji), voucher dla przyjaciółki', classes: 'Bez zmian' },
-  { id: 'mikolajki', name: 'Prezent dla siebie', tagline: 'Mała niespodzianka.', from: md(12, 6), to: md(12, 6), ideas: 'Voucher, wiadomość od trenerki', classes: 'Stretch, Flow', badge: 'mikolajki' },
-  { id: 'swieta', name: 'Ciepło i spokój', tagline: 'Światła, herbata i oddech.', from: md(12, 7), to: md(12, 27), ideas: 'Medytacja „Spokojne święta”, wyzwanie „21 dni wdzięczności”', classes: 'Zajęcia świąteczne, Stretch' },
-  { id: 'sylwester', name: 'Nowy rok, nowy ja', tagline: 'Co zostawiam w starym roku.', from: md(12, 31), to: md(12, 31), ideas: 'Ankieta „Co chcę zostawić”, motyw złoto-biały', classes: 'Medytacja noworoczna' },
-];
-
-export function editionsFor(year: number) {
-  return EDITIONS.map((e) => ({ ...e, from: e.from(year), to: e.to(year) }));
-}

@@ -1,5 +1,5 @@
 // Wygląd studia (T4: marka studia w aplikacji). Wygląd to dane, nie kod:
-// paleta + trzy role czcionek + stopień miękkości. Motyw sezonowy (sekcja 7) nadpisuje tylko kolory.
+// paleta + trzy role czcionek + stopień miękkości.
 
 export type Palette = {
   /** tło aplikacji */
@@ -113,9 +113,6 @@ export const PALETTES: PalettePreset[] = [
     },
   },
 ];
-
-/** Efekt dekoracyjny motywu sezonowego – czysto wizualny, wyłączany przez „Zawsze standard” i ograniczenie ruchu. */
-export type SeasonalEffect = 'snow';
 
 export type FontRole = 'display' | 'head' | 'body' | 'label';
 
@@ -240,6 +237,19 @@ export const DEFAULT_LOOK: Look = {
 };
 
 export const paletteById = (id: string) => (PALETTES.find((p) => p.id === id) ?? PALETTES[0]).palette;
+
+/** Kolor przewodni panelu studia: stonowane odcienie na aktywnym menu, przełącznikach i obwódkach pól.
+ *  `color` – znaczniki i przełączniki, `soft` – bardzo jasne tło aktywnej pozycji. Grafit = panel bez koloru. */
+export type PanelTint = { id: string; label: string; color: string; soft: string };
+export const PANEL_TINTS: PanelTint[] = [
+  { id: 'grafit', label: 'Grafit', color: '#18181b', soft: '#f3f3f4' },
+  { id: 'szalwia', label: 'Szałwia', color: '#6f8a72', soft: '#eef3ee' },
+  { id: 'lupek', label: 'Łupek', color: '#64788f', soft: '#eef1f5' },
+  { id: 'puder', label: 'Puder', color: '#ad7f86', soft: '#f7eff0' },
+  { id: 'piasek', label: 'Piasek', color: '#9f8763', soft: '#f5f1ea' },
+  { id: 'sliwka', label: 'Śliwka', color: '#857089', soft: '#f3eff4' },
+];
+export const panelTintById = (id: string | null | undefined) => PANEL_TINTS.find((t) => t.id === id) ?? PANEL_TINTS[0];
 export const fontById = (id: string) => FONTS.find((f) => f.id === id) ?? FONTS[0];
 
 /** Uzupełnia brakujące pola wartościami domyślnymi (stare rekordy, częściowe dane). */

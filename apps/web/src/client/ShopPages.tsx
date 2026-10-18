@@ -2,9 +2,9 @@
 // z galerią i opcjonalnym makro napoju, rezerwacja do odbioru albo wysyłka; zamówienia i partnerzy.
 import { useMemo, useRef, useState } from 'react';
 import { nutritionHighlight, nutritionRows, SHOP_CATEGORIES, type Nutrition } from '@glam/core';
-import { api, fmtDay, useApi } from '../api.ts';
+import { api, fmtDay, goToCheckout, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
-import { Empty, ListRow, PAYMENT_LABELS, Sheet, Spinner, useAction } from '../ui.tsx';
+import { Empty, ListRow, availableMethods, PAYMENT_LABELS, Sheet, Spinner, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -248,7 +248,7 @@ function BuySheet({ product, settings, onClose, onDone }: { product: ShopProduct
               </p>
             )}
             <div className="pill-row">
-              {['blik', 'apple_pay', 'google_pay', 'p24', 'card'].map((m) => (
+              {availableMethods(['blik', 'apple_pay', 'google_pay', 'p24', 'card']).map((m) => (
                 <button key={m} type="button" className="chip" aria-pressed={method === m} onClick={() => setMethod(m)}>
                   {PAYMENT_LABELS[m]}
                 </button>
@@ -261,7 +261,8 @@ function BuySheet({ product, settings, onClose, onDone }: { product: ShopProduct
           disabled={!variant || busy}
           onClick={() =>
             run(() =>
-              api<{ message: string }>('/shop/orders', { method: 'POST', body: { kind, method: kind === 'online' ? method : undefined, items: [{ productId: product.id, variantId: variant, qty }] } }).then((r) => {
+              api<{ message: string; checkoutUrl?: string }>('/shop/orders', { method: 'POST', body: { kind, method: kind === 'online' ? method : undefined, items: [{ productId: product.id, variantId: variant, qty }] } }).then((r) => {
+                if (goToCheckout(r)) return r;
                 onDone();
                 onClose();
                 return r;
@@ -285,7 +286,7 @@ function Orders() {
     <div className="stack">
       {orders.data.length === 0 && <Empty>Brak zamówień.</Empty>}
       {orders.data.map((o) => (
-        <div key={o.id} className="card flat stack" style={{ gap: 6 }}>
+        <div key={o.id} className="card flat stack gap-2">
           <div className="row between">
             <b>{o.items.map((i) => `${i.name} (${i.variant}) × ${i.qty}`).join(', ')}</b>
             <span className="badge">{STATUS[o.status] ?? o.status}</span>
@@ -313,7 +314,7 @@ function Partners() {
     <div className="stack">
       {list.data.length === 0 && <Empty>Studio nie ma jeszcze partnerów.</Empty>}
       {list.data.map((p) => (
-        <div key={p.id} className="card flat stack" style={{ gap: 6 }}>
+        <div key={p.id} className="card flat stack gap-2">
           <div className="eyebrow">{p.category}</div>
           <b>{p.name}</b>
           {p.description && <span className="small muted">{p.description}</span>}

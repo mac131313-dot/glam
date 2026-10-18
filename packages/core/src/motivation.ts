@@ -52,7 +52,6 @@ export const BADGES: BadgeDef[] = [
   { code: 'course', name: 'Kurs ukończony', description: 'Ukończony kurs online.', icon: 'cap' },
   { code: 'event', name: 'Wydarzeniowa', description: 'Wydarzenie w studiu za Tobą.', icon: 'gift' },
   { code: 'anniversary', name: 'Rok z nami', description: 'Rocznica pierwszego treningu.', icon: 'star' },
-  { code: 'collector', name: 'Kolekcjonerka', description: 'Poznałaś 3 różne motywy.', icon: 'season' },
   { code: 'ghost', name: 'Duch studia', description: 'Halloween w studiu.', icon: 'season', limited: { from: '10-25', to: '11-01' } },
   { code: 'mikolajki', name: 'Mikołajkowa', description: 'Mikołajki w studiu.', icon: 'gift', limited: { from: '12-01', to: '12-07' } },
   { code: 'patriotka', name: 'Patriotka formy', description: '11 listopada na wspólnym treningu.', icon: 'flag', limited: { from: '11-08', to: '11-12' } },
@@ -78,11 +77,9 @@ export type BadgeStats = {
   journalEntries: number;
   calmCourseDone: boolean;
   friendsBrought: number;
-  themesSeen: number;
-  attendedThemedToday?: string | null;
 };
 
-/** Odznaki należne na podstawie statystyk (bez limitowanych – te przyznają wyzwania i motywy). */
+/** Odznaki należne na podstawie statystyk (bez limitowanych – te przyznają wyzwania). */
 export function earnedBadges(s: BadgeStats): string[] {
   const out: string[] = [];
   if (s.attended >= 1) out.push('first_class');
@@ -96,7 +93,6 @@ export function earnedBadges(s: BadgeStats): string[] {
   if (s.journalEntries >= 7) out.push('journal_7');
   if (s.calmCourseDone) out.push('calm_7');
   if (s.friendsBrought >= 1) out.push('friend');
-  if (s.themesSeen >= 3) out.push('collector');
   return out;
 }
 
@@ -127,7 +123,7 @@ export function rewardCounterCopy(left: number): string {
 
 // ——— Ramki i ozdoby profilu (4.12.3, G4) ———
 
-export type Frame = { id: string; name: string; unlock: { badge?: string; level?: string; theme?: string } | null; style: string };
+export type Frame = { id: string; name: string; unlock: { badge?: string; level?: string } | null; style: string };
 
 export const FRAMES: Frame[] = [
   { id: 'none', name: 'Bez ramki', unlock: null, style: 'none' },
@@ -138,7 +134,6 @@ export const FRAMES: Frame[] = [
   { id: 'flow', name: 'Flow', unlock: { level: 'flow' }, style: 'brand' },
   { id: 'queen', name: 'Queen', unlock: { level: 'queen' }, style: 'gold' },
   { id: 'leaf', name: 'Liść', unlock: { badge: 'first_meditation' }, style: 'soft' },
-  { id: 'season', name: 'Sezonowa', unlock: { badge: 'collector' }, style: 'season' },
   { id: 'heart', name: 'Serce', unlock: { badge: 'friend' }, style: 'accent' },
 ];
 

@@ -2,9 +2,10 @@
 // przełożony na to, co GLAM naprawdę wie): ruch z rezerwacji, oddech z sesji w aplikacji, samopoczucie z dziennika.
 // Bez ocen i bez wniosków o zdrowiu – tylko lustro tygodnia i jedna podpowiedź, co dalej.
 import { useEffect, useRef, useState } from 'react';
-import { MOOD_LABELS, patternById, sessionById, type BreathRitual } from '@glam/core';
+import { goalCount, goalExtra, MOOD_LABELS, patternById, sessionById, type BreathRitual } from '@glam/core';
 import { fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
+import { MiniBloom } from './BreathBloom.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 
 type Entry = { date: string; mood: number; energy: number; sleep: number };
@@ -78,8 +79,8 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
   const ratio = (done = 0, goal = 0) => (goal > 0 ? Math.min(1, done / goal) : done > 0 ? 1 : 0);
 
   const rings = [
-    { id: 'move', label: 'Ruch', value: ratio(week?.done.trainings, week?.goal.trainings), text: week ? `${week.done.trainings}/${week.goal.trainings}` : '–', onClick: () => open('goal') },
-    { id: 'breath', label: 'Oddech', value: ratio(week?.done.mindful, week?.goal.mindful), text: week ? `${week.done.mindful}/${week.goal.mindful}` : '–', onClick: () => open('goal') },
+    { id: 'move', label: `Ruch${goalExtra(week?.done.trainings ?? 0, week?.goal.trainings ?? 0)}`, value: ratio(week?.done.trainings, week?.goal.trainings), text: week ? goalCount(week.done.trainings, week.goal.trainings) : '–', onClick: () => open('goal') },
+    { id: 'breath', label: `Oddech${goalExtra(week?.done.mindful ?? 0, week?.goal.mindful ?? 0)}`, value: ratio(week?.done.mindful, week?.goal.mindful), text: week ? goalCount(week.done.mindful, week.goal.mindful) : '–', onClick: () => open('goal') },
     {
       id: 'mood',
       label: 'Samopoczucie',
@@ -92,7 +93,8 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
   const todayClasses = (home?.upcoming ?? []).filter((u) => isoDay(new Date(u.starts_at)) === today);
   const evening = new Date().getHours() >= 18;
   const calm = sessionById(evening ? 'sleep-5' : 'stress-3');
-  const focus = sessionById(new Date().getHours() < 11 ? 'morning-3' : 'pre-5');
+  // „Skup się” to zawsze rytm pudełkowy – w odtwarzaczu prowadzi go kwadrat oddechu.
+  const focus = sessionById(new Date().getHours() < 11 ? 'focus-3' : 'pre-5');
 
   return (
     <div className="board stack-lg">
@@ -172,11 +174,13 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
         </div>
       </section>
 
-      {/* Jedna podpowiedź na dziś – faza cyklu, jeśli klientka ją prowadzi, inaczej słowo o celu tygodnia. */}
-      <article className="card board-insight">
-        <div className="eyebrow">{cycle?.today ? `${cycle.today.label} · dzień ${cycle.today.day}` : week?.restDay ? 'Dzień odpoczynku' : 'Na dziś'}</div>
-        <p className="serif board-insight-text">{cycle?.today?.hint ?? week?.message ?? home?.ritual ?? 'Zacznij od jednego spokojnego oddechu.'}</p>
-      </article>
+      {/* Podpowiedź na dziś tylko z własną treścią: faza cyklu albo dzień odpoczynku. Słowo o celu tygodnia jest już na Starcie. */}
+      {(cycle?.today || week?.restDay) && (
+        <article className="card board-insight">
+          <div className="eyebrow">{cycle?.today ? `${cycle.today.label} · dzień ${cycle.today.day}` : 'Dzień odpoczynku'}</div>
+          <p className="serif board-insight-text">{cycle?.today?.hint ?? week?.message}</p>
+        </article>
+      )}
 
       <div className="board-tiles">
         <button className="card board-tile" onClick={() => open('calm7')}>
@@ -200,11 +204,23 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
         <h2 className="forme-h">Sesje na teraz</h2>
         <div className="board-sessions">
           {[
-            { s: calm, tone: 'calm', kicker: evening ? 'Wycisz się' : 'Zwolnij' },
+            { s: calm, tone: 'calm', kicker: 'Wycisz się' },
             { s: focus, tone: 'focus', kicker: 'Skup się' },
           ].map(({ s, tone, kicker }) =>
             s ? (
               <button key={s.id} className={`board-session is-${tone}`} onClick={() => openBreath({ sessionId: s.id })}>
+                {/* Znak tego, co prowadzi sesję: piwonia przy wyciszeniu, kwadrat z kropką przy skupieniu. */}
+                <span className="board-session-mark" aria-hidden>
+                  {tone === 'calm' ? (
+                    <MiniBloom />
+                  ) : (
+                    <svg viewBox="0 0 24 24">
+                      <rect x="4" y="4" width="16" height="16" rx="1" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.35" />
+                      <path d="M4 20 V4 H14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                      <circle cx="14" cy="4" r="2" fill="currentColor" />
+                    </svg>
+                  )}
+                </span>
                 <span className="board-session-kicker">{kicker}</span>
                 <span className="board-session-title">{s.title}</span>
                 <span className="board-session-min">{s.minutes} min</span>

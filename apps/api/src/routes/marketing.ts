@@ -1,29 +1,19 @@
-// Marketing (3: zakładka właścicielki): motywy i edycje sezonowe (7, M1–M10), ciepłe wiadomości i życzenia (8.1),
+// Marketing (3: zakładka właścicielki): ciepłe wiadomości i życzenia (8.1),
 // kalendarz powiadomień (8) z podglądem, kampanie push / e-mail / SMS z segmentami i testem A/B (#34),
 // kody rabatowe, nagrody programu lojalnościowego, partnerzy (4.8.3).
 import type { FastifyInstance } from 'fastify';
 import {
   abVariant,
-  APP_ICONS,
-  BADGES,
   couponLabel,
-  editionLook,
-  editionsFor,
   fill,
   HOLIDAYS,
-  localParts,
   moderate,
   MODERATION_COPY,
-  PALETTES,
   pct,
   PREVIEW_VARS,
   sentenceCount,
-  SEGMENT_LABEL,
-  THEME_SOUNDS,
-  themeContrastErrors,
   TRIGGERS,
   WISHES,
-  type Palette,
 } from '@glam/core';
 import { ctx, requirePerm, type Deps } from '../context.ts';
 import { id, nowIso } from '../db.ts';
@@ -63,106 +53,9 @@ registerCampaignSender(sendCampaign);
 
 export function marketingRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
-  const themesPerm = requirePerm(db, 'themes.edit');
-  const themesView = requirePerm(db, 'themes.view');
   const campaignsPerm = requirePerm(db, 'campaigns.edit');
   const loyaltyPerm = requirePerm(db, 'loyalty.edit');
   const ownerish = requirePerm(db, 'config.edit');
-
-  // ——— Motywy (7.7): kalendarz z podglądem, biblioteka pakietów, harmonogram, segment, statystyki ———
-
-  app.get('/api/owner/themes', themesView, async (req) => {
-    const { scope } = ctx(req);
-    return scope.all<{ id: string; palette_json: string; pack_json: string | null }>('SELECT * FROM themes WHERE studio_id = $studio ORDER BY starts_on').map((t) => {
-      const stats = themeStats(scope, t.id);
-      return { ...t, palette: JSON.parse(t.palette_json), pack: t.pack_json ? JSON.parse(t.pack_json) : {}, stats };
-    });
-  });
-
-  // Biblioteka (M10): kalendarz edycji 7.4 na ten i przyszły rok + palety bazowe, dźwięki, ikony, odznaki.
-  app.get('/api/owner/themes/library', themesView, async (req) => {
-    const { studio } = ctx(req);
-    const y = Number(localParts(new Date(), studio.timezone).date.slice(0, 4));
-    return {
-      editions: [...editionsFor(y), ...editionsFor(y + 1)].filter((e) => e.to >= localParts(new Date(), studio.timezone).date).slice(0, 20).map((e) => ({ ...e, ...editionLook(e.id) })),
-      palettes: PALETTES.map((p) => ({ id: p.id, label: p.label, palette: p.palette })),
-      sounds: THEME_SOUNDS,
-      icons: APP_ICONS,
-      badges: BADGES.filter((b) => b.limited),
-      segments: SEGMENT_LABEL,
-    };
-  });
-
-  const themeBody = (b: any) => {
-    const palette = (b.palette ?? {}) as Partial<Palette>;
-    const errors = themeContrastErrors(palette);
-    if (!b.name?.trim()) errors.unshift('Podaj nazwę motywu.');
-    if (b.startsOn && b.endsOn && b.endsOn < b.startsOn) errors.push('Koniec motywu musi być po początku.');
-    if (b.auto && (!b.startsOn || !b.endsOn)) errors.push('Motyw automatyczny potrzebuje dat od–do.');
-    if (errors.length) throw badRequest(errors[0], { errors });
-    return palette;
-  };
-
-  app.post<{ Body: any }>('/api/owner/themes', themesPerm, async (req) => {
-    const { scope, user } = ctx(req);
-    const b: any = req.body ?? {};
-    const palette = themeBody(b);
-    const tid = id();
-    scope.run(
-      `INSERT INTO themes (id, studio_id, name, tagline, emoji, palette_json, effect, starts_on, ends_on, is_active, auto, segment, pack_json, sound, icon)
-       VALUES ($id, $studio, $n, $t, $e, $p, $fx, $s, $end, 0, $auto, $seg, $pack, $sound, $icon)`,
-      { id: tid, n: b.name.trim().slice(0, 60), t: b.tagline?.slice(0, 120) ?? null, e: b.emoji?.slice(0, 4) ?? null, p: JSON.stringify(palette), fx: b.effect === 'snow' ? 'snow' : null, s: b.startsOn ?? null, end: b.endsOn ?? null, auto: Number(!!b.auto), seg: b.segment || null, pack: JSON.stringify(b.pack ?? {}), sound: b.sound ?? null, icon: b.icon ?? null },
-    );
-    if (b.pack?.challengeTitle && b.startsOn && b.endsOn) createThemeChallenge(scope, tid, b);
-    audit(scope, { actorId: user.id, action: 'theme.created', entity: 'theme', entityId: tid, details: { name: b.name } });
-    return { id: tid };
-  });
-
-  app.put<{ Params: { id: string }; Body: any }>('/api/owner/themes/:id', themesPerm, async (req) => {
-    const { scope, user } = ctx(req);
-    const b: any = req.body ?? {};
-    const palette = themeBody(b);
-    const r = scope.run(
-      `UPDATE themes SET name = $n, tagline = $t, emoji = $e, palette_json = $p, effect = $fx, starts_on = $s, ends_on = $end, auto = $auto, segment = $seg, pack_json = $pack, sound = $sound, icon = $icon
-       WHERE studio_id = $studio AND id = $id`,
-      { id: req.params.id, n: b.name.trim().slice(0, 60), t: b.tagline?.slice(0, 120) ?? null, e: b.emoji?.slice(0, 4) ?? null, p: JSON.stringify(palette), fx: b.effect === 'snow' ? 'snow' : null, s: b.startsOn ?? null, end: b.endsOn ?? null, auto: Number(!!b.auto), seg: b.segment || null, pack: JSON.stringify(b.pack ?? {}), sound: b.sound ?? null, icon: b.icon ?? null },
-    );
-    if (!r.changes) throw notFound();
-    audit(scope, { actorId: user.id, action: 'theme.updated', entity: 'theme', entityId: req.params.id });
-    return { ok: true };
-  });
-
-  app.delete<{ Params: { id: string } }>('/api/owner/themes/:id', themesPerm, async (req) => {
-    const { scope } = ctx(req);
-    if (scope.get('SELECT 1 FROM themes WHERE studio_id = $studio AND id = $id AND is_active = 1', { id: req.params.id })) throw conflict('active', 'Najpierw wyłącz ten motyw.');
-    scope.run('DELETE FROM themes WHERE studio_id = $studio AND id = $id', { id: req.params.id });
-    return { ok: true };
-  });
-
-  // M2: ręczne włączenie motywu (np. „Dzień Kobiet dla nowych”). Jeden aktywny naraz (pilnuje też indeks w bazie).
-  app.post<{ Params: { id: string }; Body: { notify?: boolean } }>('/api/owner/themes/:id/activate', themesPerm, async (req) => {
-    const { scope, studio, user } = ctx(req);
-    const t = scope.get<{ name: string; tagline: string | null; segment: string | null }>('SELECT name, tagline, segment FROM themes WHERE studio_id = $studio AND id = $id', { id: req.params.id });
-    if (!t) throw notFound('Nie znaleziono motywu.');
-    scope.tx(() => {
-      scope.run('UPDATE themes SET is_active = 0 WHERE studio_id = $studio AND is_active = 1');
-      // Ręczne włączenie wyłącza tryb automatyczny tego motywu – inaczej harmonogram by go zaraz zgasił.
-      scope.run('UPDATE themes SET is_active = 1, auto = 0 WHERE studio_id = $studio AND id = $id', { id: req.params.id });
-    });
-    if (req.body?.notify) {
-      const today = localParts(new Date(), studio.timezone).date;
-      for (const u of audience(scope, t.segment ?? 'all')) notify(scope, { userId: u, category: 'theme', tz: studio.timezone, body: TRIGGERS.theme_start.text({ tagline: t.tagline ?? '', name: t.name }), action: 'start', dedupeKey: `theme_start:${req.params.id}:${today}` });
-    }
-    audit(scope, { actorId: user.id, action: 'theme.activated', entity: 'theme', entityId: req.params.id });
-    return { ok: true };
-  });
-
-  app.post('/api/owner/themes/deactivate', themesPerm, async (req) => {
-    const { scope, user } = ctx(req);
-    scope.run('UPDATE themes SET is_active = 0, auto = 0 WHERE studio_id = $studio AND is_active = 1');
-    audit(scope, { actorId: user.id, action: 'theme.deactivated', entity: 'theme' });
-    return { ok: true };
-  });
 
   // ——— Ciepłe wiadomości i życzenia (8.1.5): ustawienia, podgląd na telefonie, log wysyłek ———
 
@@ -349,28 +242,4 @@ export function marketingRoutes(app: FastifyInstance, deps: Deps) {
     return { ok: true };
   });
 
-}
-
-/** Statystyki motywu (7.7): udział w wyzwaniach motywowych, zakupy z kodu motywu, otwarcia push. */
-function themeStats(scope: StudioScope, themeId: string) {
-  const challenge = scope.get<{ joined: number; done: number }>(
-    'SELECT COUNT(m.user_id) AS joined, SUM(CASE WHEN m.completed_at IS NOT NULL THEN 1 ELSE 0 END) AS done FROM challenges c LEFT JOIN challenge_members m ON m.challenge_id = c.id WHERE c.studio_id = $studio AND c.theme_id = $t',
-    { t: themeId },
-  )!;
-  const push = scope.get<{ sent: number; opened: number }>(
-    "SELECT COUNT(*) AS sent, SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) AS opened FROM notifications WHERE studio_id = $studio AND category = 'theme' AND dedupe_key LIKE $k",
-    { k: `theme_start:${themeId}:%` },
-  )!;
-  const pack = scope.get<{ pack_json: string | null }>('SELECT pack_json FROM themes WHERE studio_id = $studio AND id = $t', { t: themeId });
-  const code = pack?.pack_json ? (JSON.parse(pack.pack_json).couponCode as string | undefined) : undefined;
-  const voucher = code ? scope.get<{ n: number }>('SELECT COUNT(*) AS n FROM coupon_redemptions r JOIN coupons c ON c.id = r.coupon_id WHERE c.studio_id = $studio AND c.code = $c', { c: code })!.n : 0;
-  return { challengeJoined: challenge.joined, challengeDone: challenge.done ?? 0, pushSent: push.sent, pushOpenRate: pct(push.opened ?? 0, push.sent), voucherUses: voucher };
-}
-
-/** Pakiet motywu z wyzwaniem (7.2): wyzwanie i limitowana odznaka w okresie motywu. */
-function createThemeChallenge(scope: StudioScope, themeId: string, b: any) {
-  scope.run(
-    "INSERT INTO challenges (id, studio_id, title, description, metric, target, starts_on, ends_on, badge_code, theme_id, created_at) VALUES ($id, $studio, $t, $d, $m, $target, $s, $e, $badge, $theme, $now)",
-    { id: id(), t: b.pack.challengeTitle, d: b.tagline ?? null, m: b.pack.challengeMetric ?? 'checkins', target: b.pack.challengeTarget ?? 10, s: b.startsOn, e: b.endsOn, badge: b.pack.badge ?? 'challenge', theme: themeId, now: nowIso() },
-  );
 }

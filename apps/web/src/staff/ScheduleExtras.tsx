@@ -70,7 +70,7 @@ function Absences({ roles }: { roles: Role[] }) {
                 </span>
                 {can(roles, 'schedule.edit') ? (
                   s.suggestions.length ? (
-                    <span className="row" style={{ gap: 6 }}>
+                    <span className="row gap-2">
                       {s.suggestions.map((t) => (
                         <button key={t.id} className="btn sm" onClick={() => run(() => api(`/staff/sessions/${s.id}/trainer`, { method: 'POST', body: { trainerId: t.id } }).then(list.reload))}>
                           Zastępstwo: {t.name}
@@ -94,8 +94,7 @@ function Absences({ roles }: { roles: Role[] }) {
 
 function Special() {
   const cfg = useApi<{ classTypes: { id: string; name: string }[]; trainers: { id: string; name: string }[] }>('/owner/config');
-  const themes = useApi<{ id: string; name: string }[]>('/owner/themes');
-  const [f, setF] = useState({ classTypeId: '', trainerId: '', date: localDate(), time: '18:00', durationMin: 55, capacity: 10, title: '', kind: 'themed', themeId: '', public: true });
+  const [f, setF] = useState({ classTypeId: '', trainerId: '', date: localDate(), time: '18:00', durationMin: 55, capacity: 10, title: '', kind: 'themed', public: true });
   const { run, busy } = useAction();
   if (!cfg.data) return <Spinner />;
   return (
@@ -126,7 +125,7 @@ function Special() {
       </div>
       <div className="chips">
         {[
-          ['themed', 'Tematyczne (motyw)'],
+          ['themed', 'Tematyczne'],
           ['special', 'Specjalne'],
           ['live', 'Live (kurs)'],
         ].map(([v, l]) => (
@@ -135,16 +134,8 @@ function Special() {
           </button>
         ))}
       </div>
-      {f.kind === 'themed' && (
-        <Select
-          ariaLabel="Motyw"
-          value={f.themeId}
-          onChange={(v) => setF({ ...f, themeId: v })}
-          options={[{ value: '', label: 'Motyw (opcjonalnie)' }, ...(themes.data ?? []).map((t) => ({ value: t.id, label: t.name }))]}
-        />
-      )}
       <Toggle label="Widoczne w grafiku klientek" checked={f.public} onChange={(v) => setF({ ...f, public: v })} />
-      <button className="btn" disabled={!f.classTypeId || !f.trainerId || busy} onClick={() => run(() => api('/staff/sessions', { method: 'POST', body: { ...f, themeId: f.themeId || null } }), 'Zajęcia dodane do grafiku')}>
+      <button className="btn" disabled={!f.classTypeId || !f.trainerId || busy} onClick={() => run(() => api('/staff/sessions', { method: 'POST', body: f }), 'Zajęcia dodane do grafiku')}>
         Dodaj zajęcia
       </button>
     </section>

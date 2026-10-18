@@ -48,7 +48,7 @@ export default function Gifts({ roles }: { roles: Role[] }) {
                   </span>
                 )}
               </span>
-              <span className="row" style={{ gap: 6 }}>
+              <span className="row gap-2">
                 {c.status === 'todo' && (
                   <button className="btn sm" onClick={() => run(() => api(`/staff/cards/${c.id}`, { method: 'PATCH', body: { status: 'written' } }).then(cards.reload), 'Dziękujemy 💛')}>
                     Napisana
@@ -88,7 +88,7 @@ export default function Gifts({ roles }: { roles: Role[] }) {
                   </span>
                 )}
               </span>
-              <span className="row" style={{ gap: 6 }}>
+              <span className="row gap-2">
                 {l.status === 'queued' && l.delivery !== 'ship' && (
                   <button className="btn sm" onClick={() => run(() => api(`/staff/locker/${l.id}`, { method: 'PATCH', body: { status: 'ready' } }).then(locker.reload), 'Klientka dostała powiadomienie')}>
                     Gotowe do odbioru
@@ -181,7 +181,7 @@ function Vouchers() {
               {v.created_by_name && <span className="tiny muted">wystawiła {v.created_by_name}</span>}
             </span>
             {v.status === 'active' && (
-              <span className="row" style={{ gap: 6 }}>
+              <span className="row gap-2">
                 {!v.expired && (
                   <button className="btn sm" onClick={() => close(v, 'redeemed')}>
                     Wykorzystany

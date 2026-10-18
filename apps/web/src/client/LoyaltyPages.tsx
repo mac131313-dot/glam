@@ -35,7 +35,7 @@ function LoyaltyPage() {
   const earned = new Set(data.badges.map((b) => b.code));
   return (
     <div className="stack-lg">
-      <section className="center stack" style={{ gap: 10 }}>
+      <section className="center stack gap-2">
         <div className={`frame-${FRAMES.find((f) => f.id === data.frame)?.style ?? 'hairline'}`} style={{ borderRadius: '50%', width: 64, height: 64, margin: '0 auto' }}>
           <Avatar name={me.user.name} />
         </div>
@@ -59,7 +59,7 @@ function LoyaltyPage() {
       </section>
 
       {data.reward && (
-        <section className="card soft stack" style={{ gap: 8 }}>
+        <section className="card soft stack gap-2">
           <div className="eyebrow">Nagroda po {data.reward.milestone} treningach</div>
           <div className="card-title">{data.reward.item}</div>
           <Progress value={studio.reward.every - data.reward.left} max={studio.reward.every} label="Postęp do nagrody" />

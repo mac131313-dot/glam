@@ -118,6 +118,21 @@ export function Toggle({ label, hint, checked, onChange }: { label: string; hint
   );
 }
 
+/**
+ * Portfele pokazujemy tylko tam, gdzie zadziałają: Apple Pay w Safari na iPhonie i Macu,
+ * Google Pay w Chrome (Android, komputer). Inaczej klientka wybrałaby metodę, której Checkout jej nie da.
+ */
+export function availableMethods(methods: string[]): string[] {
+  const w = window as unknown as { ApplePaySession?: { canMakePayments(): boolean } };
+  let apple = false;
+  try {
+    apple = !!w.ApplePaySession?.canMakePayments();
+  } catch {}
+  // Chrome na iPhonie przedstawia się jako CriOS i Google Pay tam nie działa – stąd sam „Chrome”.
+  const google = !apple && 'PaymentRequest' in window && /Android|Chrome\//.test(navigator.userAgent);
+  return methods.filter((m) => (m === 'apple_pay' ? apple : m === 'google_pay' ? google : true));
+}
+
 export const PAYMENT_LABELS: Record<string, string> = {
   blik: 'BLIK',
   apple_pay: 'Apple Pay',
@@ -378,7 +393,7 @@ export function Select({
   );
 }
 
-/** Skala 1–5 ze słowami (nastrój, energia, sen): słowo wybranego poziomu nad ścieżką, kropki rosną z poziomem – bez łamanych etykiet w przyciskach. */
+/** Skala 1–5 ze słowami (nastrój, energia, sen): słowo wybranego poziomu nad cienkim suwakiem ze stopniami – przeciąganie, stuknięcie albo strzałki. */
 export function LevelPicker({ label, value, onChange, words }: { label: string; value: number; onChange: (v: number) => void; words: string[] }) {
   return (
     <div className="level">
@@ -388,12 +403,14 @@ export function LevelPicker({ label, value, onChange, words }: { label: string; 
           {words[value]}
         </span>
       </div>
-      <div className="level-track" role="radiogroup" aria-label={label}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button key={n} type="button" role="radio" aria-checked={value === n} aria-label={words[n]} className={n < value ? 'is-below' : undefined} onClick={() => onChange(n)}>
-            <i style={{ width: 8 + n * 3, height: 8 + n * 3 }} />
-          </button>
-        ))}
+      <div className="level-slider" style={{ '--p': `${(value - 1) * 25}%` } as CSSProperties}>
+        <div className="level-rail" aria-hidden>
+          <span className="level-fill" />
+          {[1, 2, 3, 4, 5].map((n) => (
+            <i key={n} className={n <= value ? 'is-on' : undefined} style={{ left: `${(n - 1) * 25}%` }} />
+          ))}
+        </div>
+        <input type="range" min={1} max={5} step={1} value={value} aria-label={label} aria-valuetext={words[value]} onChange={(e) => onChange(Number(e.target.value))} />
       </div>
       <div className="level-ends tiny muted" aria-hidden>
         <span>{words[1]}</span>

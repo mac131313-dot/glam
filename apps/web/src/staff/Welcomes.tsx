@@ -172,7 +172,7 @@ function SentList({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="stack">
       {list.data.map((w) => (
-        <div key={w.id} className="card flat stack" style={{ gap: 4 }}>
+        <div key={w.id} className="card flat stack gap-1">
           <div className="row between">
             <b>
               {w.client_name}
@@ -204,7 +204,7 @@ function OwnerView() {
         <div className="eyebrow">Czekają na akceptację</div>
         {pending.data?.length === 0 && <Empty>Nic nie czeka.</Empty>}
         {pending.data?.map((p) => (
-          <section key={p.id} className="card butter stack" style={{ gap: 6 }}>
+          <section key={p.id} className="card butter stack gap-2">
             <span className="small">
               <b>{p.trainer_name}</b> → {p.client_name}
             </span>

@@ -1,5 +1,5 @@
 // Oddech i medytacje prowadzone przez aplikację (decyzja 9): bez lektorki, rytm wyznacza
-// animowane koło, a prowadzenie to krótkie podpowiedzi na ekranie. Sesja = dane, nie kod.
+// obraz (piwonia przy wyciszeniu, kwadrat oddechu przy skupieniu), a prowadzenie to krótkie podpowiedzi na ekranie. Sesja = dane, nie kod.
 // Treści ogólne, nie porada medyczna (4.4).
 import { addDays, weekStart } from './time.ts';
 
@@ -11,7 +11,7 @@ export type BreathPattern = { id: string; label: string; hint: string; phases: B
 
 const IN = (s: number): BreathPhase => ({ kind: 'in', seconds: s, label: 'wdech' });
 const OUT = (s: number): BreathPhase => ({ kind: 'out', seconds: s, label: 'wydech' });
-const HOLD = (s: number): BreathPhase => ({ kind: 'hold', seconds: s, label: 'zatrzymaj' });
+const HOLD = (s: number): BreathPhase => ({ kind: 'hold', seconds: s, label: 'przytrzymaj' });
 
 export const PATTERNS: BreathPattern[] = [
   { id: 'calm', label: 'Oddech 4–6', hint: 'Dłuższy wydech pomaga zwolnić', phases: [IN(4), OUT(6)] },
@@ -20,14 +20,16 @@ export const PATTERNS: BreathPattern[] = [
   { id: 'night', label: 'Na dobranoc', hint: 'Rytm 4–7–8, spokojnie i bez forsowania', phases: [IN(4), HOLD(7), OUT(8)] },
 ];
 
+/** Obraz w odtwarzaczu: piwonia prowadzi wyciszenie, kwadrat oddechu – skupienie (rytm z przytrzymaniami po równo). */
+export type BreathVisual = 'bloom' | 'square';
+export const visualFor = (pattern: BreathPattern): BreathVisual => (pattern.id === 'box' ? 'square' : 'bloom');
+
 export type Prompt = { at: number; text: string };
 
 export type MindfulSession = {
   id: string;
   title: string;
-  category: 'Oddech' | 'Poranek' | 'Przed treningiem' | 'Po treningu' | 'Na stres' | 'Mikroprzerwa' | 'Na sen' | 'Wdzięczność' | 'Sezonowe';
-  /** Medytacja tematyczna z pakietu motywu (7.2) – pokazywana, gdy motyw jest aktywny. */
-  edition?: string;
+  category: 'Oddech' | 'Poranek' | 'Przed treningiem' | 'Po treningu' | 'Na stres' | 'Mikroprzerwa' | 'Na sen' | 'Wdzięczność';
   pattern: string;
   /** długość w minutach; null = wybiera klientka (sesje samego oddechu) */
   minutes: number | null;
@@ -43,7 +45,7 @@ export const SESSIONS: MindfulSession[] = [
     minutes: 5,
     prompts: [
       { at: 0, text: 'Usiądź wygodnie. Nigdzie się nie spieszysz.' },
-      { at: 25, text: 'Oddychaj w rytmie koła.' },
+      { at: 25, text: 'Oddychaj razem z kwiatem.' },
       { at: 70, text: 'Poczuj stopy na podłodze.' },
       { at: 120, text: 'Zauważ, jak unosi się klatka piersiowa.' },
       { at: 170, text: 'Pomyśl o jednej rzeczy, na którą dziś czekasz.' },
@@ -86,7 +88,7 @@ export const SESSIONS: MindfulSession[] = [
     minutes: 5,
     prompts: [
       { at: 0, text: 'Na te kilka minut możesz wszystko odłożyć.' },
-      { at: 35, text: 'Skup się tylko na kole.' },
+      { at: 35, text: 'Patrz tylko na kwiat. Reszta może poczekać.' },
       { at: 90, text: 'Rozluźnij szczękę i czoło.' },
       { at: 150, text: 'Myśli przychodzą i odchodzą. Wracaj do oddechu.' },
       { at: 230, text: 'Masz w sobie więcej spokoju, niż myślisz.' },
@@ -124,28 +126,26 @@ export const SESSIONS: MindfulSession[] = [
   // ——— Biblioteka rozszerzona do min. 20 scenariuszy (#20, decyzja 9) ———
   s('morning-3', 'Trzy oddechy na start dnia', 'Poranek', 'even', 3, ['Zanim sięgniesz po telefon – zatrzymaj się.', 'Wdech, który budzi.', 'Wydech, który zostawia sen za Tobą.', 'Jedno słowo na dziś: jakie?']),
   s('morning-10', 'Spokojny poranek', 'Poranek', 'calm', 10, ['Usiądź z kubkiem czegoś ciepłego.', 'Poczuj ciepło w dłoniach.', 'Rozciągnij kark – powoli w prawo i w lewo.', 'Zauważ dźwięki wokół.', 'Pomyśl o kimś, kogo dziś zobaczysz.', 'Uśmiechnij się do siebie.', 'Dzień może zacząć się teraz.']),
+  s('focus-3', 'Jasna głowa na początek dnia', 'Poranek', 'box', 3, ['Usiądź prosto, stopy na ziemi.', 'Prowadź wzrok za kropką.', 'W górę, prosto, w dół, prosto.', 'Głowa jasna, ramiona miękkie.', 'Gotowa na dzień.']),
   s('pre-5', 'Skupienie przed zajęciami', 'Przed treningiem', 'box', 5, ['Stopy mocno na ziemi.', 'Wdech do żeber, na boki.', 'Wydech – pępek miękko do kręgosłupa.', 'Ramiona daleko od uszu.', 'Gotowa? Zaczynamy w Twoim tempie.']),
   s('post-3', 'Wyciszenie po zajęciach', 'Po treningu', 'calm', 3, ['Połóż dłoń na sercu.', 'Poczuj, jak zwalnia.', 'Dziękuję ciału za ruch.']),
-  s('post-10', 'Długie rozluźnienie', 'Po treningu', 'night', 10, ['Połóż się na plecach.', 'Pozwól, żeby mata Cię niosła.', 'Rozluźnij biodra.', 'Puść barki.', 'Oddychaj w rytmie koła.', 'Ciepło rozchodzi się po ciele.', 'Zostań tu tak długo, jak potrzebujesz.']),
-  s('stress-3', 'SOS na stres', 'Na stres', 'box', 3, ['Zatrzymaj się. Jesteś bezpieczna.', 'Licz razem z kołem.', 'Wydech dłuższy niż myśl.', 'To minie. Oddychasz.']),
-  s('stress-10', 'Odkładam to, co ciężkie', 'Na stres', 'calm', 10, ['Wyobraź sobie, że odkładasz plecak.', 'Ramiona robią się lżejsze.', 'Rozluźnij brzuch.', 'Zauważ myśl i pozwól jej odpłynąć.', 'Wracaj do koła.', 'Nie musisz dziś wszystkiego rozwiązać.', 'Masz prawo odpocząć.']),
+  s('post-10', 'Długie rozluźnienie', 'Po treningu', 'night', 10, ['Połóż się na plecach.', 'Pozwól, żeby mata Cię niosła.', 'Rozluźnij biodra.', 'Puść barki.', 'Oddychaj razem z kwiatem.', 'Ciepło rozchodzi się po ciele.', 'Zostań tu tak długo, jak potrzebujesz.']),
+  // Wyciszenie to dłuższy wydech (4–6), nie box – ten zostaje dla sesji na skupienie.
+  s('stress-3', 'Spokój w trzy minuty', 'Na stres', 'calm', 3, ['Zatrzymaj się. Jesteś bezpieczna.', 'Wydech niech będzie dłuższy niż wdech.', 'Wydech dłuższy niż myśl.', 'To minie. Oddychasz.']),
+  s('stress-10', 'Odkładam to, co ciężkie', 'Na stres', 'calm', 10, ['Wyobraź sobie, że odkładasz plecak.', 'Ramiona robią się lżejsze.', 'Rozluźnij brzuch.', 'Zauważ myśl i pozwól jej odpłynąć.', 'Wracaj do oddechu.', 'Nie musisz dziś wszystkiego rozwiązać.', 'Masz prawo odpocząć.']),
   s('stress-15', 'Głęboki reset', 'Na stres', 'night', 15, ['Daj sobie kwadrans.', 'Wdech nosem, długi wydech.', 'Skanuj ciało od stóp.', 'Łydki, kolana, uda.', 'Biodra i brzuch.', 'Plecy i ramiona.', 'Szyja, twarz, czoło.', 'Całe ciało oddycha.', 'Jesteś tu i teraz.']),
   s('micro-1', 'Minuta przy biurku', 'Mikroprzerwa', 'even', 1, ['Zamknij oczy na chwilę.', 'Trzy powolne oddechy.']),
   s('micro-3', 'Kark i ramiona', 'Mikroprzerwa', 'calm', 3, ['Opuść brodę do mostka.', 'Ucho w stronę ramienia – oddychaj.', 'Druga strona.', 'Zakręć barkami do tyłu.']),
   s('sleep-5', 'Krótko przed snem', 'Na sen', 'night', 5, ['Zgaś światło.', 'Wydech, jakbyś zdmuchiwała świecę.', 'Ciało robi się ciężkie.', 'Dobranoc.']),
   s('sleep-15', 'Sen bez gonitwy myśli', 'Na sen', 'night', 15, ['Połóż się wygodnie.', 'Każdy wydech to krok w dół schodów.', 'Myśli mogą poczekać do rana.', 'Rozluźnij język i szczękę.', 'Dłonie są ciepłe.', 'Oddech zwalnia sam.', 'Śpij spokojnie.']),
   s('gratitude', 'Trzy rzeczy, za które dziękuję', 'Wdzięczność', 'calm', 5, ['Pomyśl o jednej małej rzeczy z dzisiaj.', 'Drugiej – związanej z kimś bliskim.', 'Trzeciej – o sobie.', 'Zatrzymaj to uczucie na kilka oddechów.']),
-  s('self-love', 'Miłość do siebie', 'Wdzięczność', 'even', 5, ['Połóż dłonie na brzuchu.', 'Twoje ciało niesie Cię każdego dnia.', 'Powiedz w myślach: wystarczam.', 'Oddychaj z czułością.'], 'walentynki'),
-  s('memory', 'Pamięć i wdzięczność', 'Sezonowe', 'calm', 5, ['Zapal w myślach światło.', 'Pomyśl o kimś bliskim.', 'Wdzięczność za wspólny czas.', 'Spokój zostaje z Tobą.'], 'zaduszki'),
-  s('xmas', 'Spokojne święta', 'Sezonowe', 'calm', 10, ['Zanim zacznie się gwar – chwila dla Ciebie.', 'Ciepło, światła, oddech.', 'Nie wszystko musi być idealne.', 'Wystarczy, że jesteś.', 'Zabierz ten spokój do stołu.'], 'swieta'),
-  s('fresh', 'Świeży start', 'Sezonowe', 'even', 5, ['Otwórz okno w myślach.', 'Wdech świeżego powietrza.', 'Co chcesz zasadzić w tym sezonie?', 'Zrób pierwszy mały krok.'], 'wiosna'),
-  s('new-year', 'Co zostawiam w starym roku', 'Sezonowe', 'calm', 10, ['Pomyśl o mijającym roku.', 'Co Ci służyło?', 'Co możesz odłożyć?', 'Wydech – zostawiam.', 'Wdech – zabieram ze sobą spokój.'], 'sylwester'),
+  s('self-love', 'Miłość do siebie', 'Wdzięczność', 'even', 5, ['Połóż dłonie na brzuchu.', 'Twoje ciało niesie Cię każdego dnia.', 'Powiedz w myślach: wystarczam.', 'Oddychaj z czułością.']),
 ];
 
 /** Skrót: podpowiedzi rozłożone równo w czasie sesji. */
-function s(id: string, title: string, category: MindfulSession['category'], pattern: string, minutes: number, lines: string[], edition?: string): MindfulSession {
+function s(id: string, title: string, category: MindfulSession['category'], pattern: string, minutes: number, lines: string[]): MindfulSession {
   const step = (minutes * 60) / lines.length;
-  return { id, title, category, pattern, minutes, edition, prompts: lines.map((text, i) => ({ at: Math.round(i * step), text })) };
+  return { id, title, category, pattern, minutes, prompts: lines.map((text, i) => ({ at: Math.round(i * step), text })) };
 }
 
 /** Mini-kurs „7 dni spokoju” (4.4): codziennie jedna sesja, kolejny dzień odblokowuje się następnego dnia. */
@@ -201,6 +201,30 @@ export function breathAt(p: BreathPattern, elapsedMs: number): BreathState {
   const durMs = phase.seconds * 1000;
   const progress = Math.min(1, t / durMs);
   return { index, phase, progress, cycle, secondsLeft: Math.max(1, Math.ceil((durMs - t) / 1000)), level: levelOf(p, index, progress) };
+}
+
+/**
+ * Kwadrat oddechu: gdzie jest kropka (0..1, x w prawo, y w dół). Rytm z czterema fazami obiega kwadrat od lewego
+ * dolnego rogu: wdech w górę, przytrzymanie w prawo, wydech w dół, przytrzymanie w lewo. Inny rytm chodzi po pionowej
+ * linii pośrodku: wdech w górę, wydech w dół, przytrzymanie stoi tam, gdzie skończyła się poprzednia faza.
+ * Zwraca też początek bieżącego boku – stamtąd rysuje się ślad do kropki.
+ */
+export function squarePoint(p: BreathPattern, index: number, progress: number): { x: number; y: number; fromX: number; fromY: number } {
+  const corners: [number, number][] = [[0, 1], [0, 0], [1, 0], [1, 1]];
+  let from: [number, number];
+  let to: [number, number];
+  if (p.phases.length === 4) {
+    from = corners[index];
+    to = corners[(index + 1) % 4];
+  } else {
+    const kind = p.phases[index].kind;
+    const before = p.phases[(index + p.phases.length - 1) % p.phases.length].kind;
+    const top: [number, number] = [0.5, 0];
+    const bottom: [number, number] = [0.5, 1];
+    [from, to] = kind === 'in' ? [bottom, top] : kind === 'out' ? [top, bottom] : before === 'in' ? [top, top] : [bottom, bottom];
+  }
+  const t = Math.min(1, Math.max(0, progress));
+  return { x: from[0] + (to[0] - from[0]) * t, y: from[1] + (to[1] - from[1]) * t, fromX: from[0], fromY: from[1] };
 }
 
 function levelOf(p: BreathPattern, index: number, progress: number): number {

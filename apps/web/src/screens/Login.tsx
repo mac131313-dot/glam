@@ -70,7 +70,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: (token: string) => void }) {
   return (
     <main className="login">
       <div className="login-card stack-lg">
-        <div className="center stack" style={{ gap: 10, paddingBottom: 8 }}>
+        <div className="center stack gap-2" style={{ paddingBottom: 8 }}>
           <div className="wordmark" aria-label="GLAM">glam</div>
           <div className="serif" style={{ fontSize: '1.35rem' }}>ruch, oddech i chwila dla siebie</div>
           <div className="rule tiny muted" style={{ marginTop: 10, letterSpacing: '0.14em', textTransform: 'uppercase' }}>

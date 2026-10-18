@@ -3,6 +3,7 @@ import type { Deps } from './context.ts';
 import { openDb } from './db.ts';
 import { backup, dispatch } from './services/dispatch.ts';
 import { runJobs } from './services/jobs.ts';
+import { guardStripeStudios } from './services/stripe.ts';
 import { WebPushSender } from './services/webpush.ts';
 import { ConsoleEmailSender, ConsolePushSender, ConsoleSmsGateway, MockPaymentProvider } from './sms.ts';
 
@@ -11,7 +12,8 @@ const production = process.env.NODE_ENV === 'production';
 const deps: Deps = {
   db,
   sms: new ConsoleSmsGateway(),
-  payments: new MockPaymentProvider(),
+  // Studia ze Stripe płacą online wyłącznie przez Checkout; bezpiecznik odmawia, gdyby coś zawołało jeszcze charge().
+  payments: guardStripeStudios(db, new MockPaymentProvider()),
   email: new ConsoleEmailSender(),
   // Web Push działa naprawdę (VAPID + aes128gcm); w dev wystarczy GLAM_WEBPUSH=0, żeby tylko logować.
   push: process.env.GLAM_WEBPUSH === '0' ? new ConsolePushSender() : new WebPushSender(db),
@@ -20,7 +22,7 @@ const deps: Deps = {
 };
 const app = buildApp(deps, { logger: production });
 
-// „System robi sam” (1, 4, 7, 8): grafik, przypomnienia, motywy, życzenia, odnowienia… – co minutę.
+// „System robi sam” (1, 4, 7, 8): grafik, przypomnienia, życzenia, odnowienia… – co minutę.
 let running = false;
 async function tick() {
   if (running) return;

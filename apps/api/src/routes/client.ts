@@ -10,6 +10,7 @@ import {
   breathRitual,
   dayPart,
   describePass,
+  passMeter,
   describeRules,
   formatPLN,
   greeting,
@@ -25,14 +26,11 @@ import {
   receptionOpen,
   REFERRAL_STATUS_COPY,
   ritualFor,
-  themeVisibleFor,
   toMinutes,
   unlockedFrames,
-  weekdayTint,
   zonedToUtc,
   EVENT_KINDS,
   type ProductRules,
-  type SeasonalEffect,
 } from '@glam/core';
 import { normalizePhone } from '../auth.ts';
 import { ctx, requireStudio, type Deps } from '../context.ts';
@@ -48,9 +46,8 @@ import { logUsage } from '../services/dispatch.ts';
 import { attendedCount, awardPoints, badgeList, pointsOf, rewardProgress } from '../services/motivation.ts';
 import { notify } from '../services/notify.ts';
 import { issuePass, loadPasses, passRows } from '../services/passes.ts';
-import { issueInvoice, priceWithCoupon, purchaseProduct, recordPayment } from '../services/payments.ts';
+import { checkoutGateway, issueInvoice, priceWithCoupon, purchaseProduct, recordPayment, registerCheckoutKind, startCheckout } from '../services/payments.ts';
 import { weekProgress } from '../services/progress.ts';
-import { segmentsForUser } from '../services/segments.ts';
 import { claimClientSms } from '../services/sms-quota.ts';
 import { assertAttemptsLeft, recordFailedAttempt } from '../services/attempts.ts';
 import { logoInfo, type Studio } from '../services/studio.ts';
@@ -64,18 +61,6 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export function guestCode(len = 8) {
   return Array.from(crypto.getRandomValues(new Uint8Array(len)), (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
-}
-
-type ThemeView = { id: string; name: string; tagline: string; emoji: string; palette: Record<string, string>; effect: SeasonalEffect | null; sound: string | null; icon: string | null; pack: Record<string, unknown> };
-
-export function activeTheme(scope: StudioScope, userId?: string): ThemeView | null {
-  const t = scope.get<{ id: string; name: string; tagline: string; emoji: string; palette_json: string; effect: SeasonalEffect | null; segment: string | null; sound: string | null; icon: string | null; pack_json: string | null }>(
-    'SELECT id, name, tagline, emoji, palette_json, effect, segment, sound, icon, pack_json FROM themes WHERE studio_id = $studio AND is_active = 1',
-  );
-  if (!t) return null;
-  // Motyw dla segmentu (M3): widzą go tylko klientki z tego segmentu.
-  if (t.segment && userId && !themeVisibleFor(t.segment, segmentsForUser(scope, userId))) return null;
-  return { id: t.id, name: t.name, tagline: t.tagline, emoji: t.emoji, palette: JSON.parse(t.palette_json), effect: t.effect, sound: t.sound, icon: t.icon, pack: t.pack_json ? JSON.parse(t.pack_json) : {} };
 }
 
 export function classTypeNames(scope: StudioScope) {
@@ -93,7 +78,7 @@ export const PHOTO_URL = "CASE WHEN ct.photo_mime IS NOT NULL THEN '/api/class-t
 
 export function scheduleRows(scope: StudioScope, userId: string, fromIso: string, toIso: string, includePrivate = false) {
   return scope.all<Record<string, unknown>>(
-    `SELECT s.id, s.starts_at, s.ends_at, s.capacity, s.status, s.trainer_id, s.kind, s.template_id, s.theme_id,
+    `SELECT s.id, s.starts_at, s.ends_at, s.capacity, s.status, s.trainer_id, s.kind, s.template_id,
             COALESCE(s.title, ct.name) AS class_name, ct.id AS class_type_id, ct.color, ct.level, ct.description, ct.audience_json, ${PHOTO_URL},
             z.id AS zone_id, z.name AS zone_name, u.name AS trainer_name,
             CASE WHEN u.avatar_mime IS NOT NULL THEN '/api/users/' || u.id || '/avatar?v=' || u.avatar_version END AS trainer_avatar_url,
@@ -138,6 +123,7 @@ export function passesView(scope: StudioScope, studio: Studio, userId: string) {
       autoRenew: !!r.auto_renew,
       canAutoRenew: !!rules.autoRenew || !!r.auto_renew,
       summary: p ? describePass(p, studio.timezone, names) : r.product_name,
+      meter: p ? passMeter(p, studio.timezone) : null,
       lines: describeRules(rules, nameMaps(scope)),
       expiringSoon: status === 'active' && Date.parse(r.valid_until) - now < 7 * 86_400_000,
       freeze: { left: Math.max(0, limits.maxTimes - r.freezes_used), daysLeft: Math.max(0, limits.maxDays - r.freeze_days_used), current: upcomingFreeze ?? null },
@@ -146,6 +132,36 @@ export function passesView(scope: StudioScope, studio: Studio, userId: string) {
     };
   });
 }
+
+/** Wejściówka kupiona w aplikacji – wariant i cena z chwili zakupu (także zapisane w Checkout). */
+type GuestPassPurchase = {
+  variant: Studio['settings']['guestPass']['variants'][number];
+  recipient: string | null;
+  message: string;
+  price: number;
+  discount: number;
+  couponId: string | null;
+  method: PaymentMethod;
+  buyerName: string;
+};
+
+function fulfillGuestPass(scope: StudioScope, studio: Studio, buyerId: string, g: GuestPassPurchase, providerRef: string) {
+  const gp = createGuestPass(scope, studio, { buyerId, recipient: g.recipient, message: g.message, channel: 'app', variant: g.variant });
+  recordPayment(scope, { userId: buyerId, kind: 'guest_pass', ref: gp.id, amount: g.price, discount: g.discount, method: g.method, providerRef, description: `Wejściówka: ${g.variant.label}`, couponId: g.couponId });
+  return gp;
+}
+
+registerCheckoutKind<GuestPassPurchase>('guest_pass', {
+  fulfill(deps, scope, studio, userId, g, providerRef) {
+    const gp = fulfillGuestPass(scope, studio, userId!, g, providerRef);
+    return {
+      ref: gp.id,
+      message: `Prezent gotowy – kod ${gp.code}. ${g.recipient ? 'Wysłaliśmy go znajomej SMS-em.' : 'Przekaż go znajomej (znajdziesz go w Zaproś znajomą).'}`,
+      action: 'invites',
+      after: () => deliverGuestPass(deps, scope, studio, gp.code, g.recipient, g.buyerName, g.message),
+    };
+  },
+});
 
 export function clientRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
@@ -186,12 +202,11 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       shop: s.shop,
       features,
       roles,
-      theme: user.theme_opt_out ? null : activeTheme(scope, user.id),
       trainers: trainers.map((t) => ({ id: t.id, name: t.name, bio: t.bio, avatarUrl: t.avatar_mime ? `/api/users/${t.id}/avatar?v=${t.avatar_version}` : null })),
     };
   });
 
-  // Ekran Start: powitanie, najbliższe zajęcia, stan karnetu, cel tygodnia, motyw, powitanie od trenerki i to, co czeka.
+  // Ekran Start: powitanie, najbliższe zajęcia, stan karnetu, cel tygodnia, powitanie od trenerki i to, co czeka.
   app.get('/api/home', member, async (req) => {
     const { studio, scope, user } = ctx(req);
     const now = new Date();
@@ -220,12 +235,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const chatUnread = scope.get<{ n: number }>('SELECT COUNT(*) AS n FROM chat_messages WHERE studio_id = $studio AND client_id = $u AND from_staff = 1 AND read_at IS NULL', { u: user.id })!.n;
     // Kropka przy „Wiadomościach” na Start: recepcja, trenerki i grupy razem.
     const messagesUnread = clientThreads(scope, studio, user.id).unread;
-    const theme = user.theme_opt_out ? null : activeTheme(scope, user.id);
-    // Kolekcjonerka (7.5): zapamiętujemy, jakie motywy klientka już widziała.
     const prefs = prefsOf(user);
-    if (theme && !(prefs.themesSeen ?? []).includes(theme.id)) {
-      db.prepare('UPDATE users SET prefs_json = ? WHERE id = ?').run(JSON.stringify({ ...prefs, themesSeen: [...(prefs.themesSeen ?? []), theme.id] }), user.id);
-    }
     const s = studio.settings;
     const points = pointsOf(scope, user.id);
     const nps = scope.get<{ id: string; trigger: string }>('SELECT id, trigger FROM nps_responses WHERE studio_id = $studio AND user_id = $u AND score IS NULL AND answered_at IS NULL ORDER BY created_at LIMIT 1', { u: user.id });
@@ -241,10 +251,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     return {
       greeting: `${greeting(lp.minutes)}${user.name ? `, ${user.name}` : ''}`,
       dayPart: dayPart(now, studio.timezone),
-      weekdayTint: weekdayTint(lp.weekday),
       birthday: user.birthday === lp.date.slice(5),
       eventToday: eventToday ? { ...eventToday, hero: EVENT_KINDS.find((k) => k.id === eventToday.kind)?.hero ?? 'Dziś Twoje wydarzenie w studiu' } : null,
-      theme,
       upcoming,
       confirmNeeded: upcoming.find((u) => u.status === 'booked' && !u.confirmed_at && Date.parse(String(u.starts_at)) - now.getTime() <= s.confirmBeforeMinutes * 60_000) ?? null,
       passes: passesView(scope, studio, user.id).filter((p) => p.status === 'active' || p.status === 'frozen'),
@@ -534,8 +542,10 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const { scope, user } = ctx(req);
     return scope
       .all<{ id: string; kind: string; amount_grosze: number; discount_grosze: number; method: string; created_at: string; description: string | null; invoice_id: string | null; number: string | null }>(
-        `SELECT p.id, p.kind, p.amount_grosze, p.discount_grosze, p.method, p.created_at, p.description, p.invoice_id, i.number
-         FROM payments p LEFT JOIN invoices i ON i.id = p.invoice_id WHERE p.studio_id = $studio AND p.user_id = $u ORDER BY p.created_at DESC`,
+        `SELECT p.id, p.kind, p.amount_grosze, p.discount_grosze, p.method, p.created_at, COALESCE(p.description, ps.product_name) AS description, p.invoice_id, i.number
+         FROM payments p LEFT JOIN invoices i ON i.id = p.invoice_id
+         LEFT JOIN passes ps ON ps.studio_id = p.studio_id AND ps.id = p.reference_id AND p.kind IN ('pass', 'renewal')
+         WHERE p.studio_id = $studio AND p.user_id = $u ORDER BY p.created_at DESC`,
         { u: user.id },
       )
       .map((p) => ({ ...p, amount: formatPLN(p.amount_grosze), discount: p.discount_grosze ? formatPLN(p.discount_grosze) : null, invoiceUrl: p.invoice_id ? `/api/invoices/${p.invoice_id}` : null }));
@@ -602,14 +612,14 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       if (!m.ok) throw badRequest(MODERATION_COPY[m.reason]);
     }
     const price = priceWithCoupon(scope, studio, { code: b.couponCode, userId: user.id, kind: 'guest_pass', amountGrosze: variant.priceGrosze });
+    const gift: GuestPassPurchase = { variant, recipient, message, price: price.final, discount: price.discount, couponId: price.coupon?.id ?? null, method: b.method, buyerName: user.name ?? 'Znajoma' };
+    // Studio ze Stripe: kod powstaje z webhooka, a SMS do znajomej idzie po zapłacie.
+    const gw = checkoutGateway(scope, studio.id, b.method, price.final);
+    if (gw) return startCheckout(deps, scope, studio, gw, { kind: 'guest_pass', userId: user.id, name: `Wejściówka: ${variant.label}`, amountGrosze: price.final, method: b.method, payload: gift });
     const charge = price.final > 0 ? await deps.payments.charge({ amountGrosze: price.final, method: b.method, description: `Wejściówka: ${variant.label}`, studioId: studio.id }) : { status: 'paid' as const, ref: 'free' };
     if (charge.status !== 'paid') throw new HttpError(402, 'payment_failed', 'Płatność się nie powiodła.');
-    const gp = scope.tx(() => {
-      const gp = createGuestPass(scope, studio, { buyerId: user.id, recipient, message, channel: 'app', variant });
-      recordPayment(scope, { userId: user.id, kind: 'guest_pass', ref: gp.id, amount: price.final, discount: price.discount, method: b.method, providerRef: charge.ref, description: `Wejściówka: ${variant.label}`, couponId: price.coupon?.id });
-      return gp;
-    });
-    await deliverGuestPass(deps, scope, studio, gp.code, recipient, user.name ?? 'Znajoma', message);
+    const gp = scope.tx(() => fulfillGuestPass(scope, studio, user.id, gift, charge.ref));
+    await deliverGuestPass(deps, scope, studio, gp.code, recipient, gift.buyerName, message);
     return { code: gp.code, message: 'Prezent gotowy. Przekaż kod, link albo QR znajomej.' };
   });
 

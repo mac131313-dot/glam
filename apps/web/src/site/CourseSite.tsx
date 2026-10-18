@@ -4,6 +4,7 @@
 // a sekcja bez danych po prostu się nie pokazuje. Wygląd jak strona studia (site.css): minimalizm, Isola / Unbound.
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import type { CoursePage, Look } from '@glam/core';
+import { goToCheckout } from '../api.ts';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { PAYMENT_LABELS, Spinner } from '../ui.tsx';
@@ -34,6 +35,7 @@ export function CourseSite({ slug, courseId }: { slug: string; courseId: string 
   const [data, setData] = useState<PublicCourse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [buying, setBuying] = useState<Tier | null>(null);
+  const returned = useCheckoutReturn(slug, courseId);
 
   useEffect(() => {
     fetch(`/api/public/studios/${encodeURIComponent(slug)}/courses/${encodeURIComponent(courseId)}`)
@@ -108,6 +110,7 @@ export function CourseSite({ slug, courseId }: { slug: string; courseId: string 
         <LegalFooter data={data} />
       </main>
       {buying && <Checkout data={data} tier={buying} onClose={() => setBuying(null)} />}
+      {returned.state && <CheckoutReturn state={returned.state} onClose={returned.close} />}
     </div>
   );
 }
@@ -496,6 +499,60 @@ function LegalFooter({ data }: { data: PublicCourse }) {
 
 // ——— zakup ———
 
+type ReturnState = { status: 'open' | 'paid' | 'failed' | 'expired' | 'cancelled'; message: string };
+
+/**
+ * Powrót ze Stripe Checkout: /s/:slug/kurs/:id?checkout=cs_… – konto i dostęp tworzy webhook,
+ * więc chwilę pytamy o wynik (zwykle kilka sekund). Parametr znika z adresu przy pierwszym odczycie.
+ */
+function useCheckoutReturn(slug: string, courseId: string) {
+  const [state, setState] = useState<ReturnState | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('checkout');
+    if (!id) return;
+    history.replaceState(null, '', location.pathname);
+    if (id === 'cancelled') return setState({ status: 'cancelled', message: 'Płatność przerwana – możesz wybrać pakiet jeszcze raz.' });
+    setState({ status: 'open', message: 'Czekamy na potwierdzenie płatności…' });
+    let alive = true;
+    (async () => {
+      for (let i = 0; i < 10 && alive; i++) {
+        const r = await fetch(`/api/public/studios/${encodeURIComponent(slug)}/courses/${encodeURIComponent(courseId)}/checkout/${encodeURIComponent(id)}`).catch(() => null);
+        const body = r?.ok ? ((await r.json().catch(() => null)) as ReturnState | null) : null;
+        if (body && body.status !== 'open') return alive && setState(body);
+        await new Promise((res) => setTimeout(res, 1500));
+      }
+      if (alive) setState({ status: 'open', message: 'Bank jeszcze potwierdza płatność. Gdy dotrze, dostęp pojawi się w aplikacji – zaloguj się numerem z formularza.' });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [slug, courseId]);
+  return { state, close: () => setState(null) };
+}
+
+function CheckoutReturn({ state, onClose }: { state: ReturnState; onClose: () => void }) {
+  const ok = state.status === 'paid';
+  return (
+    <div className="course-overlay" role="presentation" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="course-checkout" role="dialog" aria-modal="true" aria-label="Wynik płatności">
+        <button type="button" className="course-close" onClick={onClose} aria-label="Zamknij">
+          ×
+        </button>
+        <div className="course-done">
+          <div className="site-eyebrow">{ok ? 'Zapłacono' : state.status === 'open' ? 'Płatność w toku' : 'Płatność'}</div>
+          <h2 className="site-h2">{state.message}</h2>
+          {state.status === 'open' && <Spinner />}
+          {ok && (
+            <a className="btn" href={APP_URL}>
+              Otwórz aplikację
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Checkout({ data, tier, onClose }: { data: PublicCourse; tier: Tier; onClose: () => void }) {
   const [form, setForm] = useState({ name: '', phone: '', email: '', couponCode: '', method: data.paymentMethods[0] ?? 'blik', acceptTerms: false, waiveWithdrawal: false });
   const [busy, setBusy] = useState(false);
@@ -521,6 +578,8 @@ function Checkout({ data, tier, onClose }: { data: PublicCourse; tier: Tier; onC
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.message ?? 'Nie udało się. Spróbuj ponownie.');
+      // Studio ze Stripe: płatność na stronie Checkout, potem powrót tutaj z ?checkout=…
+      if (goToCheckout(body)) return;
       setDone(body);
     } catch (err) {
       setError((err as Error).message);

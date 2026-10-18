@@ -291,7 +291,7 @@ export function ThreadRow({ g, onOpen }: { g: ThreadItem; onOpen: () => void }) 
             </span>
             {g.last && <span className="tiny muted">{threadTime(g.last.at)}</span>}
           </span>
-          <span className="row" style={{ gap: 8 }}>
+          <span className="row gap-2">
             <span className="thread-preview grow">{g.last ? `${g.last.author ? `${g.last.author}: ` : ''}${g.last.body}` : g.hint ? g.hint : g.trainer ? `prowadzi ${g.trainer}` : g.members != null ? `${g.members} ${osoby(g.members)}` : ''}</span>
             {g.unread > 0 && <span className="thread-dot">{g.unread > 99 ? '99+' : g.unread}</span>}
           </span>

@@ -10,7 +10,6 @@ import {
   calmDayUnlocked,
   can,
   canTransition,
-  contrastRatio,
   classPackagePlans,
   coursePrice,
   cyclePhase,
@@ -38,16 +37,11 @@ import {
   revenueSplit,
   rewardCounter,
   rewardCounterCopy,
-  scheduledTheme,
   SESSIONS,
   sentenceCount,
   stretchStepAt,
   STRETCH,
   takeStock,
-  themeContrastErrors,
-  EDITIONS,
-  EDITION_LOOKS,
-  editionLook,
   toCsv,
   toIcs,
   TRIGGERS,
@@ -102,8 +96,8 @@ test('motywacja: seria tygodni, odznaki, poziomy, nagroda po 10, ramki', () => {
   assert.equal(weeklyStreak(['2026-10-13', '2026-10-06', '2026-09-29', '2026-09-15'], '2026-10-14'), 3);
   assert.equal(weeklyStreak(['2026-10-06', '2026-09-29'], '2026-10-14'), 2); // bieżący tydzień jeszcze trwa
   assert.deepEqual(
-    earnedBadges({ attended: 10, streakWeeks: 4, daysSinceJoin: 40, mindfulSessions: 1, journalEntries: 0, calmCourseDone: false, friendsBrought: 1, themesSeen: 3 }).sort(),
-    ['collector', 'first_class', 'first_meditation', 'first_month', 'friend', 'streak_4', 'ten_classes'],
+    earnedBadges({ attended: 10, streakWeeks: 4, daysSinceJoin: 40, mindfulSessions: 1, journalEntries: 0, calmCourseDone: false, friendsBrought: 1 }).sort(),
+    ['first_class', 'first_meditation', 'first_month', 'friend', 'streak_4', 'ten_classes'],
   );
   const levels = DEFAULT_SETTINGS.loyalty.levels;
   assert.equal(levelFor(350, levels).current.name, 'Flow');
@@ -232,23 +226,6 @@ test('formaty: iCalendar, CSV w obie strony, NIP', () => {
   assert.deepEqual(parseCsv('telefon,imię\n500600700,Ola\n'), [{ telefon: '500600700', imię: 'Ola' }]);
   assert.equal(validNip('5260250274'), true);
   assert.equal(validNip('5260250275'), false);
-});
-
-test('motywy: harmonogram (krótszy wygrywa), ręczny ma pierwszeństwo, kontrast WCAG', () => {
-  const themes = [
-    { id: 'oct', startsOn: '2026-10-01', endsOn: '2026-10-31', auto: true, isActive: false, segment: null },
-    { id: 'hal', startsOn: '2026-10-31', endsOn: '2026-10-31', auto: true, isActive: false, segment: null },
-  ];
-  assert.equal(scheduledTheme(themes, '2026-10-13'), 'oct');
-  assert.equal(scheduledTheme(themes, '2026-10-31'), 'hal');
-  assert.equal(scheduledTheme([...themes, { id: 'man', startsOn: null, endsOn: null, auto: false, isActive: true, segment: null }], '2026-10-31'), 'man');
-  assert.equal(contrastRatio('#000000', '#ffffff'), 21);
-  assert.deepEqual(themeContrastErrors({ ink: '#cccccc', bg: '#ffffff' }), ['Za mały kontrast: tekst na tle (min. 4,5:1).']);
-  // każda edycja z biblioteki ma wygląd, a jej paleta przechodzi WCAG – „Użyj” nie może dać błędu kontrastu
-  for (const e of EDITIONS) {
-    assert.ok(EDITION_LOOKS[e.id], `brak wyglądu edycji ${e.id}`);
-    assert.deepEqual(themeContrastErrors(editionLook(e.id).palette), [], e.id);
-  }
 });
 
 test('role i SaaS: siatka uprawnień, koordynatorka bez finansów, plany i flagi, ustawienia', () => {

@@ -30,6 +30,7 @@ import type { StudioScope } from '../scope.ts';
 import { audit } from '../services/audit.ts';
 import { notify } from '../services/notify.ts';
 import { issueInvoice } from '../services/payments.ts';
+import { refundPayment, refundQuote, swapPass } from '../services/refunds.ts';
 import { clientFacts } from '../services/segments.ts';
 import { nameMaps } from './client.ts';
 
@@ -97,7 +98,7 @@ export function ownerRoutes(app: FastifyInstance, deps: Deps) {
       { now: now.toISOString(), to: weekTo },
     );
     const payments = scope.all<{ amount_grosze: number }>(
-      'SELECT p.amount_grosze, p.method, p.kind, p.created_at, p.description, u.name FROM payments p LEFT JOIN users u ON u.id = p.user_id WHERE p.studio_id = $studio ORDER BY p.created_at DESC LIMIT 6',
+      "SELECT p.amount_grosze, p.method, p.kind, p.created_at, COALESCE(p.description, ps.product_name) AS description, u.name FROM payments p LEFT JOIN users u ON u.id = p.user_id LEFT JOIN passes ps ON ps.studio_id = p.studio_id AND ps.id = p.reference_id AND p.kind IN ('pass', 'renewal') WHERE p.studio_id = $studio ORDER BY p.created_at DESC LIMIT 6",
     );
     const n = (sql: string, p: Record<string, string> = {}) => scope.get<{ n: number }>(sql, p)!.n;
     const guestPasses = scope.get<{ sent: number; activated: number }>("SELECT SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent, SUM(CASE WHEN status != 'sent' THEN 1 ELSE 0 END) AS activated FROM guest_passes WHERE studio_id = $studio")!;
@@ -206,7 +207,6 @@ export function ownerRoutes(app: FastifyInstance, deps: Deps) {
               SUM(CASE WHEN EXISTS (SELECT 1 FROM bookings b WHERE b.studio_id = w.studio_id AND b.user_id = w.client_id AND b.created_at > w.created_at) THEN 1 ELSE 0 END) AS booked
        FROM welcome_messages w WHERE w.studio_id = $studio AND w.status = 'published' AND w.kind IN ('trainer', 'studio')`,
     );
-    const themePush = g<{ sent: number; opened: number }>("SELECT COUNT(*) AS sent, SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) AS opened FROM notifications WHERE studio_id = $studio AND category = 'theme'");
     const challenge = g<{ joined: number; done: number }>('SELECT COUNT(*) AS joined, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS done FROM challenge_members WHERE studio_id = $studio');
     const courseStats = g<{ sales: number; completions: number; rating: number | null }>(
       "SELECT (SELECT COUNT(*) FROM course_enrollments WHERE studio_id = $studio) AS sales, (SELECT COUNT(*) FROM course_enrollments WHERE studio_id = $studio AND completed_at IS NOT NULL) AS completions, (SELECT ROUND(AVG(rating), 1) FROM course_reviews WHERE studio_id = $studio) AS rating",
@@ -237,7 +237,7 @@ export function ownerRoutes(app: FastifyInstance, deps: Deps) {
       guestPasses: { sold: gp.sold, activated: gp.activated ?? 0, conversion: pct(gp.activated ?? 0, gp.sold) },
       reactivation: { surveyed: dormantBack.total, returned: dormantBack.back ?? 0, rate: pct(dormantBack.back ?? 0, dormantBack.total) },
       mindfulPerActiveWeekly: active ? Math.round((mindful / active) * 10) / 10 : 0,
-      themes: { pushSent: themePush.sent, pushOpenRate: pct(themePush.opened ?? 0, themePush.sent), challengeJoined: challenge.joined, challengeDone: challenge.done ?? 0 },
+      challenges: { joined: challenge.joined, done: challenge.done ?? 0 },
       courses: courseStats,
       welcomes: { ...welcomes, bookedAfterRate: pct(welcomes.booked ?? 0, welcomes.total) },
       greetings: { birthdayShare: pct(birthdays, facts.length), sent: occasional.sent, openRate: pct(occasional.opened ?? 0, occasional.sent), optOuts: offCounts },
@@ -267,17 +267,23 @@ export function ownerRoutes(app: FastifyInstance, deps: Deps) {
     const byKind = scope.all<{ kind: string; total: number; n: number }>("SELECT kind, SUM(amount_grosze) AS total, COUNT(*) AS n FROM payments WHERE studio_id = $studio AND status = 'paid' AND created_at >= $from AND created_at < $to GROUP BY kind", p);
     const byMethod = scope.all<{ method: string; total: number; n: number }>("SELECT method, SUM(amount_grosze) AS total, COUNT(*) AS n FROM payments WHERE studio_id = $studio AND status = 'paid' AND created_at >= $from AND created_at < $to GROUP BY method", p);
     const total = byKind.reduce((a, k) => a + k.total, 0);
+    // Zwroty liczymy w okresie, w którym poszły – sprzedaż z zeszłego miesiąca zwrócona dziś obniża dzisiejszy wynik.
+    const refunds = scope.get<{ n: number; c: number }>("SELECT COALESCE(SUM(amount_grosze), 0) AS n, COUNT(*) AS c FROM refunds WHERE studio_id = $studio AND status = 'succeeded' AND created_at >= $from AND created_at < $to", p)!;
     const discounts = scope.get<{ d: number }>("SELECT COALESCE(SUM(discount_grosze), 0) AS d FROM payments WHERE studio_id = $studio AND created_at >= $from AND created_at < $to", p)!.d;
     const payments = scope.all<{ amount_grosze: number }>(
-      `SELECT p.id, p.kind, p.amount_grosze, p.discount_grosze, p.method, p.created_at, p.description, p.invoice_id, i.number AS invoice_number, u.name
+      `SELECT p.id, p.kind, p.amount_grosze, p.discount_grosze, p.method, p.status, p.created_at, COALESCE(p.description, ps.product_name) AS description, p.invoice_id, i.number AS invoice_number, u.name,
+              (SELECT COALESCE(SUM(r.amount_grosze), 0) FROM refunds r WHERE r.studio_id = p.studio_id AND r.payment_id = p.id AND r.status = 'succeeded') AS refunded_grosze
        FROM payments p LEFT JOIN users u ON u.id = p.user_id LEFT JOIN invoices i ON i.id = p.invoice_id
+       LEFT JOIN passes ps ON ps.studio_id = p.studio_id AND ps.id = p.reference_id AND p.kind IN ('pass', 'renewal')
        WHERE p.studio_id = $studio AND p.created_at >= $from AND p.created_at < $to ORDER BY p.created_at DESC LIMIT 300`,
       p,
     );
     const shop = scope.get<{ total: number; n: number }>("SELECT COALESCE(SUM(total_grosze), 0) AS total, COUNT(*) AS n FROM shop_orders WHERE studio_id = $studio AND status IN ('collected', 'paid', 'shipped') AND kind != 'online' AND updated_at >= $from AND updated_at < $to", p)!;
     return {
       ...r,
-      total: formatPLN(total),
+      total: formatPLN(total - refunds.n),
+      gross: formatPLN(total),
+      refunds: { amount: formatPLN(refunds.n), n: refunds.c },
       discounts: formatPLN(discounts),
       // Platforma nie pośredniczy w płatnościach (decyzja 23) – prowizja tylko, jeśli studio ją wybrało (T10).
       commission: studio.settings.commissionPct ? formatPLN(Math.round((total * studio.settings.commissionPct) / 100)) : null,
@@ -285,9 +291,38 @@ export function ownerRoutes(app: FastifyInstance, deps: Deps) {
       byMethod: byMethod.map((k) => ({ ...k, amount: formatPLN(k.total) })),
       // Sprzedaż merchu na miejscu – tylko ewidencja do raportu, nie dokument sprzedaży (4.8.1).
       shopOnSite: { amount: formatPLN(shop.total), n: shop.n },
-      payments: payments.map((x) => ({ ...x, amount: formatPLN(x.amount_grosze) })),
+      payments: (payments as (typeof payments[number] & { refunded_grosze: number })[]).map((x) => ({ ...x, amount: formatPLN(x.amount_grosze), refunded: x.refunded_grosze ? formatPLN(x.refunded_grosze) : null })),
       invoices: scope.all('SELECT id, number, issued_at, gross_grosze, buyer_json FROM invoices WHERE studio_id = $studio AND issued_at >= $from AND issued_at < $to ORDER BY issued_at DESC', p),
     };
+  });
+
+  // ——— Zwroty i podmiana karnetu (services/refunds.ts) – tylko właścicielka ———
+
+  const refundPerm = requirePerm(db, 'finance.refund');
+
+  app.get<{ Params: { id: string } }>('/api/owner/payments/:id/refund', refundPerm, async (req) => {
+    const { scope } = ctx(req);
+    const q = refundQuote(scope, req.params.id);
+    return {
+      paid: formatPLN(q.paidGrosze),
+      refunded: formatPLN(q.refundedGrosze),
+      maxGrosze: q.maxGrosze,
+      suggestedGrosze: q.suggestedGrosze,
+      passName: q.passName,
+      channel: q.channel,
+      description: q.payment.description,
+    };
+  });
+
+  app.post<{ Params: { id: string }; Body: { amountGrosze: number; reason?: string } }>('/api/owner/payments/:id/refund', refundPerm, async (req) => {
+    const { scope, studio, user } = ctx(req);
+    return refundPayment(deps, scope, studio, { paymentId: req.params.id, amountGrosze: Number(req.body?.amountGrosze), reason: req.body?.reason, actorId: user.id });
+  });
+
+  app.post<{ Params: { id: string }; Body: { userId: string; productId: string; refundDifference?: boolean } }>('/api/owner/passes/:id/swap', refundPerm, async (req) => {
+    const { scope, studio, user } = ctx(req);
+    if (!req.body?.productId || !req.body.userId) throw badRequest('Wybierz karnet, na który podmieniamy.');
+    return swapPass(deps, scope, studio, { userId: req.body.userId, passId: req.params.id, productId: req.body.productId, actorId: user.id, refundDifference: !!req.body.refundDifference });
   });
 
   // Faktury zbiorcze (4.11): wszystkie płatności z okresu, które jeszcze nie mają faktury.
@@ -488,7 +523,7 @@ ${items.map((i) => `<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${i.vatRate}
   // Kopia zapasowa danych studia (4.11) – pełny zrzut w JSON, bez zaszyfrowanych danych zdrowotnych klientek.
   app.get('/api/owner/backup', owner, async (req, reply) => {
     const { scope, studio, user } = ctx(req);
-    const tables = ['facilities', 'zones', 'class_types', 'schedule_templates', 'schedule_exceptions', 'class_sessions', 'products', 'product_versions', 'passes', 'bookings', 'payments', 'invoices', 'guest_passes', 'referrals', 'coupons', 'themes', 'challenges', 'rewards', 'shop_products', 'shop_orders', 'event_packages', 'private_events', 'courses', 'course_lessons', 'course_enrollments', 'playlists', 'campaigns'];
+    const tables = ['facilities', 'zones', 'class_types', 'schedule_templates', 'schedule_exceptions', 'class_sessions', 'products', 'product_versions', 'passes', 'bookings', 'payments', 'invoices', 'guest_passes', 'referrals', 'coupons', 'challenges', 'rewards', 'shop_products', 'shop_orders', 'event_packages', 'private_events', 'courses', 'course_lessons', 'course_enrollments', 'playlists', 'campaigns'];
     const dump: Record<string, unknown> = { studio: { ...studio, has: undefined, logo_data: undefined }, exportedAt: nowIso() };
     for (const t of tables) {
       dump[t] = scope.all(`SELECT * FROM ${t} WHERE studio_id = $studio`).map((r) => Object.fromEntries(Object.entries(r as object).filter(([k, v]) => !(v instanceof Uint8Array) && !k.endsWith('_enc'))));

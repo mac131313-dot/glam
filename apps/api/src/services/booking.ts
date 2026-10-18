@@ -101,7 +101,6 @@ function noPassError(scope: StudioScope, userId: string, s: SessionRow, results:
   const suggestions = products
     .map((p) => ({ ...p, rules: JSON.parse(p.rules_json) as ProductRules }))
     .filter((p) => productCovers(p.rules, s.class_type_id, s.zone_id) && !(p.rules.introOnly && hadPurchase))
-    .slice(0, 3)
     .map((p) => ({ productId: p.id, name: p.name, price: formatPLN(p.price_grosze) }));
   const reasons = results.filter((r) => !r.ok).map((r) => `${r.pass.productName}: ${DENIAL_COPY[(r as { reason: keyof typeof DENIAL_COPY }).reason]}`);
   return new HttpError(402, 'no_pass', `Żaden z Twoich karnetów nie obejmuje zajęć ${s.class_name}.`, { suggestions, reasons });

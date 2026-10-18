@@ -104,21 +104,20 @@ export function musicRoutes(app: FastifyInstance, deps: Deps) {
     };
   });
 
-  app.post<{ Body: { url: string; name: string; purpose: 'class' | 'meditation' | 'stretch' | 'sleep' | 'theme' | 'shared'; classTypeId?: string | null; themeId?: string | null } }>('/api/staff/playlists', mod, async (req) => {
+  app.post<{ Body: { url: string; name: string; purpose: 'class' | 'meditation' | 'stretch' | 'sleep' | 'shared'; classTypeId?: string | null } }>('/api/staff/playlists', mod, async (req) => {
     const { scope, studio, user } = ctx(req);
     assertFeature(studio, 'music');
     const parsed = parseMusicUrl(req.body?.url ?? '');
     if (!parsed || parsed.kind === 'track') throw badRequest('Wklej link do playlisty ze Spotify albo Apple Music.');
-    if (!['class', 'meditation', 'stretch', 'sleep', 'theme', 'shared'].includes(req.body.purpose)) throw badRequest('Wybierz przeznaczenie playlisty.');
+    if (!['class', 'meditation', 'stretch', 'sleep', 'shared'].includes(req.body.purpose)) throw badRequest('Wybierz przeznaczenie playlisty.');
     const pid = id();
-    scope.run('INSERT INTO playlists (id, studio_id, provider, url, name, purpose, class_type_id, theme_id, created_by, created_at) VALUES ($id, $studio, $pr, $url, $n, $pu, $ct, $th, $by, $now)', {
+    scope.run('INSERT INTO playlists (id, studio_id, provider, url, name, purpose, class_type_id, created_by, created_at) VALUES ($id, $studio, $pr, $url, $n, $pu, $ct, $by, $now)', {
       id: pid,
       pr: parsed.provider,
       url: req.body.url,
       n: req.body.name?.trim().slice(0, 80) || 'Playlista',
       pu: req.body.purpose,
       ct: req.body.classTypeId ?? null,
-      th: req.body.themeId ?? null,
       by: user.id,
       now: nowIso(),
     });

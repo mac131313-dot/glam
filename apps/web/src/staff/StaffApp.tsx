@@ -14,8 +14,7 @@ import { Desk } from './Desk.tsx';
 import { Entrance } from './Entrance.tsx';
 import { LookEditor } from './LookEditor.tsx';
 import { Products } from './Products.tsx';
-import { ScheduleAdmin } from './ScheduleAdmin.tsx';
-import { Themes } from './Themes.tsx';
+import { ClassTypesAdmin, ScheduleAdmin } from './ScheduleAdmin.tsx';
 import { Today } from './Today.tsx';
 import { Welcomes } from './Welcomes.tsx';
 import { SiteOverview } from './site-editor/SiteOverview.tsx';
@@ -47,7 +46,7 @@ const SECTIONS: Section[] = [
     label: 'Pulpit',
     icon: 'chart',
     perms: ['finance.view'],
-    group: 'Studio',
+    group: 'Codziennie',
     tabs: [
       { id: 'overview', label: 'Przegląd', perms: ['finance.view'] },
       { id: 'kpi', label: 'KPI', perms: ['finance.view'] },
@@ -76,24 +75,51 @@ const SECTIONS: Section[] = [
     tabs: [
       { id: 'plan', label: 'Grafik i sale', perms: ['schedule.edit'] },
       { id: 'extras', label: 'Zastępstwa i specjalne', perms: ['schedule.view'] },
+      { id: 'types', label: 'Typy zajęć', perms: ['schedule.edit'] },
     ],
   },
   { id: 'welcomes', label: 'Powitania', icon: 'mail', perms: ['welcomes.write', 'welcomes.approve'], group: 'Relacje' },
   { id: 'profile', label: 'Mój profil', icon: 'user', perms: ['day.own'], group: 'Relacje', role: 'trainer' },
   { id: 'gifts', label: 'Kartki i vouchery', icon: 'pen', perms: ['cards.write', 'cards.manage'], group: 'Relacje' },
   { id: 'events', label: 'Wydarzenia', icon: 'sparkle', perms: ['events.manage', 'day.own'], group: 'Relacje' },
-  { id: 'marketing', label: 'Kampanie i życzenia', icon: 'bell', perms: ['campaigns.edit'], group: 'Relacje' },
-  { id: 'loyalty', label: 'Lojalność', icon: 'gift', perms: ['loyalty.edit'], group: 'Relacje' },
+  {
+    id: 'marketing',
+    label: 'Marketing',
+    icon: 'bell',
+    perms: ['campaigns.edit', 'loyalty.edit'],
+    group: 'Relacje',
+    tabs: [
+      { id: 'campaigns', label: 'Kampanie i życzenia', perms: ['campaigns.edit'] },
+      { id: 'loyalty', label: 'Lojalność', perms: ['loyalty.edit'] },
+    ],
+  },
   { id: 'courses', label: 'Kursy', icon: 'cap', perms: ['courses.create', 'courses.approve'], group: 'Treści' },
-  { id: 'community', label: 'Społeczność', icon: 'heart', perms: ['community.moderate', 'challenges.edit'], group: 'Treści' },
-  { id: 'music', label: 'Muzyka', icon: 'music', perms: ['playlists.moderate'], group: 'Treści' },
-  { id: 'look', label: 'Wygląd', icon: 'type', perms: ['config.edit'], group: 'Marka' },
-  { id: 'site', label: 'Strona WWW', icon: 'grid', perms: ['config.edit'], group: 'Marka' },
-  { id: 'themes', label: 'Edycje sezonowe', icon: 'season', perms: ['themes.edit'], group: 'Marka' },
+  {
+    id: 'community',
+    label: 'Społeczność',
+    icon: 'heart',
+    perms: ['community.moderate', 'challenges.edit', 'playlists.moderate'],
+    group: 'Treści',
+    tabs: [
+      { id: 'moderation', label: 'Społeczność', perms: ['community.moderate', 'challenges.edit'] },
+      { id: 'music', label: 'Muzyka', perms: ['playlists.moderate'] },
+    ],
+  },
   { id: 'shop', label: 'Sklep', icon: 'bag', perms: ['shop.manage'], group: 'Sprzedaż' },
   { id: 'products', label: 'Karnety', icon: 'ticket', perms: ['config.edit'], group: 'Sprzedaż' },
   { id: 'finance', label: 'Finanse', icon: 'card', perms: ['finance.view', 'finance.export'], group: 'Sprzedaż' },
-  { id: 'settings', label: 'Ustawienia', icon: 'settings', perms: ['config.edit'], group: 'Ustawienia' },
+  {
+    id: 'brand',
+    label: 'Marka',
+    icon: 'type',
+    perms: ['config.edit'],
+    group: 'Studio',
+    tabs: [
+      { id: 'look', label: 'Wygląd', perms: ['config.edit'] },
+      { id: 'site', label: 'Strona WWW', perms: ['config.edit'] },
+    ],
+  },
+  { id: 'settings', label: 'Ustawienia', icon: 'settings', perms: ['config.edit'], group: 'Studio' },
 ];
 
 /** Dawne sekcje, dziś zakładki – stare linki i zakładki przeglądarki trafiają we właściwe miejsce. */
@@ -103,6 +129,11 @@ const ALIASES: Record<string, string> = {
   analytics: 'dashboard/kpi',
   extras: 'schedule/extras',
   groups: 'messages',
+  look: 'brand/look',
+  site: 'brand/site',
+  themes: 'brand/look',
+  music: 'community/music',
+  loyalty: 'marketing/loyalty',
 };
 
 export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; reloadMe: () => Promise<void>; onSwitchStudio: () => void; onPreviewClient: () => void; onLogout: () => void }) {
@@ -227,18 +258,18 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
           {section === 'events' && <EventsAdmin roles={roles} />}
           {place === 'schedule/plan' && <ScheduleAdmin />}
           {place === 'schedule/extras' && <ScheduleExtras roles={roles} />}
+          {place === 'schedule/types' && <ClassTypesAdmin />}
           {section === 'courses' && <CreatorStudio roles={roles} />}
-          {section === 'community' && <CommunityAdmin />}
-          {section === 'music' && <MusicAdmin />}
-          {section === 'themes' && <Themes />}
-          {section === 'marketing' && <Marketing />}
-          {section === 'loyalty' && <LoyaltyAdmin />}
+          {place === 'community/moderation' && <CommunityAdmin />}
+          {place === 'community/music' && <MusicAdmin />}
+          {place === 'marketing/campaigns' && <Marketing />}
+          {place === 'marketing/loyalty' && <LoyaltyAdmin />}
           {section === 'shop' && <ShopAdmin />}
           {section === 'products' && <Products />}
           {section === 'finance' && <Finance roles={roles} />}
           {section === 'settings' && <Settings studio={props.studio} onSaved={props.reloadMe} />}
-          {section === 'look' && <LookEditor studio={props.studio} onSaved={props.reloadMe} />}
-          {section === 'site' && <SiteOverview />}
+          {place === 'brand/look' && <LookEditor studio={props.studio} onSaved={props.reloadMe} />}
+          {place === 'brand/site' && <SiteOverview />}
         </Suspense>
       </main>
     </div>

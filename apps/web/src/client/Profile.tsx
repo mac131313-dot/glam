@@ -3,8 +3,9 @@ import { useEffect } from 'react';
 import { api, ApiError, DEMO_MODE, fmtPhone, useApi } from '../api.ts';
 import { Avatar, Empty, ListRow, useToast } from '../ui.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
+import { PassMeter, type Meter } from './PassMeter.tsx';
 
-type Pass = { id: string; productName: string; status: string; summary: string; expiringSoon: boolean; autoRenew?: boolean };
+type Pass = { id: string; productName: string; status: string; summary: string; meter: Meter | null; expiringSoon: boolean; autoRenew?: boolean };
 
 
 export function Profile() {
@@ -40,9 +41,9 @@ export function Profile() {
         {passes.data?.length === 0 && <Empty icon="🎟️">Nie masz jeszcze karnetu w tym studiu.</Empty>}
         {passes.data?.map((p) => (
           <div key={p.id} className={`card ${p.status === 'active' ? 'soft' : 'flat'}`}>
-            {/* Podsumowanie zaczyna się od nazwy karnetu – jedna linia; plakietka tylko, gdy karnet nie jest aktywny. */}
+            {/* Aktywny karnet: duża cyfra wejść; plakietka tylko, gdy karnet nie jest aktywny. */}
             <div className="row between" style={{ alignItems: 'flex-start' }}>
-              <span className="card-title">{p.summary}</span>
+              <PassMeter name={p.productName} summary={p.summary} meter={p.meter} />
               {p.status !== 'active' && (
                 <span className="badge">{{ used: 'wykorzystany', expired: 'wygasł', frozen: 'zawieszony' }[p.status] ?? p.status}</span>
               )}
@@ -70,22 +71,27 @@ export function Profile() {
         ))}
       </section>
 
+      {/* Trzy krótkie grupy zamiast jednej długiej listy. Powiadomienia są w Ustawieniach. */}
       <section>
-        {/* Od najczęściej potrzebnego do rzadziej używanego; ustawienia i pomoc na końcu. */}
+        <div className="eyebrow">Na co dzień</div>
         <ListRow title="Mój kod wejścia" hint="Pokaż na recepcji" onClick={() => open('checkin')} />
-        <ListRow title="Wiadomości" hint="Wszystkie powiadomienia od studia" onClick={() => open('inbox')} />
         <ListRow title="Mój plan" hint="Od Twojej trenerki" onClick={() => open('plan')} />
-        <ListRow title="Lojalność i szafka" hint="Punkty, odznaki, nagrody i rzeczy do odbioru" onClick={() => open('loyalty')} />
-        <ListRow title="Historia płatności" hint="Płatności i faktura na życzenie" onClick={() => open('payments')} />
-        {hasFeature(studio, 'shop') && <ListRow title="Sklep i zamówienia" hint="Bar, merch i stroje" onClick={() => open('shop')} />}
-        {hasFeature(studio, 'events') && <ListRow title="Wydarzenia w klubie" hint="Urodziny, babski wieczór w studiu" onClick={() => open('events')} />}
-        {hasFeature(studio, 'courses') && <ListRow title="Moje kursy" hint="Kursy online od instruktorek" onClick={() => open('courses')} />}
-        <ListRow title="Powiadomienia" hint="Przypomnienia przed treningiem i co ma do Ciebie docierać" onClick={() => open('notifications')} />
-        <ListRow title="Ustawienia" hint="Konto, prywatność, dostępność" onClick={() => open('settings')} />
-        <ListRow title="Pomoc" hint="FAQ, czat z recepcją, regulamin" onClick={() => open('faq')} />
+        <ListRow title="Wiadomości" hint="Wszystkie powiadomienia od studia" onClick={() => open('inbox')} />
       </section>
 
-      <section className="list-rows">
+      <section>
+        <div className="eyebrow">Zakupy i nagrody</div>
+        <ListRow title="Historia płatności" hint="Płatności i faktura na życzenie" onClick={() => open('payments')} />
+        <ListRow title="Lojalność i szafka" hint="Punkty, odznaki, nagrody i rzeczy do odbioru" onClick={() => open('loyalty')} />
+        {hasFeature(studio, 'shop') && <ListRow title="Sklep i zamówienia" hint="Bar, merch i stroje" onClick={() => open('shop')} />}
+        {hasFeature(studio, 'courses') && <ListRow title="Moje kursy" hint="Kursy online od instruktorek" onClick={() => open('courses')} />}
+        {hasFeature(studio, 'events') && <ListRow title="Wydarzenia w klubie" hint="Urodziny, babski wieczór w studiu" onClick={() => open('events')} />}
+      </section>
+
+      <section>
+        <div className="eyebrow">Konto</div>
+        <ListRow title="Ustawienia" hint="Powiadomienia, prywatność, dostępność" onClick={() => open('settings')} />
+        <ListRow title="Pomoc" hint="Czat z recepcją, telefon, regulamin" onClick={() => open('faq')} />
         <ListRow title="Moje studia" hint="Przełącz albo dodaj studio" onClick={onSwitchStudio} />
         {DEMO_MODE ? (
           <ListRow title="Tryb demo" hint="Zmień konto" onClick={() => (location.href = '/')} />

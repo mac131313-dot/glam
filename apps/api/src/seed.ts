@@ -1,5 +1,5 @@
 // Dane demo: dwa studia (izolacja), klientka Magda w obu, produkty z tabeli 1.1.4,
-// historia wizyt (pulpit, segmenty uśpionych), pełne zajęcia (lista oczekujących), motywy.
+// historia wizyt (pulpit, segmenty uśpionych), pełne zajęcia (lista oczekujących).
 import { existsSync, rmSync } from 'node:fs';
 import { initialBalances, localParts, passValidity, type ProductRules } from '@glam/core';
 import { DB_FILE, openDb, type Db } from './db.ts';
@@ -25,16 +25,6 @@ export const DEMO = {
   iza: '+48500000008',
   platformAdmin: '+48500000009',
   zuza: '+48500000010',
-};
-
-// Motywy sezonowe w duchu minimalizmu: te same neutralne tony, lekko przesunięta temperatura.
-const SEASONAL = {
-  october: { bg: '#f1ebe3', surface: '#fbf8f4', soft: '#e4d8c9', brand: '#a8876a', brandStrong: '#7a5c43', ink: '#211a15', muted: '#5f5247', accent: '#211a15', accentInk: '#f1ebe3', line: '#e2d7ca' },
-  halloween: { bg: '#ecebe8', surface: '#f8f7f5', soft: '#d9d6d1', brand: '#8a8178', brandStrong: '#5e5650', ink: '#161413', muted: '#5a5552', accent: '#161413', accentInk: '#ecebe8', line: '#d9d5d0' },
-  womensDay: { bg: '#f6f0ee', surface: '#fdfaf9', soft: '#eadbd7', brand: '#c09a92', brandStrong: '#875f58', ink: '#241c1b', muted: '#62534f', accent: '#241c1b', accentInk: '#f6f0ee', line: '#e8dcd8' },
-  // Święta: kremowe tło, sosnowa zieleń pod przyciski, żurawinowa czerwień jako akcent marki.
-  christmas: { bg: '#f5efe6', surface: '#fffbf5', soft: '#e6e9df', brand: '#b8433f', brandStrong: '#8f2b2e', ink: '#1c2620', muted: '#4d5a51', accent: '#23412f', accentInk: '#f5efe6', line: '#e4dccd' },
-  winter: { bg: '#eff0ed', surface: '#fafbf9', soft: '#dde0da', brand: '#9aa394', brandStrong: '#5d6658', ink: '#1a1d19', muted: '#575d54', accent: '#1a1d19', accentInk: '#eff0ed', line: '#dadfd7' },
 };
 
 export function seed(db: Db, now = new Date()) {
@@ -129,14 +119,6 @@ export function seed(db: Db, now = new Date()) {
   product(R, 'pr_sub_year', 'Pakiet zajęć · rok', 159900, { ...membership, validityDays: 365, autoRenew: true, billing: 'year' }, 'Zajęcia grupowe, do 3 w tygodniu. Odnawia się co rok.', 7);
   product(R, 'pr_sub_week', 'Pakiet zajęć · tydzień', 7900, { ...membership, validityDays: 7, autoRenew: true, billing: 'week' }, 'To samo na jeden tydzień. Odnawia się co tydzień.', 8);
 
-  // Motywy (sekcja 7) – październik oddechowy aktywny.
-  const theme = db.prepare('INSERT INTO themes (id, studio_id, name, tagline, emoji, palette_json, starts_on, ends_on, is_active, effect) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  theme.run('th_oct', R, 'Październik oddechowy', 'Jesień w studiu. Zwolnij i oddychaj.', '🍂', JSON.stringify(SEASONAL.october), '2026-10-01', '2026-10-30', 1, null);
-  theme.run('th_hall', R, 'Strasznie dobry trening', 'Halloween Flow – bez strasznych treści.', '🎃', JSON.stringify(SEASONAL.halloween), '2026-10-31', '2026-10-31', 0, null);
-  theme.run('th_women', R, 'Siła kobiet', 'Dzień Kobiet: nie musisz nic udowadniać.', '🌷', JSON.stringify(SEASONAL.womensDay), '2027-03-08', '2027-03-08', 0, null);
-  theme.run('th_winter', R, 'Ciepło i spokój', 'Grudzień: światła, herbata i oddech.', '✨', JSON.stringify(SEASONAL.winter), '2026-12-01', '2026-12-19', 0, null);
-  theme.run('th_xmas', R, 'Magia świąt', 'Zwolnij między pierniczkami. Ruch, który ogrzewa.', '🎄', JSON.stringify(SEASONAL.christmas), '2026-12-20', '2026-12-27', 0, 'snow');
-
   // ——— Studio 2: osobny najemca – Magda ma tu osobny karnet i historię ———
   const K = 'st_krakow';
   db.prepare(
@@ -181,13 +163,14 @@ export function seed(db: Db, now = new Date()) {
       `INSERT INTO passes (id, studio_id, user_id, product_version_id, product_name, rules_json, balances_json, valid_from, valid_until, status, source, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 'purchase', ?)`,
     ).run(passId, studio, userId, v.id, name, v.rules_json, JSON.stringify(initialBalances(rules)), val.validFrom, val.validUntil, iso(bought));
-    db.prepare("INSERT INTO payments (id, studio_id, user_id, kind, reference_id, amount_grosze, method, status, created_at) VALUES (?, ?, ?, 'pass', ?, ?, ?, 'paid', ?)").run(
+    db.prepare("INSERT INTO payments (id, studio_id, user_id, kind, reference_id, amount_grosze, method, status, description, created_at) VALUES (?, ?, ?, 'pass', ?, ?, ?, 'paid', ?, ?)").run(
       `pay_${passId}`,
       studio,
       userId,
       passId,
       v.price_grosze,
       method,
+      name,
       iso(bought),
     );
     return passId;
@@ -302,6 +285,8 @@ export function seed(db: Db, now = new Date()) {
 
   seedExtras(db, now);
   seedSsg(db, now, { user, member, product, buy });
+  // Magda chodzi też do SS&G – po przełączeniu studia widać jego logo i zdjęcia zajęć.
+  member(SSG_STUDIO, magda, 'client', 12, { goal: 'Stretching i mocniejsze plecy' });
   return { studios: [R, K, SSG_STUDIO], users: Object.fromEntries(users) };
 }
 

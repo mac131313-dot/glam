@@ -14,7 +14,8 @@ export function Community() {
     ...(hasFeature(studio, 'community') ? ([['groups', 'Grupy']] as [T, string][]) : []),
     ...(hasFeature(studio, 'challenges') ? ([['challenges', 'Wyzwania']] as [T, string][]) : []),
     ...(hasFeature(studio, 'community') ? ([['feed', 'Feed']] as [T, string][]) : []),
-    ['invites', 'Zaproś znajomą'],
+    // Krótko, żeby cztery zakładki zmieściły się na telefonie; pełne „Zaproś znajomą” jest w nagłówku tej zakładki.
+    ['invites', 'Zaproś'],
     ...(hasFeature(studio, 'music') ? ([['music', 'Muzyka']] as [T, string][]) : []),
   ];
   const [tab, setTab] = useState<T>(options[0][0]);

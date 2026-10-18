@@ -5,13 +5,13 @@ import { Icon } from '../icons.tsx';
 
 export function Landing() {
   const tiles = [
-    { href: '/panel', eyebrow: 'Dla studia', title: 'Panel', serif: 'zarządzania', hint: 'Pulpit, grafik, karnety, powitania, motywy i wygląd studia.', personas: PERSONAS.panel, base: '/panel' },
-    { href: '/app', eyebrow: 'Dla klientki', title: 'Aplikacja', serif: 'mobilna', hint: 'Rezerwacje, karnet, oddech z kołem, wejściówki dla znajomych.', personas: PERSONAS.app, base: '/app' },
+    { href: '/panel', eyebrow: 'Dla studia', title: 'Panel', serif: 'zarządzania', hint: 'Pulpit, grafik, karnety, powitania i wygląd studia.', personas: PERSONAS.panel, base: '/panel' },
+    { href: '/app', eyebrow: 'Dla klientki', title: 'Aplikacja', serif: 'mobilna', hint: 'Rezerwacje, karnet, prowadzony oddech, wejściówki dla znajomych.', personas: PERSONAS.app, base: '/app' },
   ];
   return (
     <main className="login">
       <div className="stack-lg" style={{ width: 'min(880px, 100%)' }}>
-        <div className="center stack" style={{ gap: 10 }}>
+        <div className="center stack gap-2">
           <div className="wordmark">glam</div>
           <div className="serif" style={{ fontSize: '1.35rem' }}>
             wersja demonstracyjna
@@ -19,7 +19,7 @@ export function Landing() {
         </div>
         <div className="grid-2">
           {tiles.map((t) => (
-            <div key={t.href} className="card stack" style={{ padding: 30, gap: 18 }}>
+            <div key={t.href} className="card stack gap-4" style={{ padding: 30 }}>
               <div>
                 <div className="eyebrow">{t.eyebrow}</div>
                 <h2 style={{ fontSize: '2rem', margin: 0 }}>
@@ -32,7 +32,7 @@ export function Landing() {
               <a className="btn" href={t.href}>
                 Otwórz <Icon name="chevron" size={18} />
               </a>
-              <div className="stack" style={{ gap: 4 }}>
+              <div className="stack gap-1">
                 <div className="eyebrow" style={{ margin: 0 }}>
                   Konta demo
                 </div>

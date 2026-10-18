@@ -24,8 +24,6 @@ export type Trigger =
   | 'course_lesson'
   | 'trainer_message'
   | 'course_ending'
-  | 'theme_start'
-  | 'badge_last_chance'
   | 'birthday'
   | 'anniversary'
   | 'level_up'
@@ -60,8 +58,6 @@ export const TRIGGERS: Record<Trigger, { label: string; when: string; category: 
   course_lesson: { label: 'Nowa lekcja w kursie', when: 'wg harmonogramu', category: 'courses', text: (v) => `Nowa lekcja w kursie „${v.course}” czeka 🎬` },
   trainer_message: { label: 'Wiadomość od trenerki', when: 'natychmiast', category: 'courses', text: () => 'Twoja trenerka napisała do Ciebie 💛' },
   course_ending: { label: 'Kurs kończy się', when: '3 dni przed', category: 'courses', text: (v) => `Dostęp do kursu „${v.course}” kończy się za 3 dni.` },
-  theme_start: { label: 'Start motywu', when: 'dzień startu 9:00', category: 'theme', text: (v) => `${v.tagline || `Witaj, ${v.name} w studiu!`} Nowy motyw i wyzwanie ✨` },
-  badge_last_chance: { label: 'Ostatnia szansa na odznakę', when: '1 dzień przed końcem', category: 'theme', text: () => 'Ostatni dzień na odznakę sezonową ✨' },
   birthday: { label: 'Urodziny', when: 'dzień urodzin 9:00', category: 'occasional', text: (v) => `Wszystkiego dobrego, ${v.name}! Prezent czeka 🎁` },
   anniversary: { label: 'Rocznica', when: 'rocznica pierwszego treningu', category: 'occasional', text: () => 'Rok z nami! Dziękujemy za ten czas 💛' },
   level_up: { label: 'Nowy poziom', when: 'natychmiast', category: 'loyalty', text: (v) => `Awansujesz na poziom ${v.level} ✨` },

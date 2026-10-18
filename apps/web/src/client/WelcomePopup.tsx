@@ -31,7 +31,7 @@ export function WelcomePopup(props: { welcome: { body: string; trainer_name: str
         <p className="small muted center" style={{ margin: 0 }}>
           Zabierz wodę, wygodny strój i skarpetki antypoślizgowe.
         </p>
-        <div className="stack" style={{ gap: 10 }}>
+        <div className="stack gap-2">
           <button
             className="btn block"
             onClick={() => {

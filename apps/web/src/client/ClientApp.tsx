@@ -1,19 +1,18 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import type { Look, Palette, SeasonalEffect, SupportHours } from '@glam/core';
-import { setStudioTimezone, useApi } from '../api.ts';
+import type { Look, SupportHours } from '@glam/core';
+import { api, setStudioTimezone, useApi } from '../api.ts';
 import { useLayer } from '../back.ts';
 import type { Me } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { BreathPlayer, type BreathRequest } from './BreathPlayer.tsx';
-import { Spinner } from '../ui.tsx';
+import { Spinner, useToast } from '../ui.tsx';
 import { Community } from './Community.tsx';
 import { ForMe } from './ForMe.tsx';
 import { Profile } from './Profile.tsx';
 import { PurchaseSheet } from './PurchaseSheet.tsx';
 import { Schedule } from './Schedule.tsx';
-import { shouldSnow, Snowfall } from './Snowfall.tsx';
 import { Start } from './Start.tsx';
 import { normalizeRoute, RouteView } from './router.tsx';
 import { Onboarding } from './Onboarding.tsx';
@@ -34,7 +33,6 @@ export type Studio = {
   guestPassPrice: string;
   roles: string[];
   policy: { cancelMinutesBefore: number; closesMinutesBefore: number };
-  theme: { id: string; name: string; tagline: string; emoji: string; palette: Partial<Palette>; effect: SeasonalEffect | null; sound?: string | null; icon?: string | null; pack?: Record<string, unknown> } | null;
   trainers: { id: string; name: string; bio: string; avatarUrl?: string | null }[];
   email?: string | null;
   address?: string | null;
@@ -90,11 +88,34 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
   const [shop, setShop] = useState<{ reason?: string; highlight?: string[] } | null>(null);
   const [breath, setBreath] = useState<BreathRequest | null>(null);
   const [stack, setStack] = useState<string[]>([]);
+  const toast = useToast();
 
   // Link z powiadomienia push / z kodu QR: /app?go=course/co1
   useEffect(() => {
     const go = new URLSearchParams(location.search).get('go');
     if (go) follow(go);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Powrót ze Stripe Checkout: /app?checkout=cs_… – webhook zwykle dociera w kilka sekund, więc chwilę pytamy o wynik.
+  // Parametr znika z adresu przy pierwszym odczycie, więc podwójny efekt (StrictMode) nie pyta dwa razy.
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('checkout');
+    if (!id) return;
+    history.replaceState(null, '', location.pathname);
+    if (id === 'cancelled') return toast('Płatność przerwana – możesz wrócić do zakupu w każdej chwili.');
+    (async () => {
+      for (let i = 0; i < 10; i++) {
+        const res = await api<{ kind: string; status: string; message: string }>(`/checkout/${encodeURIComponent(id)}`).catch(() => null);
+        if (res && res.status !== 'open') {
+          toast(res.message, res.status === 'paid' ? undefined : 'error');
+          if (res.status === 'paid' && res.kind === 'pass') window.dispatchEvent(new Event('glam:passes-changed'));
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      toast('Czekamy jeszcze na potwierdzenie z banku – damy znać powiadomieniem, gdy wszystko będzie gotowe.');
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -113,9 +134,9 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
     root.classList.toggle('a11y-reduce', !!a.reduceMotion);
   }, [props.me.user.prefs]);
 
-  // Wygląd studia + motyw sezonowy (nadpisuje wyłącznie kolory, 7.1).
+  // Wygląd studia.
   useEffect(() => {
-    if (studio) applyLook(studio.look, studio.theme?.palette);
+    if (studio) applyLook(studio.look);
   }, [studio]);
 
   function follow(action: string | null | undefined) {
@@ -148,7 +169,6 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
   return (
     <Ctx.Provider value={ctx}>
       <div className="phone" data-tab={tab}>
-        {studio.theme?.effect === 'snow' && shouldSnow() && <Snowfall />}
         <header className="topbar">
           <button className="studio-chip" onClick={props.onSwitchStudio} aria-label={`Studio ${studio.name}. Zmień studio`}>
             <StudioBrand studio={studio} />
@@ -163,7 +183,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
           )}
         </header>
         <main className="content">
-          {tab === 'start' && <Start key={`start-${studio.theme?.id}`} />}
+          {tab === 'start' && <Start />}
           {tab === 'schedule' && <Schedule />}
           {tab === 'forme' && <ForMe />}
           {tab === 'community' && <Community />}

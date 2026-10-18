@@ -43,46 +43,43 @@ export function Products() {
       </div>
 
       {!products && <Spinner />}
-      <div className="grid-2">
-        {products?.map((p) => (
-          <section key={p.id} className="card stack" style={{ opacity: p.published ? 1 : 0.6 }}>
-            <div className="row between">
-              <h3 style={{ margin: 0 }}>{p.name}</h3>
-              <b style={{ fontSize: '1.15rem' }}>{p.price}</b>
+      {/* Lista zamiast siatki kart: nazwa, skrót zasad i cena w jednym wierszu. Pełny podgląd „Jak to widzi klientka” jest w Zasadach. */}
+      {products && products.length > 0 && (
+        <section className="card product-list">
+          {products.map((p) => (
+            <div key={p.id} className={`product-row ${p.published ? '' : 'is-hidden'}`}>
+              <div className="product-row-text">
+                <div className="product-row-name">
+                  {p.name}
+                  {!p.published && <span className="badge">ukryty</span>}
+                </div>
+                <div className="product-row-rules">{p.preview.join(' · ')}</div>
+                <div className="tiny muted">
+                  wersja {p.version} · sprzedanych: {p.sold}
+                </div>
+              </div>
+              <b className="product-row-price">{p.price}</b>
+              <div className="product-row-actions">
+                <button
+                  className="btn ghost sm"
+                  onClick={() => {
+                    setPriceEdit(p);
+                    setNewPrice(String(p.price_grosze / 100));
+                  }}
+                >
+                  Cena
+                </button>
+                <button className="btn ghost sm" onClick={() => setEditing(p)}>
+                  Zasady
+                </button>
+                <button className="btn quiet sm" onClick={() => update(p.id, { published: !p.published }, p.published ? 'Ukryte w aplikacji' : 'Opublikowane')}>
+                  {p.published ? 'Ukryj' : 'Pokaż'}
+                </button>
+              </div>
             </div>
-            <div className="card soft flat" style={{ padding: 12 }}>
-              <div className="eyebrow">Jak to widzi klientka</div>
-              <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-                {p.preview.map((l) => (
-                  <li key={l}>{l}</li>
-                ))}
-              </ul>
-            </div>
-            <div className="row between small muted">
-              <span>
-                wersja {p.version} · sprzedanych: {p.sold}
-              </span>
-            </div>
-            <div className="row wrap">
-              <button
-                className="btn ghost sm"
-                onClick={() => {
-                  setPriceEdit(p);
-                  setNewPrice(String(p.price_grosze / 100));
-                }}
-              >
-                Zmień cenę
-              </button>
-              <button className="btn ghost sm" onClick={() => setEditing(p)}>
-                Zasady
-              </button>
-              <button className="btn quiet sm" onClick={() => update(p.id, { published: !p.published }, p.published ? 'Ukryte w aplikacji' : 'Opublikowane')}>
-                {p.published ? 'Ukryj' : 'Opublikuj'}
-              </button>
-            </div>
-          </section>
-        ))}
-      </div>
+          ))}
+        </section>
+      )}
 
       {priceEdit && (
         <Sheet onClose={() => setPriceEdit(null)} label="Zmiana ceny">
@@ -260,7 +257,7 @@ function ProductBuilder({ config, product, onClose, onCreated }: { config: Confi
         </div>
         <Toggle label="Okno godzin (np. poranny karnet)" checked={!!win} onChange={(v) => setWin(v ? { weekdays: [1, 2, 3, 4, 5], from: '07:00', to: '12:00' } : null)} />
         {win && (
-          <div className="stack" style={{ gap: 6 }}>
+          <div className="stack gap-2">
             <div className="chips">
               {WEEKDAYS.map((d, i) => (
                 <button key={d} className="chip" aria-pressed={win.weekdays.includes(i)} onClick={() => setWin({ ...win, weekdays: win.weekdays.includes(i) ? win.weekdays.filter((x) => x !== i) : [...win.weekdays, i].sort() })}>

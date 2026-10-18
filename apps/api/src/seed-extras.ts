@@ -81,7 +81,7 @@ export function seedExtras(db: Db, now = new Date()) {
   run("INSERT INTO post_likes (studio_id, post_id, user_id) VALUES (?, 'p4', ?)", R, magda);
   const month = today.slice(0, 7);
   run(
-    "INSERT INTO challenges (id, studio_id, title, description, metric, target, starts_on, ends_on, badge_code, theme_id, created_at) VALUES ('ch1', ?, 'Październik oddechowy', 'Dziesięć chwil oddechu w październiku – w swoim tempie.', 'mindful', 10, ?, ?, 'breath_october', 'th_oct', ?)",
+    "INSERT INTO challenges (id, studio_id, title, description, metric, target, starts_on, ends_on, badge_code, created_at) VALUES ('ch1', ?, 'Październik oddechowy', 'Dziesięć chwil oddechu w październiku – w swoim tempie.', 'mindful', 10, ?, ?, 'breath_october', ?)",
     R,
     `${month}-01`,
     `${month}-28`,
@@ -97,10 +97,6 @@ export function seedExtras(db: Db, now = new Date()) {
   run("INSERT INTO challenge_members (studio_id, challenge_id, user_id, joined_at) VALUES (?, 'ch1', ?, ?)", R, magda, ago(10));
   run("INSERT INTO challenge_members (studio_id, challenge_id, user_id, joined_at) VALUES (?, 'ch2', ?, ?)", R, ewa, ago(5));
   for (let d = 1; d <= 4; d++) run("INSERT INTO challenge_checkins (studio_id, challenge_id, user_id, date) VALUES (?, 'ch2', ?, ?)", R, ewa, addDays(today, -d));
-  run("UPDATE themes SET pack_json = '{\"badge\":\"breath_october\"}' WHERE id = 'th_oct'");
-  run("UPDATE themes SET auto = 1 WHERE id IN ('th_hall', 'th_winter', 'th_xmas', 'th_women')");
-  run("UPDATE themes SET pack_json = '{\"badge\":\"ghost\"}', sound = 'soft' WHERE id = 'th_hall'");
-  run("UPDATE themes SET sound = 'bells', icon = 'winter' WHERE id = 'th_xmas'");
 
   // ——— Lojalność, nagrody, szafka, kartki ———
   const reward = (id: string, name: string, kind: string, cost: number, value: number | null) => run('INSERT INTO rewards (id, studio_id, name, kind, cost_points, value, active) VALUES (?, ?, ?, ?, ?, ?, 1)', id, R, name, kind, cost, value);

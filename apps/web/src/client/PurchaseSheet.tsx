@@ -1,11 +1,11 @@
 // Zakup pakietu zajęć: subskrypcja (rok / tydzień) albo jedna płatność, bez odnowienia.
 // Studia bez planów z `billing` dostają dotychczasową listę karnetów.
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { classPackagePlans, type Billing } from '@glam/core';
-import { api, ApiError, useApi } from '../api.ts';
+import { api, ApiError, goToCheckout, useApi } from '../api.ts';
 import { useLayer } from '../back.ts';
 import { Icon } from '../icons.tsx';
-import { PAYMENT_LABELS, Sheet, Spinner, useToast } from '../ui.tsx';
+import { availableMethods, PAYMENT_LABELS, Sheet, Spinner, useToast } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 
 type Product = {
@@ -20,6 +20,9 @@ type Product = {
 };
 
 const METHODS = ['blik', 'apple_pay', 'google_pay', 'p24', 'card'];
+
+type PurchaseResult = { message: string; checkoutUrl?: string };
+
 
 const LEGAL = {
   terms: 'Subskrypcja odnawia się sama na koniec okresu, w cenie z tego ekranu. Wyłączysz ją w Profilu – opłacone zajęcia zostają do końca. Zakup jednorazowy kończy się razem z pakietem.',
@@ -51,8 +54,12 @@ export function PurchaseSheet({ reason, onClose, highlight }: { reason?: string;
 
 function ClassPackagePaywall({ products, reason, highlight, onClose }: { products: Product[]; reason?: string; highlight?: string[]; onClose: () => void }) {
   const { studio } = useClient();
+  const covers = (id: string) => !!highlight?.includes(id);
+  // Przy zapisie na zajęcia (highlight) karnety, które je obejmują, idą na samą górę – także te spoza planów.
   const plans = classPackagePlans(products);
   const others = products.filter((p) => !p.billing);
+  const coveringOthers = others.filter((p) => covers(p.id));
+  const restOthers = others.filter((p) => !covers(p.id));
   const suggested = initialChoice(plans, others, highlight);
   const [choice, setChoice] = useState<{ planId: string | null; extraId: string | null } | null>(null);
   const [showOthers, setShowOthers] = useState(suggested.showOthers);
@@ -75,7 +82,8 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
     if (!productId) return;
     setBusy(true);
     try {
-      const res = await api<{ message: string }>('/purchases', { method: 'POST', body: { productId, method, couponCode: coupon || undefined } });
+      const res = await api<PurchaseResult>('/purchases', { method: 'POST', body: { productId, method, couponCode: coupon || undefined } });
+      if (goToCheckout(res)) return;
       toast(res.message);
       window.dispatchEvent(new Event('glam:passes-changed'));
       onClose();
@@ -84,6 +92,26 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
     } finally {
       setBusy(false);
     }
+  };
+
+  const planCard = (p: (typeof plans)[number]) => {
+    const on = !extra && plan?.productId === p.productId;
+    return (
+      <div key={p.productId} className={`plan-wrap${p.savePct ? ' has-badge' : ''}`}>
+        {p.savePct != null && <span className="plan-badge">Oszczędzasz {p.savePct}%</span>}
+        <button type="button" role="radio" aria-checked={on} className={`plan-card${covers(p.productId) ? ' is-covering' : ''}${on ? ' is-on' : ''}`} onClick={() => setChoice({ planId: p.productId, extraId: null })}>
+          <span className="plan-dot" />
+          <span className="plan-copy">
+            <b>{p.title}</b>
+            {covers(p.productId) ? <CoversMark /> : p.caption && <small>{p.caption}</small>}
+          </span>
+          <span className="plan-price">
+            <b>{p.priceMain}</b>
+            {p.priceSub && <small>{p.priceSub}</small>}
+          </span>
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -133,28 +161,29 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
         {reason && <p className="muted small center">{reason}</p>}
 
         <div className="plan-list" role="radiogroup" aria-label="Wybierz plan">
-          {plans.map((p) => {
-            const on = !extra && plan?.productId === p.productId;
+          {plans.filter((p) => covers(p.productId)).map(planCard)}
+          {coveringOthers.map((p) => {
+            const on = extra?.id === p.id;
             return (
-              <div key={p.productId} className={`plan-wrap${p.savePct ? ' has-badge' : ''}`}>
-                {p.savePct != null && <span className="plan-badge">Oszczędzasz {p.savePct}%</span>}
-                <button type="button" role="radio" aria-checked={on} className={`plan-card${on ? ' is-on' : ''}`} onClick={() => setChoice({ planId: p.productId, extraId: null })}>
+              <div key={p.id} className="plan-wrap">
+                <button type="button" role="radio" aria-checked={on} className={`plan-card is-covering${on ? ' is-on' : ''}`} onClick={() => setChoice({ planId: null, extraId: p.id })}>
                   <span className="plan-dot" />
                   <span className="plan-copy">
-                    <b>{p.title}</b>
-                    {p.caption && <small>{p.caption}</small>}
+                    <b>{p.name}</b>
+                    <CoversMark />
                   </span>
                   <span className="plan-price">
-                    <b>{p.priceMain}</b>
-                    {p.priceSub && <small>{p.priceSub}</small>}
+                    <b>{p.price}</b>
+                    <small>bez odnowienia</small>
                   </span>
                 </button>
               </div>
             );
           })}
+          {plans.filter((p) => !covers(p.productId)).map(planCard)}
         </div>
 
-        {extra && <p className="center small" style={{ margin: '12px 0 0' }}>{extra.name}</p>}
+        {extra && !covers(extra.id) && <p className="center small" style={{ margin: '12px 0 0' }}>{extra.name}</p>}
 
         <div className="paywall-options">
           <button type="button" aria-expanded={payOpen} onClick={() => setPayOpen((v) => !v)}>
@@ -168,7 +197,7 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
 
         {payOpen && (
           <div className="chips paywall-methods" role="group" aria-label="Płatność">
-            {METHODS.map((m) => (
+            {availableMethods(METHODS).map((m) => (
               <button key={m} type="button" className="chip" aria-pressed={method === m} onClick={() => { setMethod(m); setPayOpen(false); }}>
                 {PAYMENT_LABELS[m]}
               </button>
@@ -207,12 +236,12 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
         {showOthers && (
           <div className="stack" style={{ marginTop: 16 }}>
             <div className="eyebrow center">Inne karnety, bez subskrypcji</div>
-            {others.length === 0 && <p className="muted small center">To studio nie ma innych karnetów.</p>}
-            {others.map((p) => (
+            {restOthers.length === 0 && <p className="muted small center">To studio nie ma innych karnetów.</p>}
+            {restOthers.map((p) => (
               <button
                 key={p.id}
                 type="button"
-                className={`card flat ${extra?.id === p.id || highlight?.includes(p.id) ? 'soft' : ''}`}
+                className={`card flat ${extra?.id === p.id ? 'soft' : ''}`}
                 style={{ textAlign: 'left', cursor: 'pointer' }}
                 onClick={() => setChoice({ planId: null, extraId: p.id })}
               >
@@ -234,17 +263,28 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
   );
 }
 
+/** Znacznik „ten karnet obejmuje zajęcia, na które się zapisujesz”. */
+function CoversMark() {
+  return (
+    <small className="covers-mark">
+      <Icon name="check" size={12} /> Obejmuje te zajęcia
+    </small>
+  );
+}
+
 function initialChoice(plans: ReturnType<typeof classPackagePlans>, others: Product[], highlight?: string[]) {
   const fromPlan = plans.find((p) => highlight?.includes(p.productId));
   if (fromPlan) return { planId: fromPlan.productId, extraId: null as string | null, showOthers: false };
   const fromOther = others.find((p) => highlight?.includes(p.id));
-  if (fromOther) return { planId: null as string | null, extraId: fromOther.id, showOthers: true };
+  if (fromOther) return { planId: null as string | null, extraId: fromOther.id, showOthers: false };
   const best = plans.find((p) => p.savePct) ?? plans[0];
   return { planId: best?.productId ?? null, extraId: null as string | null, showOthers: false };
 }
 
 function PassList({ products, reason, highlight, onClose }: { products: Product[]; reason?: string; highlight?: string[]; onClose: () => void }) {
   const [chosen, setChosen] = useState<Product | null>(null);
+  // Karnety obejmujące zajęcia, na które ktoś się zapisuje, na górze listy (sort jest stabilny – reszta w kolejności studia).
+  const sorted = [...products].sort((a, b) => Number(!!highlight?.includes(b.id)) - Number(!!highlight?.includes(a.id)));
   const [method, setMethod] = useState('blik');
   const [busy, setBusy] = useState(false);
   const [coupon, setCoupon] = useState('');
@@ -254,7 +294,8 @@ function PassList({ products, reason, highlight, onClose }: { products: Product[
     if (!chosen) return;
     setBusy(true);
     try {
-      const res = await api<{ message: string }>('/purchases', { method: 'POST', body: { productId: chosen.id, method, couponCode: coupon || undefined } });
+      const res = await api<PurchaseResult>('/purchases', { method: 'POST', body: { productId: chosen.id, method, couponCode: coupon || undefined } });
+      if (goToCheckout(res)) return;
       toast(res.message);
       window.dispatchEvent(new Event('glam:passes-changed'));
       onClose();
@@ -271,18 +312,22 @@ function PassList({ products, reason, highlight, onClose }: { products: Product[
         <div className="stack">
           <h2>Wybierz karnet</h2>
           {reason && <p className="muted small">{reason}</p>}
-          {products.map((p) => (
-            <button key={p.id} className={`card flat ${highlight?.includes(p.id) ? 'soft' : ''}`} style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setChosen(p)}>
+          {sorted.map((p, i) => (
+            <Fragment key={p.id}>
+            {i > 0 && !highlight?.includes(p.id) && highlight?.includes(sorted[i - 1].id) && <div className="eyebrow" style={{ marginTop: 8 }}>Pozostałe karnety</div>}
+            <button className={`card flat ${highlight?.includes(p.id) ? 'pass-covering' : ''}`} style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setChosen(p)}>
               <div className="row between">
                 <span className="card-title">{p.name}</span>
                 <b>{p.price}</b>
               </div>
+              {highlight?.includes(p.id) && <CoversMark />}
               <ul className="small muted" style={{ margin: '6px 0 0', paddingLeft: 18 }}>
                 {p.lines.map((l) => (
                   <li key={l}>{l}</li>
                 ))}
               </ul>
             </button>
+            </Fragment>
           ))}
         </div>
       ) : (
@@ -299,7 +344,7 @@ function PassList({ products, reason, highlight, onClose }: { products: Product[
           <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
             <legend className="eyebrow">Płatność</legend>
             <div className="chips" style={{ flexWrap: 'wrap' }}>
-              {METHODS.map((m) => (
+              {availableMethods(METHODS).map((m) => (
                 <button key={m} type="button" className="chip" aria-pressed={method === m} onClick={() => setMethod(m)}>
                   {PAYMENT_LABELS[m]}
                 </button>

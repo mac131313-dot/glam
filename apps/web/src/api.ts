@@ -250,6 +250,16 @@ export async function uploadVideo(file: File, durationSec: number, onProgress: (
   return id;
 }
 
+/**
+ * Studio ze Stripe: płatność kończy się na stronie Checkout (Apple Pay, Google Pay, BLIK…),
+ * a po powrocie /app?checkout=… ClientApp sprawdza wynik. Zwraca true, gdy przekierowuje.
+ */
+export function goToCheckout(res: { checkoutUrl?: string } | null | undefined) {
+  if (!res?.checkoutUrl) return false;
+  location.assign(res.checkoutUrl);
+  return true;
+}
+
 export const cancelVideoUpload = (file: File) => {
   const id = store.get(uploadKey(file));
   store.set(uploadKey(file), null);

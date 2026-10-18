@@ -296,7 +296,7 @@ function Lessons({ course, reload }: { course: Course; reload: () => Promise<voi
   return (
     <div className="stack-lg">
       {modules.map((m) => (
-        <section key={m} className="stack" style={{ gap: 6 }}>
+        <section key={m} className="stack gap-2">
           <div className="eyebrow">{m}</div>
           {course.lessons
             .filter((l) => l.module === m)
@@ -331,7 +331,7 @@ function Lessons({ course, reload }: { course: Course; reload: () => Promise<voi
         {f.kind === 'video' && (
           <>
             {video ? (
-              <div className="stack" style={{ gap: 6 }}>
+              <div className="stack gap-2">
                 <div className="row between tiny">
                   <span>
                     {video.file.name} · {(video.file.size / 1e9 >= 1 ? `${(video.file.size / 1e9).toFixed(2)} GB` : `${Math.round(video.file.size / 1e6)} MB`)}
@@ -429,7 +429,7 @@ function Questions() {
   return (
     <div className="stack">
       {list.data.map((q) => (
-        <section key={q.id} className="card flat stack" style={{ gap: 6 }}>
+        <section key={q.id} className="card flat stack gap-2">
           <div className="tiny muted">
             {q.course} · {q.lesson} · {q.name} · {fmtDay(q.created_at)}
           </div>

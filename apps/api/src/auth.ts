@@ -159,7 +159,6 @@ export type AuthUser = {
   email: string | null;
   birthday: string | null;
   nameday: string | null;
-  theme_opt_out: number;
   need_quiet: number;
   rest_day: string | null;
   push_disabled_json: string;

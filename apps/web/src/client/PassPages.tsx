@@ -21,7 +21,7 @@ type Pass = {
   freeze: { left: number; daysLeft: number; current: { date_from: string; date_to: string } | null };
 };
 
-const STATUS: Record<string, string> = { active: 'aktywny', used: 'wykorzystany', expired: 'wygasł', frozen: 'zawieszony', pending: 'czeka' };
+const STATUS: Record<string, string> = { active: 'aktywny', used: 'wykorzystany', expired: 'wygasł', frozen: 'zawieszony', pending: 'czeka', cancelled: 'anulowany' };
 const SOURCE: Record<string, string> = { purchase: 'kupiony w aplikacji', desk: 'kupiony w recepcji', guest_pass: 'prezent od znajomej', referral: 'z polecenia', reward: 'nagroda', renewal: 'odnowienie', import: 'przeniesiony', test: 'testowy' };
 const REASONS: [string, string][] = [
   ['vacation', 'Urlop'],
@@ -71,7 +71,7 @@ function Passes() {
             </div>
           )}
           {(p.status === 'active' || p.status === 'frozen') && (
-            <div className="stack" style={{ gap: 4 }}>
+            <div className="stack gap-1">
               {p.canAutoRenew && (
                 <Toggle
                   label="Odnawiaj automatycznie"
@@ -183,7 +183,7 @@ function Payments() {
     <div className="stack">
       {payments.data.length === 0 && <Empty>Tu pojawią się Twoje płatności.</Empty>}
       {payments.data.map((p) => (
-        <div key={p.id} className="card flat stack" style={{ gap: 6 }}>
+        <div key={p.id} className="card flat stack gap-2">
           <div className="row between">
             <b>{p.description ?? p.kind}</b>
             <b>{p.amount}</b>

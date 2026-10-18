@@ -53,7 +53,7 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
           <h1>
             Wygląd <span className="serif">studia</span>
           </h1>
-          <p className="muted" style={{ margin: 0 }}>Kolory, czcionki i miękkość. Klientki zobaczą zmiany przy następnym otwarciu aplikacji.</p>
+          <p className="muted m-0">Kolory, czcionki i miękkość. Klientki zobaczą zmiany przy następnym otwarciu aplikacji.</p>
         </div>
         <div className="row">
           {dirty && (
@@ -67,7 +67,7 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 32, alignItems: 'start' }} className="look-grid">
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 'var(--space-8)', alignItems: 'start' }} className="look-grid">
         <div className="stack-lg">
           <IdentitySection studio={studio} identity={identity} setIdentity={setIdentity} onSaved={onSaved} />
 
@@ -80,11 +80,11 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
                 <button
                   key={p.id}
                   className="card flat"
-                  style={{ textAlign: 'left', cursor: 'pointer', padding: 18, outline: look.palette === p.id ? '1.5px solid var(--ink)' : undefined, outlineOffset: 2 }}
+                  style={{ textAlign: 'left', cursor: 'pointer', padding: 'var(--space-5)', outline: look.palette === p.id ? '1.5px solid var(--ink)' : undefined, outlineOffset: 2 }}
                   aria-pressed={look.palette === p.id}
                   onClick={() => setLook({ ...look, palette: p.id })}
                 >
-                  <div className="row" style={{ gap: 6, marginBottom: 12 }}>
+                  <div className="row" style={{ gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
                     {[p.palette.bg, p.palette.soft, p.palette.brand, p.palette.ink].map((c) => (
                       <span key={c} className="swatch" style={{ background: c, width: 28, height: 28 }} />
                     ))}
@@ -97,9 +97,9 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
           </section>
 
           {ROLES.map((r) => (
-            <section key={r.role} className="stack" style={{ gap: 10 }}>
+            <section key={r.role} className="stack" style={{ gap: 'var(--space-3)' }}>
               <div>
-                <div className="eyebrow" style={{ marginBottom: 2 }}>
+                <div className="eyebrow" style={{ marginBottom: 'var(--space-1)' }}>
                   {r.label}
                 </div>
                 <div className="tiny muted">{r.hint}</div>
@@ -115,7 +115,7 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
                       fontFamily: f.pending ? undefined : f.family,
                       fontStyle: r.role === 'display' && !f.pending ? 'italic' : 'normal',
                       fontSize: r.role === 'display' ? '1.1rem' : '0.95rem',
-                      padding: '8px 18px',
+                      padding: 'var(--space-2) var(--space-5)',
                       ...(f.pending ? { borderStyle: 'dashed', opacity: 0.55, cursor: 'not-allowed' } : {}),
                     }}
                     title={f.pending ? `${f.label}: ${f.pending}` : f.standIn ? `Zastępczo za: ${f.standIn}` : undefined}
@@ -144,14 +144,14 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
               <Icon name="type" />
               <div className="card-title">Czcionki marki</div>
             </div>
-            <p className="small muted" style={{ margin: 0 }}>
+            <p className="small muted m-0">
               Kroje oznaczone „czeka na pliki” (Alte Haas Grotesk, Louis George Café, Circular Std, Jane Austen, Relationship of Mélodrame,
               Altesse Std, Apercu Mono) włączą się, gdy dostaniemy pliki .woff2 z licencją na aplikację mobilną i web. Do tego czasu
               DM Mono zastępuje Apercu Mono, Cormorant – Loretta Display / The Seasons, a Outfit – MDF Canno / Altone.
             </p>
           </section>
 
-          <section className="stack" style={{ gap: 10 }}>
+          <section className="stack" style={{ gap: 'var(--space-3)' }}>
             <div className="eyebrow">Miękkość zaokrągleń</div>
             <div className="segmented" role="group" aria-label="Miękkość">
               {(Object.keys(SOFTNESS) as Softness[]).map((k) => (
@@ -162,7 +162,7 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
             </div>
           </section>
 
-          <section className="stack" style={{ gap: 10 }}>
+          <section className="stack" style={{ gap: 'var(--space-3)' }}>
             <div className="eyebrow">Zdjęcia zajęć</div>
             <Range
               label="Przyciemnienie pod nazwą zajęć"
@@ -181,7 +181,7 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
               onChange={(photoBlur) => setLook({ ...look, photoBlur })}
             />
             <div className="row between">
-              <p className="small muted" style={{ margin: 0 }}>
+              <p className="small muted m-0">
                 {sample ? `Podgląd na zdjęciu „${sample.name}”.` : 'Wgraj zdjęcie w Grafik i sale, żeby zobaczyć efekt na prawdziwym zdjęciu.'} Jaśniejsze zdjęcia potrzebują mocniejszego przyciemnienia. Rozmycie wycisza detale za tekstem i zanika ku górze zdjęcia.
               </p>
               {(look.photoDim !== DEFAULT_PHOTO_DIM || look.photoBlur !== DEFAULT_PHOTO_BLUR) && (
@@ -203,7 +203,7 @@ export function LookEditor({ studio, onSaved }: { studio: MeStudio; onSaved: () 
 function PhonePreview({ look, studio, photo, photoRatio }: { look: Look; studio: BrandSource; photo: string | null; photoRatio: number | null }) {
   const vars = lookVars(look);
   return (
-    <div style={{ position: 'sticky', top: 24 }}>
+    <div style={{ position: 'sticky', top: 24, width: 300 }} className="stack">
       <div className="eyebrow center">Podgląd</div>
       <div
         className="look-preview"
@@ -222,7 +222,7 @@ function PhonePreview({ look, studio, photo, photoRatio }: { look: Look; studio:
           transition: 'background 0.4s',
         }}
       >
-        <div style={{ padding: '22px 18px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ padding: 'var(--space-6) var(--space-5) 0', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <span className="studio-chip" style={{ alignSelf: 'flex-start', fontSize: '0.8rem' }}>
             <StudioBrand studio={studio} scale={0.8} />
           </span>
@@ -238,7 +238,7 @@ function PhonePreview({ look, studio, photo, photoRatio }: { look: Look; studio:
               </span>
             </div>
           </div>
-          <div className="stack" style={{ gap: 8 }}>
+          <div className="stack" style={{ gap: 'var(--space-2)' }}>
             <div className="eyebrow" style={{ fontSize: '0.6rem', margin: 0 }}>
               Najbliższe zajęcia
             </div>
@@ -252,7 +252,7 @@ function PhonePreview({ look, studio, photo, photoRatio }: { look: Look; studio:
               corner={<span className="badge ok" style={{ fontSize: '0.65rem' }}>zapisana</span>}
             />
           </div>
-          <div className="card soft" style={{ padding: 16 }}>
+          <div className="card soft" style={{ padding: 'var(--space-4)' }}>
             <div className="eyebrow" style={{ fontSize: '0.6rem' }}>
               Mój karnet
             </div>
@@ -275,7 +275,7 @@ function PhonePreview({ look, studio, photo, photoRatio }: { look: Look; studio:
             background: 'color-mix(in srgb, var(--surface) 85%, transparent)',
             border: '1px solid var(--line)',
             borderRadius: 999,
-            padding: 5,
+            padding: 'var(--space-1)',
           }}
         >
           {(['home', 'calendar', 'leaf', 'heart', 'user'] as const).map((n, i) => (
@@ -420,7 +420,7 @@ function LogoSection({ studio, look, setLook, onChanged }: { studio: MeStudio; l
         }}
       >
         {studio.logoUrl ? (
-          <div className="row wrap" style={{ gap: 24, justifyContent: 'center' }}>
+          <div className="row wrap" style={{ gap: 'var(--space-6)', justifyContent: 'center' }}>
             <div
               className="logo-stage"
               title="Przeciągnij, żeby ustawić kadr"
@@ -431,10 +431,10 @@ function LogoSection({ studio, look, setLook, onChanged }: { studio: MeStudio; l
             >
               <StudioBrand studio={brand} scale={128 / st.size} showName={false} />
             </div>
-            <div className="stack" style={{ gap: 10 }}>
+            <div className="stack" style={{ gap: 'var(--space-3)' }}>
               <div className="tiny muted">Tak wygląda na górze aplikacji:</div>
               {(['bg', 'soft', 'surface'] as const).map((bg) => (
-                <div key={bg} style={{ background: `var(--${bg})`, padding: 12, borderRadius: 'var(--radius-sm)' }}>
+                <div key={bg} style={{ background: `var(--${bg})`, padding: 'var(--space-3)', borderRadius: 'var(--radius-sm)' }}>
                   <span className="studio-chip" style={{ cursor: 'default' }}>
                     <StudioBrand studio={brand} />
                   </span>
@@ -443,7 +443,7 @@ function LogoSection({ studio, look, setLook, onChanged }: { studio: MeStudio; l
             </div>
           </div>
         ) : (
-          <div className="stack center" style={{ gap: 6 }}>
+          <div className="stack center" style={{ gap: 'var(--space-2)' }}>
             <span className="studio-logo" style={{ width: 52, height: 52, fontSize: '1.5rem', margin: '0 auto' }}>
               {studio.logo}
             </span>
@@ -464,7 +464,7 @@ function LogoSection({ studio, look, setLook, onChanged }: { studio: MeStudio; l
       </div>
 
       {studio.logoUrl && (
-        <div className="card flat stack" style={{ gap: 18 }}>
+        <div className="card flat stack" style={{ gap: 'var(--space-5)' }}>
           <Seg
             label="Kształt"
             value={st.shape}
@@ -480,7 +480,7 @@ function LogoSection({ studio, look, setLook, onChanged }: { studio: MeStudio; l
           <Range label="Rozmiar na górze aplikacji" value={st.size} min={LOGO_LIMITS.size[0]} max={LOGO_LIMITS.size[1]} suffix=" px" onChange={(size) => set({ size })} />
           <div className="field">
             <label>Tło pod logo</label>
-            <div className="row wrap" style={{ gap: 8 }}>
+            <div className="row wrap" style={{ gap: 'var(--space-2)' }}>
               {(
                 [
                   ['none', 'Brak'],
@@ -490,7 +490,7 @@ function LogoSection({ studio, look, setLook, onChanged }: { studio: MeStudio; l
                   ['ink', 'Ciemne'],
                 ] as const
               ).map(([v, l]) => (
-                <button key={v} className="chip row" aria-pressed={st.background === v} onClick={() => set({ background: v })} style={{ gap: 8 }}>
+                <button key={v} className="chip row" aria-pressed={st.background === v} onClick={() => set({ background: v })} style={{ gap: 'var(--space-2)' }}>
                   <span className="swatch" style={{ width: 16, height: 16, background: v === 'none' ? 'transparent' : `var(--${v})`, border: v === 'none' ? '1px dashed var(--muted)' : undefined }} />
                   {l}
                 </button>
@@ -508,7 +508,7 @@ function LogoSection({ studio, look, setLook, onChanged }: { studio: MeStudio; l
           />
           <Range label="Margines wewnętrzny" value={st.padding} min={LOGO_LIMITS.padding[0]} max={LOGO_LIMITS.padding[1]} suffix=" %" onChange={(padding) => set({ padding })} disabled={st.fit === 'cover' && st.shape !== 'free'} />
           <Range label="Przybliżenie" value={st.zoom} min={LOGO_LIMITS.zoom[0]} max={LOGO_LIMITS.zoom[1]} step={0.05} suffix="×" onChange={(zoom) => set({ zoom })} />
-          <div className="row" style={{ gap: 16 }}>
+          <div className="row" style={{ gap: 'var(--space-4)' }}>
             <div className="grow">
               <Range label="Przesunięcie w poziomie" value={st.x} min={LOGO_LIMITS.offset[0]} max={LOGO_LIMITS.offset[1]} suffix=" %" onChange={(x) => set({ x })} />
             </div>
@@ -534,7 +534,7 @@ function LogoSection({ studio, look, setLook, onChanged }: { studio: MeStudio; l
           </div>
         </div>
       )}
-      <p className="tiny muted" style={{ margin: 0 }}>
+      <p className="tiny muted m-0">
         PNG, JPG, WebP albo SVG. Najlepiej logo na przezroczystym tle; jeśli ma białe tło, wybierz kształt i „Wypełnij kształt”.
       </p>
     </section>

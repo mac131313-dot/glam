@@ -146,7 +146,7 @@ export function CheckinPanel({ onDone, big = false }: { onDone: () => void; big?
   return (
     <section className={`card ${big ? '' : 'soft'} stack`} style={{ gap: 12 }}>
       {!big && <div className="eyebrow">Check-in</div>}
-      <div className="row">
+      <div className="row checkin-row">
         <input
           ref={field}
           className={`input ${big ? 'scan-input' : ''}`}
@@ -177,7 +177,7 @@ export function CheckinPanel({ onDone, big = false }: { onDone: () => void; big?
         <div className="entry-result warn" role="alert">
           <WhoLine who={outcome.who} big={big} />
           <span>{outcome.message}</span>
-          <div className="stack" style={{ gap: 8 }}>
+          <div className="stack gap-2">
             {outcome.options.map((o) => (
               <div key={o.sessionId} className="row wrap">
                 <button className="btn entry-option grow" disabled={busy} onClick={() => send({ ...outcome.input, sessionId: o.sessionId, payAtDesk: !o.covered })}>
@@ -266,7 +266,7 @@ function EntryPopup({ r, onClose }: { r: Entered; onClose: () => void }) {
         <div className="entry-pop-detail">{detail}</div>
         {r.pass && <span className="small muted">{r.pass}</span>}
         {(r.firstVisit || r.health || r.payAtDesk) && (
-          <div className="stack" style={{ gap: 6, alignItems: 'center', marginTop: 4 }}>
+          <div className="stack gap-2" style={{ alignItems: 'center', marginTop: 4 }}>
             {r.firstVisit && <span className="badge accent">pierwszy raz – przywitaj i pokaż szatnię</span>}
             {r.health && <span className="tiny" style={{ color: 'var(--brand-strong)' }}>⚑ {r.health}</span>}
             {r.payAtDesk && <span className="small">Bez karnetu – rozlicz w kasie.</span>}
@@ -286,7 +286,7 @@ function WhoLine({ who, big }: { who: Who; big: boolean }) {
         <div className={big ? 'entry-name' : ''} style={{ fontWeight: 600 }}>
           {who.name}
         </div>
-        <div className="row wrap" style={{ gap: 6 }}>
+        <div className="row wrap gap-2">
           {who.firstVisit && <span className="badge accent">pierwszy raz – przywitaj i pokaż szatnię</span>}
           {who.activated && <span className="badge">aktywowano: {who.activated}</span>}
           {who.health && <span className="tiny" style={{ color: 'var(--brand-strong)' }}>⚑ {who.health}</span>}
@@ -360,7 +360,7 @@ export function Entrance() {
             const inside = booked.filter((p) => p.status === 'attended').length;
             const missing = booked.filter((p) => p.status === 'booked');
             return (
-              <section key={s.id} className="card flat stack" style={{ gap: 8, padding: 18 }}>
+              <section key={s.id} className="card flat stack gap-2" style={{ padding: 18 }}>
                 <div className="row between">
                   <b>
                     {fmtTime(s.starts_at)} · {s.class_name}
@@ -376,7 +376,7 @@ export function Entrance() {
                   <span style={{ width: `${booked.length ? (inside / booked.length) * 100 : 0}%` }} />
                 </div>
                 {missing.map((p) => (
-                  <div key={p.booking_id} className="row small" style={{ gap: 8 }}>
+                  <div key={p.booking_id} className="row small gap-2">
                     <span className="grow">
                       {p.name} {p.visits === 0 && !p.guest_name && <span className="badge accent">pierwszy raz</span>}
                     </span>

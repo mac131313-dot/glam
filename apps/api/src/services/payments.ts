@@ -16,10 +16,11 @@ import type { Deps } from '../context.ts';
 import { id, nowIso } from '../db.ts';
 import { HttpError, badRequest, conflict, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
-import type { PaymentMethod } from '../sms.ts';
+import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from './audit.ts';
 import { notify } from './notify.ts';
 import { issuePass } from './passes.ts';
+import { createCheckout, createCustomer, paymentIntentMethod, stripeGateway, type StripeGateway } from './stripe.ts';
 import type { Studio } from './studio.ts';
 
 type ProductRow = { id: string; name: string; version_id: string; price_grosze: number; rules_json: string; channels_json: string };
@@ -138,11 +139,27 @@ export function recordPayment(
 }
 
 /** Zakup karnetu: aplikacja (bramka studia), kasa (gotówka / terminal) albo link do płatności. */
+type PassQuote = {
+  productId: string;
+  versionId: string;
+  name: string;
+  rules: ProductRules;
+  price: number;
+  discount: number;
+  couponId: string | null;
+  method: PaymentMethod;
+  channel: 'app' | 'desk';
+  actorId: string;
+  autoRenew?: boolean;
+  /** Link płatności z recepcji (/api/pay/:token) – oznaczany jako opłacony dopiero po zapłacie. */
+  linkId?: string;
+};
+
 export async function purchaseProduct(
   deps: Deps,
   scope: StudioScope,
   studio: Studio,
-  input: { userId: string; productId: string; method: PaymentMethod; couponCode?: string | null; channel: 'app' | 'desk'; actorId: string; autoRenew?: boolean },
+  input: { userId: string; productId: string; method: PaymentMethod; couponCode?: string | null; channel: 'app' | 'desk'; actorId: string; autoRenew?: boolean; linkId?: string },
 ) {
   const product = loadProduct(scope, input.productId);
   const channels = JSON.parse(product.channels_json) as string[];
@@ -160,31 +177,186 @@ export async function purchaseProduct(
   price = coupon.final;
   discount += coupon.discount;
 
+  const quote: PassQuote = {
+    productId: product.id,
+    versionId: product.version_id,
+    name: product.name,
+    rules,
+    price,
+    discount,
+    couponId: coupon.coupon?.id ?? null,
+    method: input.method,
+    channel: input.channel,
+    actorId: input.actorId,
+    autoRenew: input.autoRenew,
+    linkId: input.linkId,
+  };
+
+  // Studio z bramką Stripe: płatność online kończy się na stronie Checkout, karnet wydaje webhook.
+  const gw = checkoutGateway(scope, studio.id, input.method, price);
+  if (gw) return startPassCheckout(deps, scope, studio, gw, input.userId, quote);
+
   const charge = price > 0 ? await deps.payments.charge({ amountGrosze: price, method: input.method, description: product.name, studioId: studio.id }) : { status: 'paid' as const, ref: 'free' };
   if (charge.status !== 'paid') throw new HttpError(402, 'payment_failed', 'Płatność się nie powiodła. Spróbuj ponownie.');
+  return fulfillPass(scope, studio, input.userId, quote, charge.ref);
+}
 
-  const firstPurchase = !hasPurchased(scope, input.userId);
-  const v = passValidity(rules, new Date());
+export const ONLINE_METHODS = new Set<PaymentMethod>([...PAYMENT_METHODS, 'link']);
+
+/** Bramka Stripe, jeśli ta płatność ma przejść przez Checkout (online, niezerowa kwota, studio ze Stripe). */
+export function checkoutGateway(scope: StudioScope, studioId: string, method: PaymentMethod | undefined, amountGrosze: number) {
+  return amountGrosze > 0 && method && ONLINE_METHODS.has(method) ? stripeGateway(scope.db, studioId) : null;
+}
+
+const passRenews = (q: PassQuote) => (q.rules.billing === 'once' ? false : (q.autoRenew ?? !!q.rules.autoRenew));
+
+/** Karnet na koncie + płatność w historii. Wspólne dla płatności od razu i potwierdzenia z webhooka. */
+function fulfillPass(scope: StudioScope, studio: Studio, userId: string, q: PassQuote, providerRef: string) {
+  const firstPurchase = !hasPurchased(scope, userId);
+  const v = passValidity(q.rules, new Date());
+  const renews = passRenews(q);
   const passId = scope.tx(() => {
     // Karnet dostaje kopię reguł z bieżącej wersji produktu (C5).
     const passId = issuePass(scope, {
-      userId: input.userId,
-      versionId: product.version_id,
-      name: product.name,
-      rules,
-      balances: initialBalances(rules),
+      userId,
+      versionId: q.versionId,
+      name: q.name,
+      rules: q.rules,
+      balances: initialBalances(q.rules),
       validFrom: v.validFrom,
       validUntil: v.validUntil,
-      source: input.channel === 'desk' ? 'desk' : 'purchase',
-      autoRenew: rules.billing === 'once' ? false : (input.autoRenew ?? !!rules.autoRenew),
+      source: q.channel === 'desk' ? 'desk' : 'purchase',
+      autoRenew: renews,
     });
-    recordPayment(scope, { userId: input.userId, kind: 'pass', ref: passId, amount: price, discount, method: input.method, providerRef: charge.ref, description: product.name, couponId: coupon.coupon?.id });
-    if (input.channel === 'desk') audit(scope, { actorId: input.actorId, action: 'pass.sold_at_desk', entity: 'pass', entityId: passId, subjectUserId: input.userId, details: { product: product.name, method: input.method } });
-    if (firstPurchase) referralPurchase(scope, studio, input.userId);
+    recordPayment(scope, { userId, kind: 'pass', ref: passId, amount: q.price, discount: q.discount, method: q.method, providerRef, description: q.name, couponId: q.couponId });
+    if (q.channel === 'desk') audit(scope, { actorId: q.actorId, action: 'pass.sold_at_desk', entity: 'pass', entityId: passId, subjectUserId: userId, details: { product: q.name, method: q.method } });
+    if (q.linkId) scope.run("UPDATE payment_links SET status = 'paid' WHERE studio_id = $studio AND id = $id", { id: q.linkId });
+    if (firstPurchase) referralPurchase(scope, studio, userId);
     return passId;
   });
-  const renews = rules.billing === 'once' ? false : (input.autoRenew ?? !!rules.autoRenew);
-  return { passId, renews, price: formatPLN(price), discount: formatPLN(discount), message: renews ? `${product.name} jest już na Twoim koncie. Odnowi się automatycznie – możesz to wyłączyć w Profilu.` : `${product.name} jest już na Twoim koncie.` };
+  return { passId, renews, price: formatPLN(q.price), discount: formatPLN(q.discount), message: renews ? `${q.name} jest już na Twoim koncie. Odnowi się automatycznie – możesz to wyłączyć w Profilu.` : `${q.name} jest już na Twoim koncie.` };
+}
+
+// ——— Stripe Checkout: wspólny mechanizm dla wszystkich zakupów online ———
+
+export type CheckoutKind = 'pass' | 'shop' | 'course' | 'course_web' | 'event' | 'guest_pass';
+
+/** Wynik wydania: ref trafia do checkout_sessions.result_ref, message do powiadomienia i ekranu powrotu. */
+export type Fulfilled = { ref: string; message: string; action?: string; after?: () => Promise<void> };
+
+/**
+ * Jak wydać dany rodzaj zakupu po zapłacie. `payload` to wycena zapisana przy starcie Checkout –
+ * po zapłacie nie liczymy ceny od nowa. `release` oddaje to, co zostało zablokowane (np. sztuki w sklepie).
+ */
+export type CheckoutFulfiller<P = any> = {
+  fulfill(deps: Deps, scope: StudioScope, studio: Studio, userId: string | null, payload: P, providerRef: string): Fulfilled;
+  release?(scope: StudioScope, payload: P): void;
+};
+
+const FULFILLERS = new Map<CheckoutKind, CheckoutFulfiller>();
+
+/** Każdy moduł sprzedaży rejestruje swój rodzaj przy imporcie (sklep, kursy, wydarzenia…). */
+export function registerCheckoutKind<P>(kind: CheckoutKind, f: CheckoutFulfiller<P>) {
+  FULFILLERS.set(kind, f);
+}
+
+registerCheckoutKind<PassQuote>('pass', {
+  fulfill(deps, scope, studio, userId, q, providerRef) {
+    const res = fulfillPass(scope, studio, userId!, q, providerRef);
+    return { ref: res.passId, message: res.message, action: 'profile/passes', after: res.renews ? () => rememberCard(deps, scope, studio.id, userId!, providerRef) : undefined };
+  },
+});
+
+/** Subskrypcja: Stripe zapisał kartę przy Checkout – zapamiętujemy ją do odnowień off_session. */
+async function rememberCard(deps: Deps, scope: StudioScope, studioId: string, userId: string, paymentIntentId: string) {
+  const gw = stripeGateway(scope.db, studioId);
+  if (!gw || !paymentIntentId.startsWith('pi_')) return;
+  const pm = await paymentIntentMethod(deps.http ?? fetch, gw, paymentIntentId).catch(() => null);
+  if (pm) scope.run('UPDATE stripe_customers SET payment_method_id = $pm, updated_at = $now WHERE studio_id = $studio AND user_id = $u', { pm, u: userId, now: nowIso() });
+}
+
+/** Klientka Stripe dla subskrypcji: jedna na studio, bo każde studio ma własne konto Stripe. */
+async function stripeCustomer(deps: Deps, scope: StudioScope, gw: StripeGateway, userId: string, email: string | null | undefined) {
+  const known = scope.get<{ customer_id: string }>('SELECT customer_id FROM stripe_customers WHERE studio_id = $studio AND user_id = $u', { u: userId });
+  if (known) return known.customer_id;
+  const name = (scope.db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as { name: string | null } | undefined)?.name;
+  const customer = await createCustomer(deps.http ?? fetch, gw, { email, name, metadata: { studio: scope.studioId, user: userId } });
+  scope.run('INSERT INTO stripe_customers (studio_id, user_id, customer_id, payment_method_id, updated_at) VALUES ($studio, $u, $c, NULL, $now)', { u: userId, c: customer.id, now: nowIso() });
+  return customer.id;
+}
+
+/**
+ * Start płatności na stronie Stripe Checkout. Zakup czeka w checkout_sessions, aż webhook potwierdzi zapłatę.
+ * `back` to ścieżka powrotu (domyślnie /app – ClientApp czyta ?checkout= i pokazuje wynik).
+ */
+export async function startCheckout(
+  deps: Deps,
+  scope: StudioScope,
+  studio: Studio,
+  gw: StripeGateway,
+  input: { kind: CheckoutKind; userId: string | null; name: string; amountGrosze: number; method: PaymentMethod; payload: object; back?: string; email?: string | null; saveCard?: boolean },
+) {
+  const base = deps.publicUrl ?? 'http://localhost:5173';
+  const email = input.email !== undefined ? input.email : input.userId ? (scope.db.prepare('SELECT email FROM users WHERE id = ?').get(input.userId) as { email: string | null } | undefined)?.email : null;
+  const back = `${base}${input.back ?? '/app'}`;
+  const customer = input.saveCard && input.userId ? await stripeCustomer(deps, scope, gw, input.userId, email) : undefined;
+  const session = await createCheckout(deps.http ?? fetch, gw, {
+    amountGrosze: input.amountGrosze,
+    name: input.name,
+    method: input.method,
+    email,
+    customer,
+    successUrl: `${back}?checkout={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${back}?checkout=cancelled`,
+    metadata: { studio: studio.id, user: input.userId ?? '', kind: input.kind },
+  });
+  scope.run(
+    'INSERT INTO checkout_sessions (id, studio_id, user_id, kind, payload_json, amount_grosze, status, created_at) VALUES ($id, $studio, $u, $k, $p, $a, \'open\', $now)',
+    { id: session.id, u: input.userId, k: input.kind, p: JSON.stringify({ ...input.payload, name: input.name }), a: input.amountGrosze, now: nowIso() },
+  );
+  return { checkoutUrl: session.url, checkoutId: session.id, message: 'Przechodzisz do płatności…' };
+}
+
+async function startPassCheckout(deps: Deps, scope: StudioScope, studio: Studio, gw: StripeGateway, userId: string, q: PassQuote) {
+  // Subskrypcja: Checkout zapisuje kartę (setup_future_usage), żeby job mógł odnowić okres bez klientki.
+  return startCheckout(deps, scope, studio, gw, { kind: 'pass', userId, name: q.name, amountGrosze: q.price, method: q.method, payload: q, saveCard: passRenews(q) });
+}
+
+/**
+ * Webhook Stripe: sesja opłacona → wydanie towaru. Idempotentnie – Stripe ponawia zdarzenia,
+ * a status 'open' → 'paid' zmienia się tylko raz, w tej samej transakcji co wydanie.
+ * Nieudana albo wygasła sesja oddaje to, co było zablokowane (np. sztuki w sklepie).
+ */
+export async function completeCheckout(deps: Deps, scope: StudioScope, studio: Studio, sessionId: string, outcome: 'paid' | 'failed' | 'expired', providerRef: string | null) {
+  const res = scope.tx(() => {
+    const row = scope.get<{ user_id: string | null; kind: CheckoutKind; payload_json: string; status: string }>('SELECT user_id, kind, payload_json, status FROM checkout_sessions WHERE studio_id = $studio AND id = $id', { id: sessionId });
+    if (!row || row.status !== 'open') return null;
+    const f = FULFILLERS.get(row.kind);
+    if (!f) throw new Error(`Brak obsługi Checkout dla rodzaju ${row.kind}`);
+    const payload = JSON.parse(row.payload_json);
+    if (outcome !== 'paid') {
+      f.release?.(scope, payload);
+      scope.run('UPDATE checkout_sessions SET status = $s WHERE studio_id = $studio AND id = $id', { s: outcome, id: sessionId });
+      return null;
+    }
+    const done = f.fulfill(deps, scope, studio, row.user_id, payload, providerRef ?? sessionId);
+    scope.run("UPDATE checkout_sessions SET status = 'paid', provider_ref = $r, result_ref = $p, result_message = $m WHERE studio_id = $studio AND id = $id", { r: providerRef, p: done.ref, m: done.message, id: sessionId });
+    if (row.user_id) notify(scope, { userId: row.user_id, category: 'transactional', tz: studio.timezone, now: new Date(), body: done.message, action: done.action });
+    return done;
+  });
+  // SMS-y i wywołania do Stripe po zatwierdzeniu transakcji – ich błąd nie cofa już wydanego towaru.
+  await res?.after?.().catch((err) => console.warn('Checkout: krok po wydaniu nie powiódł się', err));
+  return res;
+}
+
+export type CheckoutRow = { kind: string; status: string; payload_json: string; result_message: string | null };
+
+/** Stan sesji Checkout dla ekranu powrotu (aplikacja albo strona kursu na www). */
+export function checkoutStatus(row: CheckoutRow) {
+  const name = (JSON.parse(row.payload_json) as { name: string }).name;
+  const message =
+    row.status === 'paid' ? (row.result_message ?? `${name} – opłacone.`) : row.status === 'open' ? 'Czekamy na potwierdzenie płatności…' : 'Płatność się nie udała. Możesz spróbować jeszcze raz.';
+  return { kind: row.kind, status: row.status, message };
 }
 
 /** Pierwszy karnet znajomej z polecenia → bonus dla zapraszającej (max X miesięcznie). */

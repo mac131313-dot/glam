@@ -22,6 +22,8 @@ export type Deps = {
   publicUrl?: string;
   /** Zapytania DNS przy sprawdzaniu własnej domeny studia (domyślnie node:dns; w testach podstawka). */
   dns?: DnsResolver;
+  /** Wywołania do Stripe (domyślnie globalny fetch; w testach podstawka). */
+  http?: typeof fetch;
 };
 
 declare module 'fastify' {

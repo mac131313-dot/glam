@@ -3,10 +3,11 @@
 // regulamin, zespół i role, kwalifikacje, szablony branżowe, eksport / import konfiguracji, import klientek z CSV,
 // bramka płatności, plan i zużycie, zgłoszenia do GLAM, dziennik zmian, kopia danych, konto testowe.
 import { useEffect, useState } from 'react';
-import { ROLE_LABEL, type Role, type StudioSettings } from '@glam/core';
+import { PANEL_TINTS, ROLE_LABEL, type Role, type StudioSettings } from '@glam/core';
 import type { MeStudio } from '../App.tsx';
 import { api, fmtDay, useApi } from '../api.ts';
 import { Empty, Field, Spinner, Stat, Tabs, Toggle, useAction } from '../ui.tsx';
+import { applySystemLook } from '../look.ts';
 import { download } from './Clients.tsx';
 
 type Cfg = {
@@ -44,13 +45,56 @@ export default function Settings({ onSaved }: { studio: MeStudio; onSaved: () =>
           ['plan', 'Plan i wsparcie'],
         ]}
       />
-      {tab === 'studio' && <StudioInfo cfg={cfg.data} reload={reload} />}
+      {tab === 'studio' && (
+        <>
+          <StudioInfo cfg={cfg.data} reload={reload} />
+          <PanelTintPicker value={cfg.data.settings.panelTint} reload={reload} />
+        </>
+      )}
       {tab === 'rules' && <Rules cfg={cfg.data} reload={reload} />}
       {tab === 'modules' && <Modules settings={cfg.data.settings} reload={reload} />}
       {tab === 'team' && <Team cfg={cfg.data} reload={reload} />}
       {tab === 'data' && <DataTools cfg={cfg.data} reload={reload} />}
       {tab === 'plan' && <PlanSupport />}
     </div>
+  );
+}
+
+/** Kolor przewodni panelu: kilka stonowanych odcieni do wyboru (bez dowolnego koloru – zawsze spokojnie i czytelnie).
+ *  Stuknięcie od razu barwi panel i zapisuje; gdy zapis się nie uda, wraca poprzedni kolor. */
+function PanelTintPicker({ value, reload }: { value: string; reload: () => Promise<void> }) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  const { run } = useAction();
+  const pick = (id: string) => {
+    if (id === v) return;
+    setV(id);
+    applySystemLook(id);
+    run(
+      () =>
+        api('/owner/settings', { method: 'PUT', body: { panelTint: id } })
+          .then(reload)
+          .catch((e) => {
+            setV(value);
+            applySystemLook(value);
+            throw e;
+          }),
+      'Kolor zapisany',
+    );
+  };
+  return (
+    <section className="card stack">
+      <div className="eyebrow">Kolor przewodni panelu</div>
+      <p className="small muted">Delikatny akcent w menu, przełącznikach i polach – widzi go cały zespół. Wygląd aplikacji klientek ustawiasz w zakładce Marka.</p>
+      <div className="tint-row" role="radiogroup" aria-label="Kolor przewodni panelu">
+        {PANEL_TINTS.map((t) => (
+          <button key={t.id} type="button" role="radio" aria-checked={v === t.id} className="tint-option" onClick={() => pick(t.id)}>
+            <span className="tint-dot" style={{ background: t.color }} />
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -267,12 +311,12 @@ function Team({ cfg, reload }: { cfg: Cfg; reload: () => Promise<void> }) {
         const roles = staff.data!.filter((s) => s.id === p.id).map((s) => s.role);
         const quals = cfg.trainers.find((t) => t.id === p.id)?.classTypeIds;
         return (
-          <section key={p.id} className="card flat stack" style={{ gap: 6 }}>
+          <section key={p.id} className="card flat stack gap-2">
             <div className="row between">
               <b>{p.name}</b>
               <span className="tiny muted">{p.phone}</span>
             </div>
-            <div className="row wrap" style={{ gap: 4 }}>
+            <div className="row wrap gap-1">
               {roles.map((r) => (
                 <span key={r} className="chip">
                   {ROLE_LABEL[r] ?? r}{' '}
@@ -482,7 +526,7 @@ function PlanSupport() {
         </button>
       </section>
       {tickets.data?.map((x) => (
-        <section key={x.id} className="card flat stack" style={{ gap: 6 }}>
+        <section key={x.id} className="card flat stack gap-2">
           <div className="row between">
             <b>{x.subject}</b>
             <span className="badge">

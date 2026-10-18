@@ -69,7 +69,7 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
       </div>
 
       <div className="grid-2 dash-grid">
-        <section className="card stack" style={{ gap: 8 }}>
+        <section className="card stack gap-2">
           <h3>Do zrobienia</h3>
           {open.length === 0 && <p className="small muted" style={{ margin: 0 }}>Wszystko ogarnięte.</p>}
           <div>
@@ -88,7 +88,7 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
         <section className="card stack">
           <h3>Klientki: aktywne i uśpione</h3>
           {seg.map((s) => (
-            <div key={s.label} className="stack" style={{ gap: 4 }}>
+            <div key={s.label} className="stack gap-1">
               <div className="row between small">
                 <span>{s.label}</span>
                 <b>{s.value}</b>
@@ -112,7 +112,7 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
         <section className="card stack">
           <h3>Najpopularniejsze zajęcia (7 dni)</h3>
           {data.popular.map((p) => (
-            <div key={p.name} className="stack" style={{ gap: 4 }}>
+            <div key={p.name} className="stack gap-1">
               <div className="row between small">
                 <span>{p.name}</span>
                 <b>{p.bookings}</b>
@@ -150,7 +150,7 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
           <h3>Karnety: wygasania i odnowienia</h3>
           <div className="split">
             <div className="stack">
-              <div className="stack" style={{ gap: 4 }}>
+              <div className="stack gap-1">
                 <div className="row between small">
                   <span>Wygasają w 7 dni · odnowią się same</span>
                   <b>
@@ -171,7 +171,7 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
                   {data.passes.renewedMonth} · {data.passes.autoRenewedMonth}
                 </b>
               </div>
-              <div className="stack" style={{ gap: 4 }}>
+              <div className="stack gap-1">
                 <div className="row between small">
                   <span>Kupiły kolejny po wygaśnięciu (30 dni)</span>
                   <b>{data.passes.renewalRate}%</b>
@@ -188,7 +188,7 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
               </div>
             </div>
 
-            <div className="stack" style={{ gap: 8 }}>
+            <div className="stack gap-2">
               <span className="small muted">Najbliższe wygaśnięcia</span>
               {data.passes.soon.length === 0 && <p className="small muted" style={{ margin: 0 }}>Żaden karnet nie kończy się wkrótce.</p>}
               {data.passes.soon.map((p, i) => (
@@ -196,7 +196,7 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
                   <span className="ellipsis">
                     {p.name ?? 'Klientka'} <span className="muted">· {p.product}</span>
                   </span>
-                  <span className="row" style={{ gap: 8, flex: 'none' }}>
+                  <span className="row gap-2" style={{ flex: 'none' }}>
                     {p.autoRenew && <span className="badge">auto</span>}
                     <b>{fmtDay(p.validUntil)}</b>
                   </span>
@@ -217,9 +217,9 @@ export function Dashboard({ go }: { go?: (section: string) => void }) {
                 <tr key={i}>
                   <td>{p.name ?? 'Kasa'}</td>
                   <td className="muted">{p.description ?? KIND[p.kind] ?? p.kind}</td>
-                  <td className="muted">{PAYMENT_LABELS[p.method] ?? p.method}</td>
-                  <td className="muted">{fmtDay(p.created_at)}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{p.amount}</td>
+                  <td className="muted wide-only">{PAYMENT_LABELS[p.method] ?? p.method}</td>
+                  <td className="muted nowrap">{fmtDay(p.created_at)}</td>
+                  <td className="nowrap" style={{ textAlign: 'right', fontWeight: 600 }}>{p.amount}</td>
                 </tr>
               ))}
             </tbody>

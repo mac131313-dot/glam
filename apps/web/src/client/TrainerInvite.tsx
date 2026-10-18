@@ -22,7 +22,7 @@ export function InviteCard({ invite: i, onChange, showTrainer = true, onTrainer 
   const { run, busy } = useAction();
   const book = () => run(() => api('/bookings', { method: 'POST', body: { sessionId: i.sessionId } }).then((r) => (onChange(), window.dispatchEvent(new Event('glam:passes-changed')), r)));
   return (
-    <div className="card flat stack" style={{ gap: 8 }}>
+    <div className="card flat stack gap-2">
       <div className="row between" style={{ alignItems: 'baseline' }}>
         <b>
           {i.className} <span className="serif">{fmtTime(i.startsAt)}</span>
@@ -32,7 +32,7 @@ export function InviteCard({ invite: i, onChange, showTrainer = true, onTrainer 
       <p className="serif" style={{ margin: 0, fontSize: '1.1rem', lineHeight: 1.4 }}>
         „{i.body}”
       </p>
-      <div className="row between" style={{ alignItems: 'center', gap: 8 }}>
+      <div className="row between gap-2" style={{ alignItems: 'center' }}>
         {showTrainer ? (
           <button className="link small" onClick={onTrainer}>
             — {i.trainerName}

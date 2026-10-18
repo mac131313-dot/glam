@@ -100,7 +100,7 @@ function EventEditor({ ev, manage, onDone }: { ev: Ev; manage: boolean; onDone: 
     );
   return (
     <div className="stack-lg">
-      <section className="stack" style={{ gap: 4 }}>
+      <section className="stack gap-1">
         <div>
           {fmtLongDay(ev.starts_at)}, {fmtTime(ev.starts_at)}–{fmtTime(ev.ends_at)} · {ev.zone} · {ev.activity}
         </div>
@@ -161,7 +161,7 @@ function EventEditor({ ev, manage, onDone }: { ev: Ev; manage: boolean; onDone: 
           </div>
         </>
       )}
-      <section className="stack" style={{ gap: 4 }}>
+      <section className="stack gap-1">
         <div className="eyebrow">Historia ustaleń</div>
         {ev.history.map((h, i) => (
           <div key={i} className="small">

@@ -26,8 +26,8 @@ import { StudioScope } from '../scope.ts';
 import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
 import { notify } from '../services/notify.ts';
-import { priceWithCoupon, recordPayment } from '../services/payments.ts';
-import { loadStudio, logoInfo } from '../services/studio.ts';
+import { checkoutGateway, checkoutStatus, priceWithCoupon, recordPayment, registerCheckoutKind, startCheckout, type CheckoutRow } from '../services/payments.ts';
+import { loadStudio, logoInfo, type Studio } from '../services/studio.ts';
 
 type CourseRow = {
   id: string;
@@ -77,6 +77,71 @@ function load(db: Db, slug: string, courseId: string) {
 }
 
 const sold = (scope: StudioScope, tierId: string) => scope.get<{ n: number }>('SELECT COUNT(*) AS n FROM course_enrollments WHERE studio_id = $studio AND tier_id = $t', { t: tierId })!.n;
+
+/** Zakup pakietu na www – dane z formularza i wycena z chwili zakupu (także zapisana w Checkout). */
+type WebPurchase = {
+  courseId: string;
+  userId: string;
+  phone: string;
+  buyerName: string;
+  email: string | null;
+  tierId: string;
+  tierName: string;
+  edition: CourseEdition | null;
+  price: number;
+  discount: number;
+  couponId: string | null;
+  method: PaymentMethod;
+};
+
+/** W jednej transakcji: konto, członkostwo, zgoda, płatność i dostęp. Wspólne dla płatności od razu i webhooka. */
+function fulfillWebPurchase(scope: StudioScope, studio: Studio, p: WebPurchase, providerRef: string) {
+  const { db } = scope;
+  const course = scope.get<CourseRow>('SELECT * FROM courses WHERE studio_id = $studio AND id = $id', { id: p.courseId });
+  if (!course) throw notFound('Nie znaleziono kursu.');
+  const now = new Date();
+  const description = `Kurs: ${course.title} – ${p.tierName}`;
+  scope.tx(() => {
+    // Konto mogło powstać między startem Checkout a webhookiem – wtedy dopisujemy dostęp do niego.
+    const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get(p.phone) as { id: string } | undefined;
+    const userId = existing?.id ?? p.userId;
+    if (!existing) db.prepare('INSERT INTO users (id, phone, name, email, created_at) VALUES (?, ?, ?, ?, ?)').run(userId, p.phone, p.buyerName, p.email, nowIso());
+    // Istniejące konto: nie nadpisujemy imienia ani e-maila danymi z formularza (mógł je wpisać ktoś inny).
+    else db.prepare('UPDATE users SET name = COALESCE(name, ?), email = COALESCE(email, ?) WHERE id = ?').run(p.buyerName, p.email, userId);
+    scope.run("INSERT OR IGNORE INTO memberships (studio_id, user_id, role, joined_at) VALUES ($studio, $u, 'client', $now)", { u: userId, now: nowIso() });
+    scope.run("INSERT OR REPLACE INTO consents (user_id, studio_id, kind, granted, updated_at) VALUES ($u, $studio, 'course_terms', 1, $now)", { u: userId, now: nowIso() });
+    recordPayment(scope, { userId, kind: 'course', ref: course.id, amount: p.price, discount: p.discount, method: p.method, providerRef, description, couponId: p.couponId });
+    scope.run(
+      `INSERT OR IGNORE INTO course_enrollments (studio_id, course_id, user_id, source, price_paid_grosze, withdrawal_waived_at, started_at, expires_at, tier_id, edition_id)
+       VALUES ($studio, $c, $u, 'purchase', $p, $now, $start, $exp, $t, $e)`,
+      {
+        c: course.id,
+        u: userId,
+        p: p.price,
+        now: now.toISOString(),
+        // Edycja z datą startu: kalendarz (drip) liczy się od startu edycji, nie od dnia zakupu.
+        start: p.edition?.startsAt && Date.parse(p.edition.startsAt) > now.getTime() ? p.edition.startsAt : now.toISOString(),
+        exp: purchaseAccessUntil(p.edition, course.access_days, now),
+        t: p.tierId,
+        e: p.edition?.id ?? null,
+      },
+    );
+    audit(scope, { actorId: userId, action: 'course.purchased_web', entity: 'course', entityId: course.id, subjectUserId: userId, details: { tier: p.tierName } });
+  });
+  notify(scope, { userId: course.author_id, category: 'courses', tz: studio.timezone, body: `Nowa uczestniczka kursu „${course.title}” (${p.tierName}).`, action: 'staff/courses' });
+  return {
+    message: `Gotowe. „${course.title}” (${p.tierName}) czeka w aplikacji.`,
+    next: `Zaloguj się w aplikacji numerem ${p.phone.replace(/^(\+\d{2})(\d{3})(\d{3})(\d+)$/, '$1 $2 $3 $4')} – wyślemy kod SMS.`,
+  };
+}
+
+registerCheckoutKind<WebPurchase>('course_web', {
+  fulfill(_deps, scope, studio, _userId, p, providerRef) {
+    const done = fulfillWebPurchase(scope, studio, p, providerRef);
+    // Strona kursu pokazuje po powrocie tę wiadomość razem z podpowiedzią logowania.
+    return { ref: p.courseId, message: `${done.message} ${done.next}` };
+  },
+});
 
 export function coursePageRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
@@ -184,6 +249,15 @@ export function coursePageRoutes(app: FastifyInstance, deps: Deps) {
     };
   });
 
+  // Powrót ze Stripe Checkout na stronę kursu: kupująca nie ma jeszcze sesji, więc pyta bez logowania.
+  // Id sesji Stripe jest nie do zgadnięcia, a odpowiedź nie zawiera danych spoza tego, co kupująca sama wpisała.
+  app.get<{ Params: { slug: string; id: string; session: string } }>('/api/public/studios/:slug/courses/:id/checkout/:session', async (req) => {
+    const { scope, course } = load(db, req.params.slug, req.params.id);
+    const row = scope.get<CheckoutRow>("SELECT kind, status, payload_json, result_message FROM checkout_sessions WHERE studio_id = $studio AND id = $id AND kind = 'course_web'", { id: req.params.session });
+    if (!row || (JSON.parse(row.payload_json) as { courseId: string }).courseId !== course.id) throw notFound('Nie znaleziono płatności.');
+    return checkoutStatus(row);
+  });
+
   // Zakup pakietu na www. Kolejność: wycena (kod) → płatność w bramce studia → w jednej transakcji konto,
   // członkostwo, płatność i dostęp. Konto bez sesji: wejście do /app kodem SMS na podany numer.
   app.post<{
@@ -218,40 +292,36 @@ export function coursePageRoutes(app: FastifyInstance, deps: Deps) {
     const base = coursePrice(tier.priceGrosze, { promoPct: course.promo_pct, passDiscountPct: 0, hasActivePass: false }).price;
     const priced = priceWithCoupon(scope, studio, { code: b.couponCode, userId, kind: 'course', amountGrosze: base });
     const description = `Kurs: ${course.title} – ${tier.name}`;
+    const purchase: WebPurchase = {
+      courseId: course.id,
+      userId,
+      phone,
+      buyerName: name,
+      email,
+      tierId: tier.id,
+      tierName: tier.name,
+      edition: edition ?? null,
+      price: priced.final,
+      discount: priced.discount,
+      couponId: priced.coupon?.id ?? null,
+      method: b.method,
+    };
+    // Studio ze Stripe: konto i dostęp powstają z webhooka, a kupująca wraca na stronę kursu.
+    const gw = checkoutGateway(scope, studio.id, b.method, priced.final);
+    if (gw)
+      return startCheckout(deps, scope, studio, gw, {
+        kind: 'course_web',
+        userId: existing ? userId : null,
+        name: description,
+        amountGrosze: priced.final,
+        method: b.method,
+        payload: purchase,
+        email,
+        back: `/s/${encodeURIComponent(req.params.slug)}/kurs/${encodeURIComponent(course.id)}`,
+      });
     const charge = priced.final > 0 ? await deps.payments.charge({ amountGrosze: priced.final, method: b.method, description, studioId: studio.id }) : { status: 'paid' as const, ref: 'free' };
     if (charge.status !== 'paid') throw new HttpError(402, 'payment_failed', 'Płatność się nie powiodła. Spróbuj ponownie.');
-
-    scope.tx(() => {
-      if (!existing) db.prepare('INSERT INTO users (id, phone, name, email, created_at) VALUES (?, ?, ?, ?, ?)').run(userId, phone, name, email, nowIso());
-      // Istniejące konto: nie nadpisujemy imienia ani e-maila danymi z formularza (mógł je wpisać ktoś inny).
-      else db.prepare('UPDATE users SET name = COALESCE(name, ?), email = COALESCE(email, ?) WHERE id = ?').run(name, email, userId);
-      scope.run("INSERT OR IGNORE INTO memberships (studio_id, user_id, role, joined_at) VALUES ($studio, $u, 'client', $now)", { u: userId, now: nowIso() });
-      scope.run("INSERT OR REPLACE INTO consents (user_id, studio_id, kind, granted, updated_at) VALUES ($u, $studio, 'course_terms', 1, $now)", { u: userId, now: nowIso() });
-      recordPayment(scope, { userId, kind: 'course', ref: course.id, amount: priced.final, discount: priced.discount, method: b.method, providerRef: charge.ref, description, couponId: priced.coupon?.id });
-      scope.run(
-        `INSERT INTO course_enrollments (studio_id, course_id, user_id, source, price_paid_grosze, withdrawal_waived_at, started_at, expires_at, tier_id, edition_id)
-         VALUES ($studio, $c, $u, 'purchase', $p, $now, $start, $exp, $t, $e)`,
-        {
-          c: course.id,
-          u: userId,
-          p: priced.final,
-          now: now.toISOString(),
-          // Edycja z datą startu: kalendarz (drip) liczy się od startu edycji, nie od dnia zakupu.
-          start: edition?.startsAt && Date.parse(edition.startsAt) > now.getTime() ? edition.startsAt : now.toISOString(),
-          exp: purchaseAccessUntil(edition, course.access_days, now),
-          t: tier.id,
-          e: edition?.id ?? null,
-        },
-      );
-      audit(scope, { actorId: userId, action: 'course.purchased_web', entity: 'course', entityId: course.id, subjectUserId: userId, details: { tier: tier.name } });
-    });
-    notify(scope, { userId: course.author_id, category: 'courses', tz: studio.timezone, body: `Nowa uczestniczka kursu „${course.title}” (${tier.name}).`, action: 'staff/courses' });
-    return {
-      message: `Gotowe. „${course.title}” (${tier.name}) czeka w aplikacji.`,
-      next: `Zaloguj się w aplikacji numerem ${phone.replace(/^(\+\d{2})(\d{3})(\d{3})(\d+)$/, '$1 $2 $3 $4')} – wyślemy kod SMS.`,
-      appUrl: '/app',
-      paid: formatPLN(priced.final),
-    };
+    return { ...fulfillWebPurchase(scope, studio, purchase, charge.ref), appUrl: '/app', paid: formatPLN(priced.final) };
   });
 }
 
