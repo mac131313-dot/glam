@@ -64,7 +64,10 @@ export async function api<T = any>(path: string, opts: Opts = {}): Promise<T> {
   if (opts.body !== undefined) headers['content-type'] = 'application/json';
   if (session.token) headers.authorization = `Bearer ${session.token}`;
   if (!opts.global && session.studioId) headers['x-studio-id'] = session.studioId;
-  const res = await fetch(`/api${path}`, { method: opts.method ?? 'GET', headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
+  // Bez sieci fetch rzuca TypeError („Failed to fetch”) – zamieniamy go na zwykły błąd z polskim komunikatem.
+  const res = await fetch(`/api${path}`, { method: opts.method ?? 'GET', headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined }).catch(() => {
+    throw new ApiError(0, 'network', 'Brak internetu – sprawdź połączenie.');
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401) {

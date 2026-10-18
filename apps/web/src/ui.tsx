@@ -1,6 +1,6 @@
 import { useAuthedUrl } from './api.ts';
 import { useLayer } from './back.ts';
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type AnimationEvent, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 type Toast = { text: string; kind: 'ok' | 'error' } | null;
@@ -73,12 +73,49 @@ function useDialogFocus() {
   return ref;
 }
 
-export function Sheet({ onClose, children, label }: { onClose: () => void; children: ReactNode; label: string }) {
+/** Czy klientka (system albo ustawienia aplikacji) wyłączyła animacje – wtedy przewijamy bez płynnego przejazdu. */
+export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('a11y-reduce');
+
+/**
+ * Zwijana sekcja: cienka linia, nagłówek z krótką informacją po prawej i strzałką. Treść rozwija się płynnie
+ * (wysokość przez grid 0fr → 1fr), a gdy nagłówek jest nisko na ekranie – strona delikatnie podjeżdża do sekcji.
+ */
+export function Fold({ title, meta, defaultOpen = false, children }: { title: ReactNode; meta?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const ref = useRef<HTMLElement>(null);
+  const bodyId = useId();
+  const toggle = () => {
+    setOpen(!open);
+    if (open) return;
+    const head = ref.current;
+    if (head && head.getBoundingClientRect().top > window.innerHeight * 0.55) {
+      requestAnimationFrame(() => head.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' }));
+    }
+  };
+  return (
+    <section ref={ref} className={open ? 'fold is-open' : 'fold'}>
+      <h2 className="fold-h">
+        <button type="button" className="fold-head" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+          <span className="fold-title">{title}</span>
+          {meta != null && meta !== '' && <span className="fold-meta">{meta}</span>}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+      </h2>
+      <div className="fold-body" id={bodyId} inert={!open}>
+        <div className="fold-inner">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+export function Sheet({ onClose, children, label, className }: { onClose: () => void; children: ReactNode; label: string; className?: string }) {
   useLayer(onClose);
   const ref = useDialogFocus();
   return (
     <div className="overlay" onClick={onClose}>
-      <div ref={ref} tabIndex={-1} className="sheet" role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
+      <div ref={ref} tabIndex={-1} className={className ? `sheet ${className}` : 'sheet'} role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
         {children}
       </div>
@@ -87,6 +124,71 @@ export function Sheet({ onClose, children, label }: { onClose: () => void; child
 }
 
 export const Spinner = () => <div className="spinner" role="progressbar" aria-label="Ładowanie" />;
+
+/**
+ * Część aplikacji ładowana na żądanie (lazy). Bez sieci import się nie uda – zamiast białego ekranu całej aplikacji
+ * pokazujemy komunikat i „Spróbuj ponownie” (ponowny render zaczyna import od nowa).
+ */
+export function Lazy({ children }: { children: ReactNode }) {
+  return (
+    <LoadBoundary>
+      <Suspense fallback={<Spinner />}>{children}</Suspense>
+    </LoadBoundary>
+  );
+}
+
+/**
+ * React.lazy, które po nieudanym imporcie (brak sieci) nie zapamiętuje błędu na zawsze: następny render
+ * – po „Spróbuj ponownie” w <Lazy> – próbuje pobrać kod jeszcze raz.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function lazyRetry<T extends ComponentType<any>>(load: () => Promise<{ default: T }>): T {
+  const make = (): LazyExoticComponent<T> =>
+    lazy(() =>
+      load().catch((e: unknown) => {
+        current = make();
+        throw e;
+      }),
+    );
+  let current = make();
+  const Retry = (props: object) => {
+    const C = current as unknown as ComponentType<object>;
+    return <C {...props} />;
+  };
+  return Retry as unknown as T;
+}
+
+class LoadBoundary extends Component<{ children: ReactNode }, { failed: boolean; attempt: number }> {
+  state = { failed: false, attempt: 0 };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed)
+      return (
+        <div className="empty" role="alert">
+          Nie udało się otworzyć – sprawdź internet.{' '}
+          <button className="link" onClick={() => this.setState((s) => ({ failed: false, attempt: s.attempt + 1 }))}>
+            Spróbuj ponownie
+          </button>
+        </div>
+      );
+    return <div key={this.state.attempt} style={{ display: 'contents' }}>{this.props.children}</div>;
+  }
+}
+
+/** Dane jeszcze nie przyszły: spinner, a gdy wczytanie się nie udało – powód i „Spróbuj ponownie” zamiast kręcenia bez końca. */
+export function Pending({ error, reload }: { error?: Error; reload: () => unknown }) {
+  if (!error) return <Spinner />;
+  return (
+    <div className="empty" role="alert">
+      {error.message || 'Nie udało się wczytać.'}{' '}
+      <button className="link" onClick={() => reload()}>
+        Spróbuj ponownie
+      </button>
+    </div>
+  );
+}
 
 // Minimalizm: pusty stan to jedno spokojne zdanie, bez ilustracji.
 export function Empty({ children }: { icon?: string; children: ReactNode }) {
@@ -131,12 +233,21 @@ export const PAYMENT_LABELS: Record<string, string> = {
 // ——— Klocki podstron (v2.11) ———
 
 /** Podstrona na pełny ekran z przyciskiem „Wróć” – w aplikacji klientki i w panelu. */
-export function Page({ title, onBack, children, actions, bodyClass }: { title: ReactNode; onBack: () => void; children: ReactNode; actions?: ReactNode; bodyClass?: string }) {
+/** Skąd otwarto stronę (prostokąt klikniętego elementu) – żeby mogła z niego „wyrosnąć” i do niego wrócić. */
+let lastOrigin: DOMRect | null = null;
+export const rememberOrigin = (el: Element) => (lastOrigin = el.getBoundingClientRect());
+export const takeOrigin = () => {
+  const r = lastOrigin;
+  lastOrigin = null;
+  return r;
+};
+
+export function Page({ title, onBack, children, actions, bodyClass, className, style, onAnimationEnd }: { title: ReactNode; onBack: () => void; children: ReactNode; actions?: ReactNode; bodyClass?: string; className?: string; style?: CSSProperties; onAnimationEnd?: (e: AnimationEvent<HTMLDivElement>) => void }) {
   useLayer(onBack);
   const ref = useDialogFocus();
   const titleId = useId();
   return (
-    <div ref={ref} tabIndex={-1} className="page" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <div ref={ref} tabIndex={-1} className={`page ${className ?? ''}`} style={style} onAnimationEnd={onAnimationEnd} role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header className="page-bar">
         <button className="icon-btn" style={{ width: 42, height: 42 }} onClick={onBack} aria-label="Wróć">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden>
@@ -468,7 +579,8 @@ export function QrCode({ text, size = 200, label }: { text: string; size?: numbe
   return (
     <svg className="qr" width={size} height={size} viewBox={`0 0 ${n} ${n}`} role="img" aria-label={label} shapeRendering="crispEdges">
       <rect width={n} height={n} fill="#fff" />
-      {cells.flatMap((row, r) => row.map((d, c) => (d ? <rect key={`${r}-${c}`} x={c + 4} y={r + 4} width={1} height={1} fill="#1b1715" /> : null)))}
+      {/* Jedna ścieżka zamiast setek prostokątów – lżej się rysuje, także w trakcie animacji. */}
+      <path d={cells.map((row, r) => row.map((d, c) => (d ? `M${c + 4} ${r + 4}h1v1h-1z` : '')).join('')).join('')} fill="#1b1715" />
     </svg>
   );
 }

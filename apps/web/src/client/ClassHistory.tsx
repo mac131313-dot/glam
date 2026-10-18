@@ -1,8 +1,8 @@
-// Historia zajęć z oceną (na dole Grafiku): ostatnie zapisy klientki, status i ocena gwiazdką po obecności.
+// Historia zajęć z oceną (na dole Grafiku): trzy ostatnie zajęcia, na których klientka była, i ocena gwiazdką.
 import { useEffect, useState } from 'react';
 import { api, ApiError, fmtDateParts, fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
-import { Empty, Sheet, useThanks, useToast } from '../ui.tsx';
+import { Empty, Fold, Sheet, useThanks, useToast } from '../ui.tsx';
 
 type Booking = { id: string; status: string; starts_at: string; class_name: string; trainer_name: string; rating: number | null; guest_name: string | null };
 
@@ -41,13 +41,17 @@ export function ClassHistory() {
     return () => window.removeEventListener('glam:passes-changed', reload);
   }, [reload]);
 
+  // Tylko trzy ostatnie zajęcia, na których klientka była (bez zapisów, odwołań i miejsc gościa).
+  const last = (bookings.data ?? []).filter((b) => b.status === 'attended' && !b.guest_name).slice(0, 3);
+  // Zwinięta domyślnie – w nagłówku tylko to, co ważne: ile z nich czeka na ocenę.
+  const toRate = last.filter((b) => !b.rating).length;
   return (
-    <section className="stack">
-      <h2>Historia zajęć</h2>
-      {bookings.data?.length === 0 && <Empty>Tu pojawią się Twoje zajęcia.</Empty>}
-      {!!bookings.data?.length && (
+    <>
+      <Fold title="Historia zajęć" meta={toRate ? `${toRate} do oceny` : ''}>
+      {bookings.data && last.length === 0 && <Empty>Tu pojawią się zajęcia, na których byłaś.</Empty>}
+      {last.length > 0 && (
         <ul className="card flat history">
-          {bookings.data.slice(0, 12).map((b) => {
+          {last.map((b) => {
             const d = fmtDateParts(b.starts_at);
             const attended = b.status === 'attended';
             const rateable = attended && !b.guest_name;
@@ -97,6 +101,7 @@ export function ClassHistory() {
           })}
         </ul>
       )}
+      </Fold>
 
       {rate && (
         <Sheet onClose={() => setRate(null)} label="Oceń zajęcia">
@@ -129,6 +134,6 @@ export function ClassHistory() {
           </div>
         </Sheet>
       )}
-    </section>
+    </>
   );
 }

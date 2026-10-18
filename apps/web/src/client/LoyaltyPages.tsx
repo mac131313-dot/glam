@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { BADGES, FRAMES, rewardCounterCopy } from '@glam/core';
 import { api, fmtDay, useApi } from '../api.ts';
-import { Avatar, Empty, ListRow, Progress, Sheet, Spinner, useAction } from '../ui.tsx';
+import { Avatar, Empty, ListRow, Progress, Sheet, Pending, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -29,9 +29,9 @@ export default function LoyaltyPages({ route }: RouteProps) {
 
 function LoyaltyPage() {
   const { me, open, studio } = useClient();
-  const { data, reload } = useApi<Loyalty>('/my/loyalty');
+  const { data, error, reload } = useApi<Loyalty>('/my/loyalty');
   const { run } = useAction();
-  if (!data) return <Spinner />;
+  if (!data) return <Pending error={error} reload={reload} />;
   const earned = new Set(data.badges.map((b) => b.code));
   return (
     <div className="stack-lg">
@@ -167,12 +167,12 @@ function LoyaltyPage() {
 
 function Locker() {
   const { me, open } = useClient();
-  const { data, reload } = useApi<{ id: string; title: string; status: string; size: string | null; delivery: string | null; sizes: string[]; options: { delivery?: string[] } }[]>('/my/locker');
+  const { data, error, reload } = useApi<{ id: string; title: string; status: string; size: string | null; delivery: string | null; sizes: string[]; options: { delivery?: string[] } }[]>('/my/locker');
   const [choose, setChoose] = useState<string | null>(null);
   const [size, setSize] = useState('');
   const [delivery, setDelivery] = useState<'pickup' | 'ship'>('pickup');
   const { run, busy } = useAction();
-  if (!data) return <Spinner />;
+  if (!data) return <Pending error={error} reload={reload} />;
   const item = data.find((d) => d.id === choose);
   const STATUS: Record<string, string> = { choose: 'wybierz rozmiar', queued: 'przygotowujemy', ready: 'czeka w recepcji', shipped: 'wysłana', collected: 'odebrana' };
   return (

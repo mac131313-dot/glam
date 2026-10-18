@@ -1,38 +1,41 @@
 // „Dla mnie” (4.4, decyzja 9): oddech i medytacje prowadzone przez aplikację.
 // Ta zakładka uruchamia sesje; ustawienia haptyki i szumu są wspólne dla wszystkich sesji.
 import { useEffect, useState } from 'react';
-import { BREATH_LENGTHS, PATTERNS, SESSIONS, patternById, type BreathRitual } from '@glam/core';
+import { SESSIONS, patternById, type BreathRitual } from '@glam/core';
 import { Icon } from '../icons.tsx';
-import { Toggle, useScrollRow } from '../ui.tsx';
+import { Toggle, useAction, useScrollRow } from '../ui.tsx';
 import { api, useApi } from '../api.ts';
 import { BreathCalendar } from './BreathCalendar.tsx';
+import { FeelingsCard } from './Feelings.tsx';
 import { ForMeBoard } from './ForMeBoard.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
-import { hapticsSupported, loadSenses, saveSenses, type SenseSettings } from './senses.ts';
+import { hapticsSupported, loadBreathChoice, loadSenses, saveSenses, type SenseSettings } from './senses.ts';
 
 export function ForMe() {
   const { openBreath, open, studio, me, reloadMe } = useClient();
   const { data: ritual, reload: reloadRitual } = useApi<BreathRitual>('/my/breath-ritual');
-  // Po ukończonej sesji odświeżamy kalendarz kwiatków.
+  const { run } = useAction();
+  const [{ patternId, minutes }, setChoice] = useState(loadBreathChoice);
+  // Po ukończonej sesji odświeżamy kalendarz kwiatków i ostatnio wybrany rytm.
   useEffect(() => {
-    window.addEventListener('glam:passes-changed', reloadRitual);
-    return () => window.removeEventListener('glam:passes-changed', reloadRitual);
+    const refresh = () => (reloadRitual(), setChoice(loadBreathChoice()));
+    window.addEventListener('glam:passes-changed', refresh);
+    return () => window.removeEventListener('glam:passes-changed', refresh);
   }, [reloadRitual]);
-  const [{ patternId, minutes }] = useState(loadChoice);
   const [calendar, setCalendar] = useState(false);
+  const [feelings, setFeelings] = useState(false);
   const [senses, setSensesState] = useState<SenseSettings>(loadSenses);
   const setSenses = (s: SenseSettings) => {
     setSensesState(s);
     saveSenses(s);
   };
-  const [category, setCategory] = useState('Wszystkie');
+  // Na start same kategorie – lista medytacji pojawia się dopiero po wyborze (drugie dotknięcie ją zwija).
+  const [category, setCategory] = useState<string | null>(null);
   // Medytacja tematyczna z pakietu motywu (7.2) widoczna, gdy motyw jest aktywny.
   const themeEdition = (studio.theme?.pack as { edition?: string } | undefined)?.edition;
-  const [showAll, setShowAll] = useState(false);
   const catRow = useScrollRow<HTMLDivElement>();
-  const sessions = SESSIONS.filter((x) => category === 'Wszystkie' || x.category === category).filter((x) => !x.edition || x.edition === themeEdition);
-  // Przy „Wszystkie” na start tylko kilka – reszta pod „Pokaż wszystkie”, żeby lista nie przytłaczała.
-  const visibleSessions = showAll || category !== 'Wszystkie' ? sessions : sessions.slice(0, 5);
+  const available = SESSIONS.filter((x) => !x.edition || x.edition === themeEdition);
+  const sessions = category ? available.filter((x) => x.category === category) : [];
   const more: [string, string][] = [
     ['7 dni spokoju', 'calm7'],
     ['Rozciąganie', 'stretch'],
@@ -61,7 +64,7 @@ export function ForMe() {
         </header>
       </section>
 
-      {/* Panel tygodnia: pierścienie, podpowiedź na dziś, mój dzień, sesje i wykres. */}
+      {/* Panel tygodnia: pierścienie, mój dzień i sesje. */}
       <ForMeBoard breath={{ patternId, minutes }} />
 
       {/* Ustawienia sesji jako dwie pigułki – bez długich opisów. */}
@@ -86,22 +89,14 @@ export function ForMe() {
       <section className="forme-list">
         <h2 className="forme-h">Medytacje</h2>
         <div ref={catRow} className="chips scroll-row" role="group" aria-label="Kategoria medytacji">
-          {['Wszystkie', ...new Set(SESSIONS.map((x) => x.category))].map((c) => (
-            <button
-              key={c}
-              className="chip"
-              aria-pressed={category === c}
-              onClick={() => {
-                setCategory(c);
-                setShowAll(false);
-              }}
-            >
+          {[...new Set(available.map((x) => x.category))].map((c) => (
+            <button key={c} className="chip" aria-pressed={category === c} aria-expanded={category === c} onClick={() => setCategory(category === c ? null : c)}>
               {c}
             </button>
           ))}
         </div>
-        <ul className="session-list">
-          {visibleSessions.map((s) => (
+        <ul className={`session-list${category ? ' is-open' : ''}`} key={category ?? 'none'}>
+          {sessions.map((s) => (
             <li key={s.id}>
               <button className="session-row" onClick={() => openBreath({ sessionId: s.id })} aria-label={`${s.title}, ${s.minutes} min – zacznij`}>
                 <span className="session-text">
@@ -113,21 +108,20 @@ export function ForMe() {
             </li>
           ))}
         </ul>
-        {sessions.length > visibleSessions.length && (
-          <button className="ritual-toggle" onClick={() => setShowAll(true)}>
-            Pokaż wszystkie ({sessions.length})
-          </button>
-        )}
       </section>
 
       <Toggle
         label="Dziś odpoczywam"
         hint="Bez celu tygodnia i przypomnień"
         checked={me.user.restToday}
-        onChange={async (v) => {
-          await api('/me', { method: 'PATCH', global: true, body: { restToday: v } });
-          await reloadMe();
-        }}
+        onChange={(v) =>
+          run(async () => {
+            await api('/me', { method: 'PATCH', global: true, body: { restToday: v } });
+            await reloadMe();
+            // Panel tygodnia (podpowiedź „Dzień odpoczynku”) czyta /home – odświeżamy go od razu.
+            window.dispatchEvent(new Event('glam:passes-changed'));
+          })
+        }
       />
 
       <section className="forme-list">
@@ -143,24 +137,13 @@ export function ForMe() {
       </section>
 
       <p className="tiny muted center">Treści ogólne – nie zastępują konsultacji lekarskiej.</p>
+      {/* Powrót do ankiety po treningu – ta sama karta, która wyskakuje po zajęciach. */}
+      <button className="feel-open" onClick={() => setFeelings(true)}>
+        Twoje odczucia
+      </button>
+      {feelings && <FeelingsCard onClose={() => setFeelings(false)} />}
       {calendar && ritual && <BreathCalendar ritual={ritual} onClose={() => setCalendar(false)} />}
     </div>
   );
-}
-
-type RitualChoice = { patternId: string; minutes: number };
-const CHOICE_KEY = 'glam.breath.choice';
-
-/** Ostatnio wybrany rytm i czas – żeby przy powrocie wystarczyło „Zacznij”. Tylko wygoda na tym urządzeniu. */
-function loadChoice(): RitualChoice {
-  const fallback = { patternId: 'calm', minutes: 3 };
-  try {
-    const v = JSON.parse(localStorage.getItem(CHOICE_KEY) ?? 'null') as Partial<RitualChoice> | null;
-    const patternOk = PATTERNS.some((p) => p.id === v?.patternId);
-    const minutesOk = BREATH_LENGTHS.some((l) => l.minutes === v?.minutes);
-    return { patternId: patternOk ? v!.patternId! : fallback.patternId, minutes: minutesOk ? v!.minutes! : fallback.minutes };
-  } catch {
-    return fallback;
-  }
 }
 

@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PLAYBACK_RATES } from '@glam/core';
 import { api, fmtDay, fmtLongDay, fmtTime, useApi } from '../api.ts';
-import { Empty, PAYMENT_LABELS, Progress, Sheet, Spinner, STARS, Toggle, useAction, useThanks } from '../ui.tsx';
+import { Empty, PAYMENT_LABELS, Progress, Sheet, Pending, STARS, Toggle, useAction, useThanks } from '../ui.tsx';
 import { CastButton } from './CastButton.tsx';
 import { useClient } from './ClientApp.tsx';
 import { openAuthed } from './PassPages.tsx';
@@ -57,7 +57,7 @@ function Catalog() {
     [list.data, level, author, goal, time, part],
   );
   if (list.error?.code === 'feature_off') return <Empty>Studio nie prowadzi jeszcze kursów online.</Empty>;
-  if (!list.data) return <Spinner />;
+  if (!list.data) return <Pending error={list.error} reload={list.reload} />;
   const Filter = ({ value, set, options, label }: { value: string; set: (v: string) => void; options: string[]; label: string }) =>
     options.length > 1 ? (
       <select className="input" style={{ minHeight: 40, padding: '6px 14px' }} value={value} onChange={(e) => set(e.target.value)} aria-label={label}>
@@ -146,14 +146,14 @@ type Detail = Card & {
 
 function CourseDetail({ id }: { id: string }) {
   const { openShop } = useClient();
-  const { data, reload } = useApi<Detail>(`/courses/${id}`);
+  const { data, error, reload } = useApi<Detail>(`/courses/${id}`);
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [buy, setBuy] = useState(false);
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState('');
   const { run, busy } = useAction();
   const thanks = useThanks();
-  if (!data) return <Spinner />;
+  if (!data) return <Pending error={error} reload={reload} />;
   if (lesson) return <LessonView lesson={lesson} onBack={() => (setLesson(null), reload())} />;
   const hasAccess = !!data.access;
   const modules = [...new Set(data.lessonsList.map((l) => l.module))];

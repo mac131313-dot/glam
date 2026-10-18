@@ -197,7 +197,7 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
     const prefs = { ...prefsOf(u), ...(b.prefs ?? {}) };
     if (b.prefs?.classReminders !== undefined) prefs.classReminders = classReminderOffsets(b.prefs.classReminders);
     if (prefs.a11y?.fontScale && (prefs.a11y.fontScale < 0.9 || prefs.a11y.fontScale > 1.6)) throw badRequest('Rozmiar tekstu: od 90 do 160%.');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localParts(new Date()).date; // jak w /api/home i przypomnieniach – data lokalna, nie UTC
     db.prepare(
       `UPDATE users SET name = ?, email = ?, birthday = ?, nameday = ?, theme_opt_out = ?, need_quiet = ?, quiet_from = ?, quiet_to = ?, push_disabled_json = ?, prefs_json = ?, rest_day = ?, address_enc = ? WHERE id = ?`,
     ).run(
@@ -330,6 +330,7 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
       chat: q('SELECT studio_id, body, from_staff, created_at FROM chat_messages WHERE client_id = ?'),
       groupChat: q('SELECT studio_id, group_id, body, created_at FROM group_chat WHERE author_id = ?'),
       trainerMessages: q('SELECT studio_id, trainer_id, body, author_id = client_id AS from_me, created_at FROM trainer_messages WHERE client_id = ?'),
+      passFreezes: q('SELECT studio_id, pass_id, date_from, date_to, reason, wants_support, created_at FROM pass_freezes WHERE user_id = ?'),
     };
     return reply
       .header('content-type', 'application/json; charset=utf-8')
@@ -368,6 +369,8 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
         'DELETE FROM group_chat_reads WHERE user_id = ?',
         'DELETE FROM trainer_messages WHERE client_id = ?',
         "UPDATE bookings SET status = 'cancelled' WHERE user_id = ? AND status IN ('booked', 'waitlist')",
+        // Zawieszenia zostają w rozliczeniach karnetu, ale bez powodu (mógł dotyczyć zdrowia).
+        "UPDATE pass_freezes SET reason = 'other', wants_support = 0 WHERE user_id = ?",
       ])
         db.prepare(sql).run(u.id);
       db.prepare("DELETE FROM memberships WHERE user_id = ? AND role = 'client'").run(u.id);
@@ -659,7 +662,7 @@ export function publicUser(u: AuthUser) {
     nameday: u.nameday,
     themeOptOut: !!u.theme_opt_out,
     needQuiet: !!u.need_quiet,
-    restToday: u.rest_day === new Date().toISOString().slice(0, 10),
+    restToday: u.rest_day === localParts(new Date()).date,
     quietFrom: u.quiet_from,
     quietTo: u.quiet_to,
     pushDisabled: JSON.parse(u.push_disabled_json) as string[],

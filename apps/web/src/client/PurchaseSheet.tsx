@@ -5,7 +5,7 @@ import { classPackagePlans, type Billing } from '@glam/core';
 import { api, ApiError, useApi } from '../api.ts';
 import { useLayer } from '../back.ts';
 import { Icon } from '../icons.tsx';
-import { PAYMENT_LABELS, Sheet, Spinner, useToast } from '../ui.tsx';
+import { PAYMENT_LABELS, Pending, Sheet, useToast } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 
 type Product = {
@@ -27,7 +27,7 @@ const LEGAL = {
 } as const;
 
 export function PurchaseSheet({ reason, onClose, highlight }: { reason?: string; onClose: () => void; highlight?: string[] }) {
-  const { data: products } = useApi<Product[]>('/products');
+  const { data: products, error, reload } = useApi<Product[]>('/products');
   const plans = products ? classPackagePlans(products) : [];
 
   useLayer(onClose);
@@ -36,7 +36,7 @@ export function PurchaseSheet({ reason, onClose, highlight }: { reason?: string;
     return (
       <div className="paywall-overlay">
         <div className="paywall" role="dialog" aria-modal="true" aria-label="Pakiet zajęć">
-          <Spinner />
+          <Pending error={error} reload={reload} />
         </div>
       </div>
     );

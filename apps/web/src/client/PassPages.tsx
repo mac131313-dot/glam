@@ -1,7 +1,7 @@
 // Karnety (4.2): stan, zawieszenie (urlop, choroba, ciąża), odnawianie, historia; płatności i faktury na życzenie.
 import { useState } from 'react';
 import { api, fmtDay, useApi } from '../api.ts';
-import { Empty, Field, PAYMENT_LABELS, Sheet, Spinner, Toggle, useAction } from '../ui.tsx';
+import { Empty, Field, PAYMENT_LABELS, Sheet, Pending, Toggle, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -23,10 +23,10 @@ type Pass = {
 
 const STATUS: Record<string, string> = { active: 'aktywny', used: 'wykorzystany', expired: 'wygasł', frozen: 'zawieszony', pending: 'czeka' };
 const SOURCE: Record<string, string> = { purchase: 'kupiony w aplikacji', desk: 'kupiony w recepcji', guest_pass: 'prezent od znajomej', referral: 'z polecenia', reward: 'nagroda', renewal: 'odnowienie', import: 'przeniesiony', test: 'testowy' };
+// Bez szczegółów o zdrowiu (choroba, ciąża) – studio potrzebuje tylko ogólnego powodu, a to dane szczególne (RODO art. 9).
 const REASONS: [string, string][] = [
   ['vacation', 'Urlop'],
-  ['illness', 'Choroba'],
-  ['pregnancy', 'Ciąża'],
+  ['illness', 'Zdrowie'],
   ['loss', 'Trudny czas'],
   ['other', 'Inny powód'],
 ];
@@ -41,7 +41,7 @@ function Passes() {
   const recurring = useApi<{ id: string; weekday: number; start_time: string; class_name: string; trainer_name: string }[]>('/my/recurring');
   const [freeze, setFreeze] = useState<Pass | null>(null);
   const { run } = useAction();
-  if (!passes.data) return <Spinner />;
+  if (!passes.data) return <Pending error={passes.error} reload={passes.reload} />;
   return (
     <div className="stack-lg">
       <div className="row between">
@@ -135,12 +135,13 @@ function FreezeSheet({ pass, onClose, onDone }: { pass: Pass; onClose: () => voi
         <p className="small muted" style={{ margin: 0 }}>
           Ważność przesunie się o liczbę dni zawieszenia. Zostało Ci: {pass.freeze.left} × zawieszenie, łącznie {pass.freeze.daysLeft} dni.
         </p>
-        <div className="row">
+        {/* Dwie równe kolumny: pole daty ma szeroką szerokość własną i w zwykłym wierszu wystawało poza ekran telefonu. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
           <Field label="Od">
-            <input className="input" type="date" min={today} value={from} onChange={(e) => setFrom(e.target.value)} />
+            <input className="input" style={{ minWidth: 0 }} type="date" min={today} value={from} onChange={(e) => setFrom(e.target.value)} />
           </Field>
           <Field label="Do">
-            <input className="input" type="date" min={from} value={to} onChange={(e) => setTo(e.target.value)} />
+            <input className="input" style={{ minWidth: 0 }} type="date" min={from} value={to} onChange={(e) => setTo(e.target.value)} />
           </Field>
         </div>
         <div className="pill-row">
@@ -178,7 +179,7 @@ function Payments() {
   const [nip, setNip] = useState('');
   const [address, setAddress] = useState('');
   const { run, busy } = useAction();
-  if (!payments.data) return <Spinner />;
+  if (!payments.data) return <Pending error={payments.error} reload={payments.reload} />;
   return (
     <div className="stack">
       {payments.data.length === 0 && <Empty>Tu pojawią się Twoje płatności.</Empty>}

@@ -129,6 +129,14 @@ const paths: Record<string, ReactNode> = {
       <path d="M3.5 10h17" />
     </>
   ),
+  // Karta wejścia: mały kwadrat kodu po lewej, dwie linie danych po prawej.
+  pass: (
+    <>
+      <rect x="3.5" y="6" width="17" height="12" rx="2.5" />
+      <rect x="6.5" y="9" width="4.5" height="4.5" rx="1" />
+      <path d="M14 10h3.5M14 13h2" />
+    </>
+  ),
   ten: <path d="M7 8v8M10.5 9.5a2.5 3.5 0 1 0 5 0 2.5 3.5 0 1 0-5 0" />,
   flower: <path d="M12 10.5a2 2 0 1 0 0 3 2 2 0 0 0 0-3zM12 4.5c2 1.5 2 3.5 0 6-2-2.5-2-4.5 0-6zM12 13.5c2 2.5 2 4.5 0 6-2-1.5-2-3.5 0-6zM4.5 12c1.5-2 3.5-2 6 0-2.5 2-4.5 2-6 0zM13.5 12c2.5-2 4.5-2 6 0-1.5 2-3.5 2-6 0z" />,
 };

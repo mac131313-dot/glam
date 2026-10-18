@@ -7,6 +7,8 @@ services:
     environment:
       GLAM_PUBLIC_URL: http://localhost:8080
       GLAM_WEBPUSH: '0'
+      # To środowisko to demo (logowanie bez SMS na konta demo). Na serwerze z prawdziwymi klientkami usuń tę linię.
+      GLAM_DEMO: '1'
     volumes:
       # Osobna baza dla Dockera (z mediami w środku). Nie podpinamy apps/api/data – SQLite w trybie WAL
       # nie lubi dwóch procesów (Mac + kontener) na tym samym pliku przez współdzielony katalog.

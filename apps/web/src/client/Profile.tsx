@@ -1,7 +1,7 @@
 // Profil (3: zakładka 5): karnety i menu podstron (wiadomości, płatności, kursy, zdrowie, ustawienia). Historia zajęć – w Grafiku.
 import { useEffect } from 'react';
 import { api, ApiError, DEMO_MODE, fmtPhone, useApi } from '../api.ts';
-import { Avatar, Empty, ListRow, useToast } from '../ui.tsx';
+import { Avatar, Empty, ListRow, Pending, useToast } from '../ui.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 
 type Pass = { id: string; productName: string; status: string; summary: string; expiringSoon: boolean; autoRenew?: boolean };
@@ -37,6 +37,7 @@ export function Profile() {
             Kup karnet
           </button>
         </div>
+        {!passes.data && <Pending error={passes.error} reload={passes.reload} />}
         {passes.data?.length === 0 && <Empty icon="🎟️">Nie masz jeszcze karnetu w tym studiu.</Empty>}
         {passes.data?.map((p) => (
           <div key={p.id} className={`card ${p.status === 'active' ? 'soft' : 'flat'}`}>
@@ -68,6 +69,12 @@ export function Profile() {
             )}
           </div>
         ))}
+        {/* Szczegóły karnetu: zawieszenie (urlop, zdrowie), odnawianie i stałe rezerwacje – wcześniej tylko z powiadomienia. */}
+        {!!passes.data?.length && (
+          <div className="list-rows">
+            <ListRow title="Szczegóły karnetów" hint="Zawieszenie, odnawianie i stałe rezerwacje" onClick={() => open('passes')} />
+          </div>
+        )}
       </section>
 
       <section>
@@ -95,8 +102,12 @@ export function Profile() {
             <ListRow
               title="Wyloguj ze wszystkich urządzeń"
               onClick={async () => {
-                await api('/auth/logout-all', { method: 'POST', global: true });
-                onLogout();
+                try {
+                  await api('/auth/logout-all', { method: 'POST', global: true });
+                  onLogout();
+                } catch (e) {
+                  toast((e as ApiError).message, 'error');
+                }
               }}
             />
           </>

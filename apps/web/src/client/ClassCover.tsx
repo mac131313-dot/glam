@@ -1,7 +1,7 @@
 // Karta zajęć ze zdjęciem w tle (zdjęcie typu zajęć wgrane przez studio). Nagłówek w lewym dolnym rogu,
 // status w prawym górnym. Bez gradientów koloru: czytelność daje płaskie przyciemnienie całego zdjęcia,
 // opcjonalnie z rozmyciem zanikającym ku górze (--photo-blur, ustawiane w Wyglądzie studia).
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 
 /**
  * Karta przyjmuje proporcje zdjęcia, ale w granicach: od pionu 3:4 (typowe zdjęcie z telefonu) do 16:9.
@@ -22,6 +22,7 @@ export function ClassCover({
   onClick,
   dimmed,
   bleed,
+  compact,
   backdrop,
 }: {
   photoUrl: string | null;
@@ -37,18 +38,20 @@ export function ClassCover({
   aside?: ReactNode;
   /** ostatnia linia pod meta – np. wolne miejsca */
   footer?: ReactNode;
-  onClick?: () => void;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   /** zajęcia minione lub odwołane */
   dimmed?: boolean;
   /** szerokość ekranu w „niewidzialnej ramce”, wysokość z proporcji zdjęcia (aplikacja klientki) */
   bleed?: boolean;
+  /** mały kwadratowy kafelek do siatki w dwóch kolumnach (Grafik), bez względu na proporcje zdjęcia */
+  compact?: boolean;
   /** podgląd w panelu bez wgranego zdjęcia: płaski kolor traktowany jak zdjęcie (biały tekst, przyciemnienie) */
   backdrop?: string;
 }) {
-  const className = `cover${photoUrl || backdrop ? ' has-photo' : ''}${dimmed ? ' dimmed' : ''}${bleed ? ' bleed' : ''}`;
+  const className = `cover${photoUrl || backdrop ? ' has-photo' : ''}${dimmed ? ' dimmed' : ''}${bleed ? ' bleed' : ''}${compact ? ' compact' : ''}`;
   const style: CSSProperties = {};
   if (backdrop) style.background = backdrop;
-  if (photoUrl && photoRatio) style.aspectRatio = String(Math.min(RATIO_MAX, Math.max(RATIO_MIN, photoRatio)));
+  if (photoUrl && photoRatio && !compact) style.aspectRatio = String(Math.min(RATIO_MAX, Math.max(RATIO_MIN, photoRatio)));
   const body = (
     <>
       {photoUrl && <img className="cover-img" src={photoUrl} alt="" loading="lazy" decoding="async" draggable={false} />}

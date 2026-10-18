@@ -1,10 +1,13 @@
-// Wejście (recepcja, 4.11, C3): jedno pole na czytnik kodów, telefon i kod wejściówki od znajomej – czytnik USB/Bluetooth
+// Recepcja: przegląd dnia (Entrance) i skaner kodów w sekcji Wejściówki (Passes, CheckinPanel).
+// Check-in (4.11, C3): jedno pole na czytnik kodów, telefon i kod wejściówki od znajomej – czytnik USB/Bluetooth
 // „pisze” kod i Enter, więc pole trzyma fokus. Kamera skanuje bez przerwy. Wynik duży i z dźwiękiem; gdy trzeba
 // zdecydować (brak rezerwacji, nieaktywna wejściówka) – jedno kliknięcie. Obok najbliższe zajęcia: kto jeszcze nie weszła.
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiError, api, fmtTime, localDate, useApi } from '../api.ts';
-import { Avatar, Spinner, useAction } from '../ui.tsx';
+import { can, type Permission, type Role } from '@glam/core';
+import { ApiError, api, fmtDay, fmtTime, localDate, useApi } from '../api.ts';
+import { Avatar, Spinner, Stat } from '../ui.tsx';
+import { Icon, type IconName } from '../icons.tsx';
 
 type Who = { name: string; userId: string; firstVisit: boolean; health: string | null; activated: string | null };
 type Entered = Who & { kind: 'class' | 'zone' | 'already' | 'activated'; message: string; className?: string; startsAt?: string; pass?: string | null; payAtDesk?: boolean };
@@ -41,8 +44,30 @@ function signal(ok: boolean) {
 
 type Detector = { detect: (v: HTMLVideoElement) => Promise<{ rawValue: string }[]> };
 
-/** Kamera z BarcodeDetector: skanuje ciągle; ten sam kod przez kilka sekund liczy się raz. */
-function useQrCamera(enabled: boolean, paused: boolean, onCode: (code: string) => void, onUnsupported: () => void) {
+/** Czytnik klatki: BarcodeDetector (Chrome, Android), a gdzie go nie ma (Safari na iPadzie, Firefox) – jsQR na kanwie. */
+async function frameReader(): Promise<(v: HTMLVideoElement) => Promise<string | undefined>> {
+  const Ctor = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => Detector }).BarcodeDetector;
+  if (Ctor) {
+    const det = new Ctor({ formats: ['qr_code'] });
+    return async (v) => (await det.detect(v).catch(() => []))[0]?.rawValue;
+  }
+  const { default: jsQR } = await import('jsqr');
+  const canvas = document.createElement('canvas');
+  const g = canvas.getContext('2d', { willReadFrequently: true })!;
+  return async (v) => {
+    if (!v.videoWidth) return;
+    // Wystarczy mniejsza klatka – kod z telefonu jest duży, a skanowanie szybsze.
+    const scale = Math.min(1, 640 / v.videoWidth);
+    canvas.width = Math.round(v.videoWidth * scale);
+    canvas.height = Math.round(v.videoHeight * scale);
+    g.drawImage(v, 0, 0, canvas.width, canvas.height);
+    const img = g.getImageData(0, 0, canvas.width, canvas.height);
+    return jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' })?.data || undefined;
+  };
+}
+
+/** Kamera skanuje ciągle; ten sam kod przez kilka sekund liczy się raz. facing – „user” dla tabletu na stojaku przodem do klientek. */
+function useQrCamera(enabled: boolean, paused: boolean, onCode: (code: string) => void, onUnsupported: () => void, facing: 'environment' | 'user' = 'environment') {
   const video = useRef<HTMLVideoElement>(null);
   const handler = useRef(onCode);
   handler.current = onCode;
@@ -50,47 +75,64 @@ function useQrCamera(enabled: boolean, paused: boolean, onCode: (code: string) =
   pausedRef.current = paused;
   useEffect(() => {
     if (!enabled) return;
-    const Ctor = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => Detector }).BarcodeDetector;
-    if (!Ctor) return onUnsupported();
+    if (!navigator.mediaDevices?.getUserMedia) return onUnsupported();
     let stream: MediaStream | null = null;
     let timer = 0;
+    let alive = true;
     let last = { code: '', at: 0 };
     (async () => {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (!video.current) return;
+      const read = await frameReader();
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing } });
+      if (!alive || !video.current) return stream.getTracks().forEach((t) => t.stop());
       video.current.srcObject = stream;
       await video.current.play();
-      const det = new Ctor({ formats: ['qr_code'] });
       timer = window.setInterval(async () => {
         if (!video.current || pausedRef.current) return;
-        const code = (await det.detect(video.current).catch(() => []))[0]?.rawValue;
+        const code = await read(video.current);
         if (!code || (code === last.code && Date.now() - last.at < 5000)) return;
         last = { code, at: Date.now() };
         handler.current(code);
       }, 300);
-    })().catch(onUnsupported);
+    })().catch(() => alive && onUnsupported());
     return () => {
+      alive = false;
       clearInterval(timer);
       stream?.getTracks().forEach((t) => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, facing]);
   return video;
 }
 
 type Arrival = { id: string; userId: string; name: string; at: string; what: string };
 
 /** Check-in: czytnik / telefon / kod wejściówki, kamera, decyzje jednym kliknięciem; udane wejście – okienko, które samo znika. */
-export function CheckinPanel({ onDone, big = false }: { onDone: () => void; big?: boolean }) {
+export function CheckinPanel({ onDone, big = false, scanner = false }: { onDone: () => void; big?: boolean; scanner?: boolean }) {
   const [value, setValue] = useState('');
-  const [camera, setCamera] = useState(false);
+  // Tryb skanera (zakładka Wejściówki): kamera włączona od razu, domyślnie przednia – tablet stoi przodem do klientek.
+  const [camera, setCamera] = useState(scanner);
+  const [facing, setFacing] = useState<'environment' | 'user'>(() => {
+    try {
+      return localStorage.getItem('glam:scan-facing') === 'environment' ? 'environment' : 'user';
+    } catch {
+      return 'user';
+    }
+  });
+  const flip = () => {
+    const next = facing === 'user' ? 'environment' : 'user';
+    setFacing(next);
+    try {
+      localStorage.setItem('glam:scan-facing', next);
+    } catch {}
+  };
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [popup, setPopup] = useState<{ r: Entered; seq: number } | null>(null);
   const arrivals = useApi<Arrival[]>(big ? '/staff/arrivals' : null);
   const [busy, setBusy] = useState(false);
   const [guest, setGuest] = useState({ name: '', phone: '' });
   const field = useRef<HTMLInputElement>(null);
-  const focus = () => big && setTimeout(() => field.current?.focus(), 0);
+  // Na tablecie ze skanerem nie łapiemy fokusu – wysuwałaby się klawiatura i zasłaniała kamerę.
+  const focus = () => big && !scanner && setTimeout(() => field.current?.focus(), 0);
 
   const send = useCallback(
     async (input: Input & { sessionId?: string; payAtDesk?: boolean; zoneId?: string }) => {
@@ -126,34 +168,74 @@ export function CheckinPanel({ onDone, big = false }: { onDone: () => void; big?
   );
 
   const deciding = outcome?.state === 'choose' || outcome?.state === 'guest';
-  const video = useQrCamera(camera, busy || deciding, (code) => send(toInput(code)), () => {
-    setCamera(false);
-    setOutcome({ state: 'error', message: 'Ta przeglądarka nie czyta kodów QR kamerą. Użyj czytnika albo wpisz numer telefonu.' });
-  });
+  const video = useQrCamera(
+    camera,
+    busy || deciding,
+    (code) => send(toInput(code)),
+    () => {
+      setCamera(false);
+      setOutcome({ state: 'error', message: 'Nie udało się włączyć kamery. Zezwól przeglądarce na dostęp do kamery albo użyj czytnika i wpisz numer telefonu.' });
+    },
+    scanner ? facing : 'environment',
+  );
 
   useEffect(() => {
-    if (!big) return;
+    if (!big || scanner) return;
     // Czytnik „pisze” tam, gdzie jest fokus – po kliknięciu w puste miejsce wracamy do pola skanowania.
     const back = (e: FocusEvent) => !(e.relatedTarget instanceof HTMLInputElement) && !deciding && focus();
     const el = field.current;
     el?.addEventListener('blur', back);
     return () => el?.removeEventListener('blur', back);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [big, deciding]);
+  }, [big, scanner, deciding]);
 
   const submit = () => value.trim() && send(toInput(value.trim()));
 
   return (
     <section className={`card ${big ? '' : 'soft'} stack`} style={{ gap: 12 }}>
       {!big && <div className="eyebrow">Check-in</div>}
+      {scanner && (
+        <>
+          <div className={`scanner ${camera ? 'on' : ''} ${busy || deciding ? 'held' : ''}`}>
+            {camera ? (
+              <video ref={video} className={`scanner-video ${facing === 'user' ? 'mirror' : ''}`} muted playsInline />
+            ) : (
+              <button className="scanner-start" onClick={() => (setOutcome(null), setCamera(true))}>
+                <Icon name="qr" size={34} />
+                <span>Włącz skaner</span>
+              </button>
+            )}
+            {camera && (
+              <>
+                <div className="scanner-frame" aria-hidden="true">
+                  <span />
+                </div>
+                <div className="scanner-status" role="status">
+                  {busy ? 'Sprawdzam…' : deciding ? 'Wybierz poniżej' : 'Pokaż kod z aplikacji'}
+                </div>
+              </>
+            )}
+          </div>
+          {camera && (
+            <div className="row" style={{ justifyContent: 'center' }}>
+              <button className="btn ghost sm" onClick={flip}>
+                <Icon name="swap" size={16} /> {facing === 'user' ? 'Kamera tylna' : 'Kamera przednia'}
+              </button>
+              <button className="btn quiet sm" onClick={() => setCamera(false)}>
+                Wyłącz kamerę
+              </button>
+            </div>
+          )}
+        </>
+      )}
       <div className="row">
         <input
           ref={field}
           className={`input ${big ? 'scan-input' : ''}`}
-          placeholder="Zeskanuj kod albo wpisz telefon"
+          placeholder="Zeskanuj kod, wpisz 6 liter albo telefon"
           aria-label="Kod z aplikacji, kod wejściówki albo numer telefonu"
           value={value}
-          autoFocus={big}
+          autoFocus={big && !scanner}
           autoComplete="off"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
@@ -161,11 +243,13 @@ export function CheckinPanel({ onDone, big = false }: { onDone: () => void; big?
         <button className={`btn ${big ? '' : 'sm'}`} disabled={!value.trim() || busy} onClick={submit}>
           Wpuść
         </button>
-        <button className={`btn ghost ${big ? '' : 'sm'}`} aria-pressed={camera} onClick={() => setCamera(!camera)}>
-          {camera ? 'Wyłącz kamerę' : 'Kamera'}
-        </button>
+        {!scanner && (
+          <button className={`btn ghost ${big ? '' : 'sm'}`} aria-pressed={camera} onClick={() => setCamera(!camera)}>
+            {camera ? 'Wyłącz kamerę' : 'Kamera'}
+          </button>
+        )}
       </div>
-      {camera && <video ref={video} className="scan-video" muted playsInline />}
+      {camera && !scanner && <video ref={video} className="scan-video" muted playsInline />}
 
       {outcome?.state === 'ok' && <Result key={outcome.seq} r={outcome.r} big={big} />}
       {outcome?.state === 'error' && (
@@ -320,75 +404,189 @@ function Result({ r, big }: { r: Entered; big: boolean }) {
   );
 }
 
-type Participant = { booking_id: string; status: string; name: string; visits: number; guest_name: string | null };
+type Health = { limitations?: string; injuries?: string; pregnancy?: boolean } | null;
+type Participant = { booking_id: string; status: string; user_id: string; name: string; visits: number; guest_name: string | null; health: Health };
 type Session = { id: string; starts_at: string; class_name: string; trainer_name: string; zone_name: string; capacity: number; status: string; participants: Participant[] };
+type PrivateEvent = { id: string; activity: string; starts_at: string; guests: number; status: string; client_name: string; client_note: string | null; trainer_name: string | null };
+type Day = { sessions: Session[]; events: PrivateEvent[] };
 
-/** Ekran recepcji: wejście + najbliższe zajęcia (kto już jest, kto jeszcze nie weszła). */
-export function Entrance() {
-  const day = useApi<{ sessions: Session[] }>(`/staff/day?date=${localDate()}`);
+const healthNote = (h: Health) => (h ? [h.pregnancy && 'ciąża', h.limitations, h.injuries].filter(Boolean).join(' · ') : '');
+const Chevron = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" aria-hidden>
+    <path d="m9 6 6 6-6 6" />
+  </svg>
+);
+
+/** Recepcja – przegląd dnia: liczby dnia, szybkie akcje, „do zrobienia” (czat, sklep, nagrody, kartki, prośby o termin),
+ *  obecne dziś, kto dziś pierwszy raz / z uwagami zdrowotnymi i wydarzenia prywatne.
+ *  Skaner kodów jest w osobnej sekcji Wejściówki. Każdy kafelek pobiera dane tylko, gdy rola ma do nich uprawnienie. */
+export function Entrance({ roles, go }: { roles: Role[]; go: (place: string) => void }) {
+  const has = (p: Permission) => can(roles, p);
+  const day = useApi<Day>(`/staff/day?date=${localDate()}`);
+  const arrivals = useApi<Arrival[]>('/staff/arrivals');
+  const chats = useApi<{ unread: number }[]>(has('chat.answer') ? '/staff/chats' : null);
+  const followups = useApi<unknown[]>(has('clients.contact') ? '/staff/followups' : null);
+  const shop = useApi<{ orders: { status: string }[] }>(has('shop.manage') ? '/staff/shop' : null);
+  const locker = useApi<{ status: string }[]>(has('cards.manage') || has('shop.manage') ? '/staff/locker' : null);
+  const cards = useApi<{ status: string }[]>(has('cards.manage') ? '/staff/cards' : null);
   const [now, setNow] = useState(() => Date.now());
-  const { run } = useAction();
   useEffect(() => {
-    const t = window.setInterval(() => (setNow(Date.now()), day.reload()), 60_000);
+    const t = window.setInterval(() => (setNow(Date.now()), day.reload(), arrivals.reload(), chats.reload()), 60_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const upcoming = (day.data?.sessions ?? []).filter((s) => s.status !== 'cancelled' && Date.parse(s.starts_at) > now - 60 * 60_000 && Date.parse(s.starts_at) < now + 4 * 3_600_000);
+
+  const sessions = (day.data?.sessions ?? []).filter((s) => s.status !== 'cancelled');
+  const taken = (s: Session) => s.participants.filter((p) => p.status === 'booked' || p.status === 'attended');
+  const booked = sessions.reduce((n, s) => n + taken(s).length, 0);
+  const capacity = sessions.reduce((n, s) => n + s.capacity, 0);
+  const attended = sessions.reduce((n, s) => n + s.participants.filter((p) => p.status === 'attended').length, 0);
+  const waiting = sessions.reduce((n, s) => n + s.participants.filter((p) => p.status === 'waitlist').length, 0);
+  const next = sessions.find((s) => Date.parse(s.starts_at) > now);
+  // Kogo warto dziś zauważyć: pierwsza wizyta albo uwagi zdrowotne (za zgodą klientki).
+  const notice = sessions.flatMap((s) =>
+    taken(s)
+      .filter((p) => (p.visits === 0 && !p.guest_name) || healthNote(p.health))
+      .map((p) => ({ ...p, when: `${fmtTime(s.starts_at)} · ${s.class_name}` })),
+  );
+
+  const todo: { key: string; label: string; n: number; to: string }[] = [
+    { key: 'chats', label: 'Nieprzeczytane wiadomości od klientek', n: (chats.data ?? []).reduce((n, c) => n + (c.unread ? 1 : 0), 0), to: 'messages' },
+    { key: 'followups', label: 'Klientki proszą o propozycję terminu', n: followups.data?.length ?? 0, to: 'messages' },
+    { key: 'orders', label: 'Zamówienia ze sklepu do przygotowania i wydania', n: (shop.data?.orders ?? []).filter((o) => ['reserved', 'paid', 'ready'].includes(o.status)).length, to: 'shop' },
+    { key: 'locker', label: 'Nagrody do przygotowania lub wydania', n: (locker.data ?? []).filter((l) => l.status !== 'shipped').length, to: 'gifts' },
+    { key: 'cards', label: 'Kartki od trenerek do wysłania lub wydania', n: (cards.data ?? []).filter((c) => c.status === 'written').length, to: 'gifts' },
+    { key: 'waitlist', label: 'Osoby na liście rezerwowej dziś', n: waiting, to: 'schedule/plan' },
+  ];
+  const open = todo.filter((t) => t.n > 0);
+  const actions: { label: string; to: string; icon: IconName; perm: Permission }[] = [
+    { label: 'Sprzedaj karnet', to: 'reception/desk', icon: 'card', perm: 'desk.sell' },
+    { label: 'Skaner wejściówek', to: 'passes', icon: 'qr', perm: 'participants.manage' },
+    { label: 'Dodaj klientkę', to: 'clients', icon: 'people', perm: 'clients.create' },
+    { label: 'Wiadomość do grupy', to: 'messages', icon: 'chat', perm: 'messages.group.all' },
+    { label: 'Grafik', to: 'schedule', icon: 'calendar', perm: 'schedule.view' },
+  ];
+
+  if (!day.data) return <Spinner />;
   return (
     <div className="stack-lg">
       <div className="row between wrap">
         <div>
-          <h1 style={{ marginBottom: 0 }}>Wejście</h1>
+          <h1 style={{ marginBottom: 0 }}>Dzień w recepcji</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Kod z aplikacji, QR wejściówki od znajomej albo numer telefonu – jedno pole, Enter.
+            {fmtDay(new Date(now).toISOString())} · {next ? `najbliższe zajęcia ${fmtTime(next.starts_at)} · ${next.class_name}` : sessions.length ? 'na dziś nie ma już zajęć' : 'dziś bez zajęć w grafiku'}
           </p>
         </div>
         <div className="entry-clock" aria-label="Godzina">
           {fmtTime(new Date(now).toISOString())}
         </div>
       </div>
-      <div className="entrance-grid">
-        <CheckinPanel big onDone={day.reload} />
-        <div className="stack">
-          <div className="eyebrow" style={{ margin: 0 }}>
-            Najbliższe zajęcia
+
+      <div className="kpis">
+        <Stat label="Zajęcia dziś" value={sessions.length} hint={next ? `kolejne o ${fmtTime(next.starts_at)}` : sessions.length ? 'wszystkie za nami' : 'dziś bez zajęć'} />
+        <Stat label="Zapisane" value={<>{booked}<span className="muted" style={{ fontSize: '1rem' }}> / {capacity}</span></>} hint={`wolne miejsca: ${Math.max(0, capacity - booked)}`} />
+        <Stat label="Obecne" value={arrivals.data?.length ?? attended} hint={`na zajęciach: ${attended}`} />
+        <Stat label="Pierwszy raz" value={notice.filter((p) => p.visits === 0 && !p.guest_name).length} hint="przywitaj i pokaż szatnię" />
+      </div>
+
+      <div className="row wrap" style={{ gap: 8 }}>
+        {actions
+          .filter((a) => has(a.perm))
+          .map((a) => (
+            <button key={a.to} className="btn ghost sm" onClick={() => go(a.to)}>
+              <Icon name={a.icon} size={16} /> {a.label}
+            </button>
+          ))}
+      </div>
+
+      <div className="grid-2 dash-grid">
+        <section className="card stack" style={{ gap: 8 }}>
+          <h3>Do zrobienia</h3>
+          {open.length === 0 && <p className="small muted" style={{ margin: 0 }}>Wszystko ogarnięte.</p>}
+          <div>
+            {open.map((t) => (
+              <button key={t.key} className="todo-row" onClick={() => go(t.to)}>
+                <span className="grow">{t.label}</span>
+                <span className="badge">{t.n}</span>
+                <Chevron />
+              </button>
+            ))}
           </div>
-          {!day.data && <Spinner />}
-          {day.data && upcoming.length === 0 && <p className="muted small">W najbliższych godzinach nie ma zajęć.</p>}
-          {upcoming.map((s) => {
-            const booked = s.participants.filter((p) => p.status === 'booked' || p.status === 'attended');
-            const inside = booked.filter((p) => p.status === 'attended').length;
-            const missing = booked.filter((p) => p.status === 'booked');
-            return (
-              <section key={s.id} className="card flat stack" style={{ gap: 8, padding: 18 }}>
-                <div className="row between">
-                  <b>
-                    {fmtTime(s.starts_at)} · {s.class_name}
-                  </b>
-                  <span className={`badge ${inside === booked.length && booked.length > 0 ? 'ok' : ''}`}>
-                    {inside} / {booked.length} na sali
-                  </span>
+        </section>
+
+        <section className="card stack" style={{ gap: 2 }}>
+          <h3 style={{ marginBottom: 8 }}>Obecne dziś · {arrivals.data?.length ?? 0}</h3>
+          {arrivals.data?.length === 0 && <p className="muted small" style={{ margin: 0 }}>Jeszcze nikt nie weszła.</p>}
+          {(arrivals.data ?? []).slice(0, 12).map((a) => (
+            <div key={a.id} className="row small arrival">
+              <span className="muted tiny" style={{ width: 40 }}>
+                {fmtTime(a.at)}
+              </span>
+              <Avatar name={a.name} size="sm" />
+              <span className="grow">{a.name}</span>
+              <span className="muted tiny">{a.what}</span>
+            </div>
+          ))}
+        </section>
+
+        <section className="card stack" style={{ gap: 8 }}>
+          <h3>Warto zauważyć</h3>
+          {notice.length === 0 && <p className="small muted" style={{ margin: 0 }}>Dziś bez nowych osób i uwag zdrowotnych.</p>}
+          {notice.map((p) => (
+            <div key={p.booking_id} className="row small" style={{ gap: 10, alignItems: 'flex-start' }}>
+              <Avatar name={p.name} size="sm" />
+              <div className="grow">
+                <div className="row wrap" style={{ gap: 6 }}>
+                  <b>{p.name}</b>
+                  {p.visits === 0 && !p.guest_name && <span className="badge accent">pierwszy raz</span>}
+                  {p.status === 'attended' && <span className="badge ok">jest</span>}
                 </div>
-                <div className="tiny muted">
-                  {s.zone_name} · {s.trainer_name} · {s.capacity - booked.length > 0 ? `${s.capacity - booked.length} wolne` : 'komplet'}
-                </div>
-                <div className="arrivals-bar" aria-hidden="true">
-                  <span style={{ width: `${booked.length ? (inside / booked.length) * 100 : 0}%` }} />
-                </div>
-                {missing.map((p) => (
-                  <div key={p.booking_id} className="row small" style={{ gap: 8 }}>
-                    <span className="grow">
-                      {p.name} {p.visits === 0 && !p.guest_name && <span className="badge accent">pierwszy raz</span>}
-                    </span>
-                    <button className="btn sm ghost" onClick={() => run(() => api(`/staff/bookings/${p.booking_id}/checkin`, { method: 'POST' }).then(day.reload), `${p.name} – obecna ✓`)}>
-                      Wpuść
-                    </button>
+                <div className="tiny muted">{p.when}</div>
+                {healthNote(p.health) && (
+                  <div className="tiny" style={{ color: 'var(--brand-strong)' }}>
+                    ⚑ {healthNote(p.health)}
                   </div>
-                ))}
-              </section>
-            );
-          })}
-        </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        {day.data.events.length > 0 && (
+          <section className="card stack" style={{ gridColumn: '1 / -1', gap: 8 }}>
+            <h3>Wydarzenia prywatne dziś</h3>
+            {day.data.events.map((e) => (
+              <button key={e.id} className="todo-row" onClick={() => go('events')}>
+                <span className="grow">
+                  <b>{fmtTime(e.starts_at)}</b> · {e.activity} · {e.client_name}
+                  <span className="muted">
+                    {' '}
+                    · {e.guests} os.{e.trainer_name ? ` · ${e.trainer_name}` : ''}
+                  </span>
+                </span>
+                {e.status === 'offer' && <span className="badge">oferta</span>}
+                <Chevron />
+              </button>
+            ))}
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Wejściówki (Codziennie): skaner kodów QR z aplikacji klientek. Kamera od razu włączona, wynik i lista obecnych obok. */
+export function Passes() {
+  return (
+    <div className="stack-lg">
+      <div>
+        <h1 style={{ marginBottom: 0 }}>Wejściówki</h1>
+        <p className="muted" style={{ margin: 0 }}>
+          Klientka pokazuje kod z aplikacji (Start → ikona karty) – skaner sam zapisze ją na zajęcia.
+        </p>
+      </div>
+      <div className="scanner-page">
+        <CheckinPanel big scanner onDone={() => {}} />
       </div>
     </div>
   );

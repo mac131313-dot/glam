@@ -7,7 +7,8 @@ import { Icon, type IconName } from '../icons.tsx';
 import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { BreathPlayer, type BreathRequest } from './BreathPlayer.tsx';
-import { Spinner } from '../ui.tsx';
+import { AfterClassFeelings } from './Feelings.tsx';
+import { Pending } from '../ui.tsx';
 import { Community } from './Community.tsx';
 import { ForMe } from './ForMe.tsx';
 import { Profile } from './Profile.tsx';
@@ -85,7 +86,7 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
 ];
 
 export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwitchStudio: () => void; onLogout: () => void; onBackToStaff?: () => void }) {
-  const { data: studio, reload } = useApi<Studio>('/studio');
+  const { data: studio, error, reload } = useApi<Studio>('/studio');
   const [tab, setTab] = useState<Tab>('start');
   const [shop, setShop] = useState<{ reason?: string; highlight?: string[] } | null>(null);
   const [breath, setBreath] = useState<BreathRequest | null>(null);
@@ -125,7 +126,7 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
     if (r.route) setStack((st) => [...st, r.route!]);
   }
 
-  if (!studio) return <Spinner />;
+  if (!studio) return <Pending error={error} reload={reload} />;
   // Przed renderem zakładek: grafik i karnety formatują godziny w strefie studia.
   setStudioTimezone(studio.timezone);
   if (!props.me.user.onboarded) return <Onboarding studio={studio} me={props.me} onDone={props.reloadMe} />;
@@ -186,6 +187,8 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
           <RouteView route={route} close={() => setStack((st) => st.slice(0, i))} open={ctx.open} />
         </div>
       ))}
+      {/* Ankieta po treningu – czeka, aż klientka skończy oddech i zamknie podstronę. */}
+      <AfterClassFeelings paused={!!breath || !!shop || stack.length > 0} />
       {breath && <BreathPlayer request={breath} onClose={() => setBreath(null)} />}
       {shop && <PurchaseSheet reason={shop.reason} highlight={shop.highlight} onClose={() => setShop(null)} />}
     </Ctx.Provider>

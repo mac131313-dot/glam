@@ -9,9 +9,10 @@ import { api } from '../api.ts';
 import { useLayer } from '../back.ts';
 import { BreathBloom, MiniBloom } from './BreathBloom.tsx';
 import { useClient } from './ClientApp.tsx';
-import { CalmNoise, hapticPhase, hapticsSupported, loadSenses, saveSenses, useWakeLock, type SenseSettings } from './senses.ts';
+import { CalmNoise, hapticPhase, hapticsSupported, loadSenses, saveBreathChoice, saveSenses, useWakeLock, type SenseSettings } from './senses.ts';
 
-export type BreathRequest = { sessionId?: string; patternId?: string; minutes?: number };
+/** `onComplete` – tylko po sesji dokończonej do końca (np. zaliczenie dnia „7 dni spokoju”), nie po przerwaniu. */
+export type BreathRequest = { sessionId?: string; patternId?: string; minutes?: number; onComplete?: () => void };
 
 type Ritual = BreathRitual & { affirmation: string };
 
@@ -71,6 +72,9 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
         noise.current = new CalmNoise();
         if (sensesRef.current.haptics) hapticPhase('out');
         setDone(true);
+        // Wolny oddech (bez gotowej medytacji) zapamiętujemy – następny „Zacznij” w „Dla mnie” startuje ten sam rytm i czas.
+        if (!session) saveBreathChoice({ patternId: pattern.id, minutes: totalSec / 60 });
+        request.onComplete?.();
         // Ukończona sesja liczy się do celu tygodnia i KPI „medytacje tygodniowo” (decyzja 9, sekcja 12).
         api('/mindful', { method: 'POST', body: { kind: session ? 'meditation' : 'breath', ref: session?.id ?? pattern.id, minutes: totalSec / 60 } })
           .then(() => window.dispatchEvent(new Event('glam:passes-changed')))

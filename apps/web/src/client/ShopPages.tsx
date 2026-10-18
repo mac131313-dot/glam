@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { nutritionHighlight, nutritionRows, SHOP_CATEGORIES, type Nutrition } from '@glam/core';
 import { api, fmtDay, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
-import { Empty, ListRow, PAYMENT_LABELS, Sheet, Spinner, useAction } from '../ui.tsx';
+import { Empty, ListRow, PAYMENT_LABELS, Sheet, Pending, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -65,7 +65,7 @@ function Shop() {
     });
   }, [shop.data, q, cat]);
   if (shop.error?.code === 'feature_off') return <Empty>Studio nie prowadzi sklepu w aplikacji.</Empty>;
-  if (!shop.data) return <Spinner />;
+  if (!shop.data) return <Pending error={shop.error} reload={shop.reload} />;
   const present = new Set(shop.data.products.map((p) => p.category));
   const chips = CATS.filter((c) => c.id === 'all' || (c.id === 'featured' ? shop.data!.products.some((p) => p.featured) : present.has(c.id)));
   return (
@@ -114,7 +114,7 @@ function Shop() {
 function ProductPage({ id }: { id: string }) {
   const shop = useApi<ShopData>('/shop');
   const [buy, setBuy] = useState(false);
-  if (!shop.data) return shop.error?.code === 'feature_off' ? <Empty>Studio nie prowadzi sklepu w aplikacji.</Empty> : <Spinner />;
+  if (!shop.data) return shop.error?.code === 'feature_off' ? <Empty>Studio nie prowadzi sklepu w aplikacji.</Empty> : <Pending error={shop.error} reload={shop.reload} />;
   const product = shop.data.products.find((p) => p.id === id);
   if (!product) return <Empty>Ten produkt nie jest już dostępny.</Empty>;
   const macro = nutritionRows(product.nutrition);
@@ -280,7 +280,7 @@ function Orders() {
   const orders = useApi<{ id: string; kind: string; status: string; items: { name: string; variant: string; qty: number }[]; total: string; expires_at: string | null; created_at: string }[]>('/my/orders');
   const { run } = useAction();
   const STATUS: Record<string, string> = { reserved: 'zarezerwowane', ready: 'czeka w recepcji', paid: 'opłacone', shipped: 'wysłane', collected: 'odebrane', cancelled: 'anulowane', expired: 'rezerwacja wygasła' };
-  if (!orders.data) return <Spinner />;
+  if (!orders.data) return <Pending error={orders.error} reload={orders.reload} />;
   return (
     <div className="stack">
       {orders.data.length === 0 && <Empty>Brak zamówień.</Empty>}
@@ -308,7 +308,7 @@ function Orders() {
 
 function Partners() {
   const list = useApi<{ id: string; name: string; category: string; description: string | null; perk: string; code: string | null; url: string | null }[]>('/partners');
-  if (!list.data) return <Spinner />;
+  if (!list.data) return <Pending error={list.error} reload={list.reload} />;
   return (
     <div className="stack">
       {list.data.length === 0 && <Empty>Studio nie ma jeszcze partnerów.</Empty>}

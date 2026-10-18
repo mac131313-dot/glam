@@ -2,7 +2,7 @@
 // (polecenie z pierwszymi zajęciami gratis, wejściówka-prezent z QR i przepisaniem, zaproszenia na zajęcia).
 import { useEffect, useState } from 'react';
 import { api, fmtDay, fmtLongDay, fmtTime, useApi } from '../api.ts';
-import { AuthImg, Avatar, Empty, Field, PAYMENT_LABELS, Progress, QrCode, readFile, Sheet, Spinner, Tabs, Toggle, useAction, useToast } from '../ui.tsx';
+import { AuthImg, Avatar, Empty, Field, PAYMENT_LABELS, Progress, QrCode, readFile, Sheet, Pending, Tabs, Toggle, useAction, useToast } from '../ui.tsx';
 import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
@@ -86,7 +86,7 @@ export function Feed({ group }: { group?: string | null }) {
         </div>
       </section>
       {!feed.data ? (
-        <Spinner />
+        <Pending error={feed.error} reload={feed.reload} />
       ) : feed.data.length === 0 ? (
         <Empty>Jeszcze tu cicho. Napisz pierwsza</Empty>
       ) : (
@@ -191,7 +191,7 @@ function Groups() {
     const t = setInterval(() => document.visibilityState === 'visible' && (groups.reload(), dms.reload()), 15_000);
     return () => clearInterval(t);
   }, [groups.reload, dms.reload]);
-  if (!groups.data) return <Spinner />;
+  if (!groups.data) return <Pending error={groups.error} reload={groups.reload} />;
   const direct = (dms.data ?? []).map((d) => ({ ...d, route: `dm/${d.id}` }));
   if (groups.data.length === 0 && direct.length === 0) return <Empty icon="🌸">Studio nie założyło jeszcze grup.</Empty>;
   const mine = [...groups.data.filter((g) => g.joined).map((g) => ({ ...g, route: `groups/${g.id}` })), ...direct].sort((a, b) => (b.last?.at ?? '').localeCompare(a.last?.at ?? ''));
@@ -252,7 +252,7 @@ function Challenges({ focus }: { focus: string | null }) {
   const list = useApi<Challenge[]>('/challenges');
   const { run } = useAction();
   if (list.error?.code === 'feature_off') return <Empty>Studio nie prowadzi teraz wyzwań.</Empty>;
-  if (!list.data) return <Spinner />;
+  if (!list.data) return <Pending error={list.error} reload={list.reload} />;
   const METRIC: Record<string, string> = { trainings: 'treningów', mindful: 'chwil dla siebie', checkins: 'dni' };
   return (
     <div className="stack">
@@ -314,7 +314,7 @@ function Music() {
   const [artist, setArtist] = useState('');
   const { run, busy } = useAction();
   if (data.error?.code === 'feature_off') return <Empty>Studio nie udostępnia jeszcze playlist.</Empty>;
-  if (!data.data) return <Spinner />;
+  if (!data.data) return <Pending error={data.error} reload={data.reload} />;
   const PURPOSE: Record<string, string> = { class: 'Na zajęcia', meditation: 'Medytacja', stretch: 'Stretch', sleep: 'Na sen', theme: 'Motyw', shared: 'Wspólna' };
   return (
     <div className="stack-lg">
@@ -580,7 +580,7 @@ function SessionInvites() {
   const { go } = useClient();
   const invites = useApi<{ id: string; status: string; session_id: string; starts_at: string; class_name: string; from_name: string }[]>('/my/invites');
   const { run } = useAction();
-  if (!invites.data) return <Spinner />;
+  if (!invites.data) return <Pending error={invites.error} reload={invites.reload} />;
   return (
     <div className="stack">
       <p className="small muted" style={{ margin: 0 }}>Chcesz iść z koleżanką? W grafiku wybierz zajęcia i „Umów się z dziewczynami”.</p>

@@ -2,7 +2,7 @@
 // W natywnej aplikacji (Capacitor/Expo) haptykę przejmie systemowe API (iOS Taptic Engine, Android),
 // w przeglądarce działa Vibration API – dostępne na Androidzie, niedostępne w Safari na iOS.
 import { useEffect } from 'react';
-import type { PhaseKind } from '@glam/core';
+import { BREATH_LENGTHS, PATTERNS, type PhaseKind } from '@glam/core';
 
 export type SenseSettings = { haptics: boolean; noise: boolean; volume: number };
 const KEY = 'glam.mindful';
@@ -19,6 +19,28 @@ export function loadSenses(): SenseSettings {
 export function saveSenses(s: SenseSettings) {
   try {
     localStorage.setItem(KEY, JSON.stringify(s));
+  } catch {}
+}
+
+export type BreathChoice = { patternId: string; minutes: number };
+const CHOICE_KEY = 'glam.breath.choice';
+
+/** Ostatnio wybrany rytm i czas – żeby przy powrocie wystarczyło „Zacznij”. Tylko wygoda na tym urządzeniu. */
+export function loadBreathChoice(): BreathChoice {
+  const fallback = { patternId: 'calm', minutes: 3 };
+  try {
+    const v = JSON.parse(localStorage.getItem(CHOICE_KEY) ?? 'null') as Partial<BreathChoice> | null;
+    const patternOk = PATTERNS.some((p) => p.id === v?.patternId);
+    const minutesOk = BREATH_LENGTHS.some((l) => l.minutes === v?.minutes);
+    return { patternId: patternOk ? v!.patternId! : fallback.patternId, minutes: minutesOk ? v!.minutes! : fallback.minutes };
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveBreathChoice(c: BreathChoice) {
+  try {
+    localStorage.setItem(CHOICE_KEY, JSON.stringify(c));
   } catch {}
 }
 

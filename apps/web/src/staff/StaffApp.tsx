@@ -1,5 +1,5 @@
 // Panele ról (3, 2.1): menu budowane z siatki uprawnień (core/roles.ts) – to samo, co sprawdza serwer.
-// Pokrewne ekrany to zakładki jednej sekcji (Recepcja: Wejście/Kasa, Pulpit: Przegląd/KPI, Grafik: sale/zastępstwa),
+// Pokrewne ekrany to zakładki jednej sekcji (Recepcja: Przegląd/Kasa, Pulpit: Przegląd/KPI, Grafik: sale/zastępstwa),
 // żeby menu było krótkie. Adres: #sekcja albo #sekcja/zakładka; dawne #entrance, #desk, #analytics, #extras działają dalej.
 // Wiadomości łączą dawne Rozmowy (#groups): wątki z klientkami i grupami oraz wiadomość do grupy.
 // Właścicielka: wszystko (panel w stylu Shopify); pozostałe role widzą tylko to, na co pozwala siatka uprawnień.
@@ -11,7 +11,7 @@ import { StudioBrand } from '../StudioBrand.tsx';
 import { Select, Spinner, Tabs, Watermark } from '../ui.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { Desk } from './Desk.tsx';
-import { Entrance } from './Entrance.tsx';
+import { Entrance, Passes } from './Entrance.tsx';
 import { LookEditor } from './LookEditor.tsx';
 import { Products } from './Products.tsx';
 import { ScheduleAdmin } from './ScheduleAdmin.tsx';
@@ -60,11 +60,12 @@ const SECTIONS: Section[] = [
     perms: ['participants.manage', 'desk.sell'],
     group: 'Codziennie',
     tabs: [
-      { id: 'entrance', label: 'Wejście', perms: ['participants.manage'] },
+      { id: 'entrance', label: 'Przegląd', perms: ['participants.manage'] },
       { id: 'desk', label: 'Kasa', perms: ['desk.sell'] },
     ],
   },
-  { id: 'today', label: 'Dziś', icon: 'sun', perms: ['day.own', 'day.all'], group: 'Codziennie' },
+  { id: 'passes', label: 'Wejściówki', icon: 'qr', perms: ['participants.manage'], group: 'Codziennie' },
+  { id: 'today', label: 'Dziś', icon: 'sun', perms: ['day.own'], group: 'Codziennie' },
   { id: 'clients', label: 'Klientki', icon: 'people', perms: ['clients.view', 'notes.write'], group: 'Codziennie' },
   { id: 'messages', label: 'Wiadomości', icon: 'chat', perms: ['messages.group.own', 'messages.group.all', 'chat.answer', 'community.moderate'], group: 'Codziennie' },
   {
@@ -216,8 +217,9 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
         <Suspense fallback={<Spinner />}>
           {place === 'dashboard/overview' && <Dashboard go={setSection} />}
           {place === 'dashboard/kpi' && <Analytics />}
-          {place === 'reception/entrance' && <Entrance />}
+          {place === 'reception/entrance' && <Entrance roles={roles} go={setSection} />}
           {place === 'reception/desk' && <Desk />}
+          {section === 'passes' && <Passes />}
           {section === 'today' && <Today roles={roles} />}
           {section === 'clients' && <Clients roles={roles} />}
           {section === 'messages' && <Messages roles={roles} />}

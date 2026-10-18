@@ -36,7 +36,7 @@ import { clientFacts } from '../services/segments.ts';
 import type { Studio } from '../services/studio.ts';
 import { activateGuestPass } from './account.ts';
 import { createGuestPass, deliverGuestPass, guestCode, passesView } from './client.ts';
-import { checkinCodeOtherDay, parseCheckinCode } from '../services/checkin.ts';
+import { checkinCodeOtherDay, findByShortCode, isShortCheckinCode, parseCheckinCode } from '../services/checkin.ts';
 
 export const WELCOME_MAX = 400;
 
@@ -220,7 +220,11 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       const now = new Date();
       const today = localParts(now, studio.timezone).date;
       const raw = String(body.code ?? '').trim();
-      const giftCode = guestPassCodeOf(raw);
+      // Zapasowy kod z 6 liter (pod QR w aplikacji) ma pierwszeństwo – dopiero gdy nie pasuje do żadnej klientki, to wejściówka.
+      const shortMatch = isShortCheckinCode(raw)
+        ? findByShortCode(studio.id, raw, today, scope.all<{ user_id: string }>("SELECT user_id FROM memberships WHERE studio_id = $studio AND role = 'client'").map((m) => m.user_id))
+        : null;
+      const giftCode = shortMatch ? null : guestPassCodeOf(raw);
       let clientId: string | null = null;
       let activated: string | null = null;
 
@@ -229,7 +233,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
           'SELECT id, buyer_id, recipient_phone, status, variant, rules_json, activated_by, expires_at FROM guest_passes WHERE studio_id = $studio AND code = $c',
           { c: giftCode },
         );
-        if (!gp) throw notFound('Ta wejściówka nie jest z naszego studia albo kod jest błędny.');
+        if (!gp) throw notFound(isShortCheckinCode(raw) ? 'Nie rozpoznałyśmy kodu z 6 liter – sprawdź litery albo wpisz numer telefonu.' : 'Ta wejściówka nie jest z naszego studia albo kod jest błędny.');
         const variant = studio.settings.guestPass.variants.find((v) => v.id === gp.variant)?.label ?? 'Wejściówka';
         if (gp.status !== 'sent') {
           if (!gp.activated_by) throw conflict('expired', `Wejściówka „${variant}” wygasła.`);
@@ -255,7 +259,8 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
           clientId = u.id;
           activated = variant;
         }
-      } else if (raw) clientId = parseCheckinCode(studio.id, raw, today);
+      } else if (shortMatch) clientId = shortMatch;
+      else if (raw) clientId = parseCheckinCode(studio.id, raw, today);
       else if (body.phone) clientId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(normalizePhone(body.phone)) as { id: string } | undefined)?.id ?? null;
 
       if (!clientId || !scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: clientId })) {
