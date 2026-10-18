@@ -1,7 +1,7 @@
 // Profil trenerki w aplikacji (trasa „trainer/<id>”): zdjęcie z konta, bio, film „poznajmy się”, opis własny
 // i zaproszenia na jej najbliższe zajęcia z zapisem jednym przyciskiem.
 import { useApi } from '../api.ts';
-import { AuthVideo, Empty, Spinner } from '../ui.tsx';
+import { AuthVideo, Empty, Pending } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 import { InviteCard, type TrainerInvite } from './TrainerInvite.tsx';
@@ -11,7 +11,7 @@ type Trainer = { id: string; name: string; bio: string | null; about: string | n
 export default function TrainerPages({ arg }: RouteProps) {
   const t = useApi<Trainer>(arg ? `/trainers/${arg}` : null);
   const { open } = useClient();
-  if (!t.data) return <Spinner />;
+  if (!t.data) return <Pending error={t.error} reload={t.reload} />;
   const p = t.data;
   const paragraphs = (p.about ?? '').split(/\n{2,}/).map((x) => x.trim()).filter(Boolean);
   return (

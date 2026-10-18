@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ENERGY_LABELS, MOOD_LABELS, QUIZ, routineSeconds, sessionById, SLEEP_LABELS, STRETCH, stretchById, stretchStepAt, type QuizAnswers } from '@glam/core';
 import { api, fmtDay, useApi } from '../api.ts';
-import { AuthImg, Empty, Field, LevelPicker, ListRow, Progress, readFile, Spinner, Toggle, useAction } from '../ui.tsx';
+import { AuthImg, Empty, Field, LevelPicker, ListRow, Progress, readFile, Pending, Toggle, useAction } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 import { useWakeLock } from './senses.ts';
@@ -19,7 +19,14 @@ export default function WellbeingPages({ route, arg, close }: RouteProps) {
   return <Health />;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Data lokalna (jak w panelu „Dla mnie” i w API) – nie UTC, bo po północy wpis trafiałby na wczoraj.
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const today = () => isoDay(new Date());
+const addDays = (date: string, n: number) => {
+  const d = new Date(`${date}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return isoDay(d);
+};
 
 function ConsentGate({ kind, text, onGranted }: { kind: 'health' | 'cycle' | 'photos'; text: string; onGranted: () => void }) {
   const { run, busy } = useAction();
@@ -52,15 +59,13 @@ function Journal() {
     }
   }, [todayEntry]);
   if (error?.code === 'consent_required') return <ConsentGate kind="health" text="Dziennik nastroju, energii i snu to dane o samopoczuciu. Potrzebujemy Twojej osobnej zgody." onGranted={reload} />;
-  if (!data) return <Spinner />;
-  const shift = (d: number) => {
-    const base = new Date(`${data.week}T12:00:00Z`);
-    base.setUTCDate(base.getUTCDate() + d);
-    setWeek(base.toISOString().slice(0, 10));
-  };
+  if (!data) return <Pending error={error} reload={reload} />;
+  const shift = (d: number) => setWeek(addDays(data.week, d));
+  // Formularz „Dziś” tylko w tygodniu, który zawiera dzisiejszy dzień.
+  const thisWeek = data.week <= today() && today() < addDays(data.week, 7);
   return (
     <div className="stack-lg">
-      {!week || week >= today().slice(0, 8) ? (
+      {thisWeek ? (
         <section className="card stack">
           <div className="eyebrow">Dziś</div>
           <LevelPicker label="Nastrój" value={mood} onChange={setMood} words={MOOD_LABELS} />
@@ -117,11 +122,11 @@ function Journal() {
 }
 
 function Cycle() {
-  const { data, reload } = useApi<{ consent: boolean; entries?: { start: string; length: number }[]; today?: { phase: string; day: number; label: string; hint: string; intensity: string } | null }>('/me/cycle');
+  const { data, error, reload } = useApi<{ consent: boolean; entries?: { start: string; length: number }[]; today?: { phase: string; day: number; label: string; hint: string; intensity: string } | null }>('/me/cycle');
   const [start, setStart] = useState(today());
   const [length, setLength] = useState(28);
   const { run, busy } = useAction();
-  if (!data) return <Spinner />;
+  if (!data) return <Pending error={error} reload={reload} />;
   if (!data.consent) return <ConsentGate kind="cycle" text="Moduł cyklu podpowiada intensywność zajęć. To dane szczególne (RODO art. 9), więc potrzebujemy osobnej zgody." onGranted={reload} />;
   return (
     <div className="stack-lg">
@@ -149,9 +154,9 @@ function Cycle() {
 
 function Calm7() {
   const { openBreath } = useClient();
-  const { data, reload } = useApi<{ title: string; days: { day: number; title: string; sessionId: string; note: string; done: boolean; unlocked: boolean }[] }>('/me/calm7');
+  const { data, error, reload } = useApi<{ title: string; days: { day: number; title: string; sessionId: string; note: string; done: boolean; unlocked: boolean }[] }>('/me/calm7');
   const { run } = useAction();
-  if (!data) return <Spinner />;
+  if (!data) return <Pending error={error} reload={reload} />;
   const done = data.days.filter((d) => d.done).length;
   return (
     <div className="stack-lg">
@@ -176,10 +181,8 @@ function Calm7() {
               <button
                 className="btn sm"
                 style={{ alignSelf: 'flex-start' }}
-                onClick={() => {
-                  openBreath({ sessionId: d.sessionId });
-                  run(() => api(`/me/calm7/${d.day}`, { method: 'POST', global: true }).then(reload));
-                }}
+                // Dzień zaliczamy dopiero po sesji dokończonej do końca – nie w chwili otwarcia.
+                onClick={() => openBreath({ sessionId: d.sessionId, onComplete: () => run(() => api(`/me/calm7/${d.day}`, { method: 'POST', global: true }).then(reload)) })}
               >
                 Zacznij
               </button>
@@ -268,7 +271,7 @@ function StretchPlayer({ id, onDone }: { id: string; onDone: () => void }) {
 }
 
 function Quiz({ onDone }: { onDone: () => void }) {
-  const { reloadMe, openBreath, go } = useClient();
+  const { reloadMe, openBreath, go, open } = useClient();
   const [answers, setAnswers] = useState<Partial<QuizAnswers>>({});
   const [result, setResult] = useState<{ reminderTime: string | null; classKeywords: string[]; meditation: string; stretch: string; goalLabel: string; sequence: { kind: string; ref: string; label: string }[] } | null>(null);
   const { run, busy } = useAction();
@@ -291,7 +294,7 @@ function Quiz({ onDone }: { onDone: () => void }) {
               title={`${i + 1}. ${s.label}`}
               onClick={() => {
                 if (s.kind === 'breath') openBreath({ patternId: s.ref, minutes: 3 });
-                else if (s.kind === 'stretch') onDone();
+                else if (s.kind === 'stretch') open(`stretch/${s.ref}`);
                 else go('schedule');
               }}
             />
@@ -341,11 +344,11 @@ function Quiz({ onDone }: { onDone: () => void }) {
 }
 
 function WeekGoal({ onDone }: { onDone: () => void }) {
-  const { data } = useApi<{ week: { goal: { trainings: number; mindful: number } } }>('/home');
+  const { data, error, reload } = useApi<{ week: { goal: { trainings: number; mindful: number } } }>('/home');
   const [t, setT] = useState<number | null>(null);
   const [m, setM] = useState<number | null>(null);
   const { run, busy } = useAction();
-  if (!data) return <Spinner />;
+  if (!data) return <Pending error={error} reload={reload} />;
   const trainings = t ?? data.week.goal.trainings;
   const mindful = m ?? data.week.goal.mindful;
   const Step = ({ value, set, label }: { value: number; set: (n: number) => void; label: string }) => (
@@ -389,7 +392,7 @@ function Health() {
   const [m, setM] = useState({ weight: '', waist: '', hips: '', wellbeing: '', share: false });
   const { run, busy } = useAction();
   if (error?.code === 'feature_off') return <Empty>Studio nie prowadzi profilu zdrowia.</Empty>;
-  if (!data) return <Spinner />;
+  if (!data) return <Pending error={error} reload={reload} />;
   if (!data.consent) return <ConsentGate kind="health" text="Profil zdrowia jest opcjonalny. Ankieta startowa (cele, ograniczenia, kontuzje) pomaga trenerce prowadzić zajęcia bezpiecznie." onGranted={reload} />;
   const p = profile ?? data.profile ?? {};
   return (
@@ -511,8 +514,8 @@ function Health() {
 }
 
 function Plan() {
-  const { data } = useApi<HealthData>('/my/health');
-  if (!data) return <Spinner />;
+  const { data, error, reload } = useApi<HealthData>('/my/health');
+  if (!data) return <Pending error={error} reload={reload} />;
   if (!data.plan) return <Empty>Twoja trenerka może przygotować dla Ciebie plan – zapytaj na zajęciach.</Empty>;
   return (
     <div className="stack">

@@ -1,7 +1,10 @@
 // GLAM – service worker: powiadomienia push (sekcja 8) i tryb offline dla grafiku, karnetu i listy zajęć (sekcja 10).
 const CACHE = 'glam-v2';
 const KEEP = [CACHE, 'glam-offline-media'];
-const OFFLINE_API = ['/api/schedule', '/api/home', '/api/my/passes', '/api/my/bookings', '/api/studio', '/api/me'];
+const OFFLINE_API = ['/api/schedule', '/api/home', '/api/my/passes', '/api/my/bookings', '/api/studio', '/api/me', '/api/my/checkin-code'];
+/** Kod wejścia zmienia się codziennie – bez sieci oddajemy tylko ten zapisany dziś, wczorajszy i tak nie przejdzie w recepcji. */
+const SAME_DAY_ONLY = ['/api/my/checkin-code'];
+const savedToday = (res) => !res.headers.get('date') || new Date(res.headers.get('date')).toDateString() === new Date().toDateString();
 
 self.addEventListener('install', () => self.skipWaiting());
 // Starsze wersje (glam-v1 trzymała dane bez rozróżnienia osoby) – usuwamy przy aktywacji.
@@ -36,7 +39,8 @@ self.addEventListener('fetch', (e) => {
         .catch(() =>
           key
             .then((k) => (k ? caches.open(CACHE).then((c) => c.match(k)) : undefined))
-            .then((r) => r ?? new Response(JSON.stringify({ error: 'offline', message: 'Brak internetu – pokazujemy ostatnio zapisane dane.' }), { status: 503, headers: { 'content-type': 'application/json' } })),
+            .then((r) => (r && SAME_DAY_ONLY.includes(url.pathname) && !savedToday(r) ? undefined : r))
+            .then((r) => r ?? new Response(JSON.stringify({ error: 'offline', message: 'Brak internetu – sprawdź połączenie.' }), { status: 503, headers: { 'content-type': 'application/json' } })),
         ),
     );
     return;

@@ -1504,6 +1504,9 @@ function migrate(db: Db) {
   // Zdjęcia wgrane, zanim zapisywaliśmy proporcje – odczytujemy je z pliku.
   const missing = db.prepare('SELECT id, photo_mime, photo_data FROM class_types WHERE photo_data IS NOT NULL AND photo_ratio IS NULL').all() as { id: string; photo_mime: string; photo_data: Uint8Array }[];
   for (const row of missing) db.prepare('UPDATE class_types SET photo_ratio = ? WHERE id = ?').run(imageRatio(row.photo_data, row.photo_mime), row.id);
+
+  // Powód zawieszenia „ciąża” to dana o zdrowiu (RODO art. 9) – trzymamy tylko ogólne „zdrowie”.
+  db.exec("UPDATE pass_freezes SET reason = 'illness' WHERE reason = 'pregnancy'");
 }
 
 export function tx<T>(db: Db, fn: () => T): T {

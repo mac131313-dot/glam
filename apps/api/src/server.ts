@@ -9,6 +9,11 @@ import { ConsoleEmailSender, ConsolePushSender, ConsoleSmsGateway, MockPaymentPr
 
 const db = openDb();
 const production = process.env.NODE_ENV === 'production';
+// Kody SMS w odpowiedziach i logowanie demo bez SMS (/api/dev/login) tylko na wyraźne życzenie: `npm run dev`
+// albo GLAM_DEMO=1 (Docker z demo). Serwer uruchomiony inaczej ich nie wystawi – także gdy ktoś zapomni o NODE_ENV.
+const demo = process.env.GLAM_DEMO === '1' || process.env.npm_lifecycle_event === 'dev';
+if (demo && production) throw new Error('Tryb demo (GLAM_DEMO=1 / npm run dev) nie może działać z NODE_ENV=production.');
+if (demo) console.warn('⚠ Tryb demo: kody SMS w odpowiedziach API i logowanie bez SMS są włączone. Nie używaj tego na serwerze z prawdziwymi klientkami.');
 const deps: Deps = {
   db,
   sms: new ConsoleSmsGateway(),
@@ -17,7 +22,7 @@ const deps: Deps = {
   email: new ConsoleEmailSender(),
   // Web Push działa naprawdę (VAPID + aes128gcm); w dev wystarczy GLAM_WEBPUSH=0, żeby tylko logować.
   push: process.env.GLAM_WEBPUSH === '0' ? new ConsolePushSender() : new WebPushSender(db),
-  exposeDevCodes: !production,
+  exposeDevCodes: demo,
   publicUrl: process.env.GLAM_PUBLIC_URL ?? 'http://localhost:5173',
 };
 const app = buildApp(deps, { logger: production });

@@ -20,3 +20,20 @@ export function checkinCodeOtherDay(studioId: string, code: string, today: strin
   if (v !== 'GLAM1' || !userId || !date || date === today) return null;
   return checkinCode(studioId, userId, date) === code.trim() ? date : null;
 }
+
+/** Litery bez łatwych do pomylenia (I/L, O/Q) – kod czyta się na głos albo przepisuje z ekranu. */
+const LETTERS = 'ABCDEFGHJKMNPRSTUVWXYZ';
+
+/** Zapasowy kod z 6 liter, gdy QR się nie czyta: też podpisany i ważny tylko w swoim dniu. */
+export function shortCheckinCode(studioId: string, userId: string, date: string): string {
+  const mac = createHmac('sha256', key()).update(`short:${studioId}:${userId}:${date}`).digest();
+  return Array.from(mac.subarray(0, 6), (b) => LETTERS[b % LETTERS.length]).join('');
+}
+
+export const isShortCheckinCode = (s: string) => /^[A-Za-z]{6}$/.test(s.replace(/[\s-]/g, ''));
+
+/** Klientka po kodzie z liter: kod nie zawiera identyfikatora, więc sprawdzamy klientki studia (to tylko HMAC na osobę). */
+export function findByShortCode(studioId: string, code: string, today: string, clientIds: string[]): string | null {
+  const want = code.replace(/[\s-]/g, '').toUpperCase();
+  return clientIds.find((u) => shortCheckinCode(studioId, u, today) === want) ?? null;
+}

@@ -6,7 +6,7 @@ import { goalCount, goalExtra, MOOD_LABELS, patternById, sessionById, type Breat
 import { fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
 import { MiniBloom } from './BreathBloom.tsx';
-import { hasFeature, useClient } from './ClientApp.tsx';
+import { useClient } from './ClientApp.tsx';
 
 type Entry = { date: string; mood: number; energy: number; sleep: number };
 type Home = {
@@ -14,9 +14,7 @@ type Home = {
   upcoming: { booking_id: string; status: string; starts_at: string; class_name: string; trainer_name: string }[];
   ritual: string;
 };
-type Cycle = { consent: boolean; today?: { label: string; hint: string; day: number } | null };
 
-const DAYS = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
 const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /**
@@ -48,12 +46,11 @@ const TONE_LABEL = { none: 'jeszcze nic', low: 'początek', mid: 'w połowie', g
 type BreathChoice = { patternId: string; minutes: number };
 
 export function ForMeBoard({ breath }: { breath: BreathChoice }) {
-  const { studio, open, go, openBreath } = useClient();
+  const { open, go, openBreath } = useClient();
   const { data: home, reload: reloadHome } = useApi<Home>('/home');
   const { data: ritual, reload: reloadRitual } = useApi<BreathRitual>('/my/breath-ritual');
   // Dziennik wymaga osobnej zgody – bez niej (403) pierścień samopoczucia zaprasza do pierwszego wpisu.
   const { data: journal, reload: reloadJournal } = useApi<{ entries: Entry[] }>('/me/journal');
-  const { data: cycle } = useApi<Cycle>(hasFeature(studio, 'cycle') ? '/me/cycle' : null);
   // Zakładka zostaje pod podstronami – po oddechu, zapisie na zajęcia, celu czy wpisie w dzienniku odświeżamy panel.
   useEffect(() => {
     const reload = () => (reloadHome(), reloadRitual(), reloadJournal());
@@ -155,11 +152,11 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
             </button>
           )}
           {todayClasses.map((c) => (
-            <button key={c.booking_id} className="board-act" onClick={() => go('start')}>
+            <button key={c.booking_id} className={`board-act${c.status === 'waitlist' ? ' is-soft' : ''}`} onClick={() => go('start')}>
               <span className="board-act-time">{fmtTime(c.starts_at)}</span>
               <span className="grow">
                 <span className="session-title">{c.class_name}</span>
-                <span className="session-meta"> · prowadzi {c.trainer_name}</span>
+                <span className="session-meta"> · {c.status === 'waitlist' ? 'jesteś na liście oczekujących' : `prowadzi ${c.trainer_name}`}</span>
               </span>
             </button>
           ))}
@@ -173,14 +170,6 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
           )}
         </div>
       </section>
-
-      {/* Podpowiedź na dziś tylko z własną treścią: faza cyklu albo dzień odpoczynku. Słowo o celu tygodnia jest już na Starcie. */}
-      {(cycle?.today || week?.restDay) && (
-        <article className="card board-insight">
-          <div className="eyebrow">{cycle?.today ? `${cycle.today.label} · dzień ${cycle.today.day}` : 'Dzień odpoczynku'}</div>
-          <p className="serif board-insight-text">{cycle?.today?.hint ?? week?.message}</p>
-        </article>
-      )}
 
       <div className="board-tiles">
         <button className="card board-tile" onClick={() => open('calm7')}>
@@ -230,7 +219,6 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
         </div>
       </section>
 
-      <WeekChart entries={entries} breath={ritual?.week ?? []} onOpen={() => open('journal')} />
     </div>
   );
 }
@@ -258,58 +246,5 @@ function Ring({ value, tone, size, stroke, children }: { value: number; tone: Re
       </svg>
       {children && <span className="bring-inner">{children}</span>}
     </span>
-  );
-}
-
-/** Tydzień: nastrój i energia z dziennika (linie) oraz dni z oddechem (kropki pod osią). */
-function WeekChart({ entries, breath, onOpen }: { entries: Entry[]; breath: boolean[]; onOpen: () => void }) {
-  const W = 320;
-  const H = 120;
-  const pad = 14;
-  const x = (i: number) => pad + (i * (W - 2 * pad)) / 6;
-  const y = (v: number) => H - pad - ((v - 1) / 4) * (H - 2 * pad);
-  const todayIdx = (new Date().getDay() + 6) % 7;
-  const byDay = Array.from({ length: 7 }, (_, i) => entries.find((e) => (new Date(`${e.date}T12:00:00`).getDay() + 6) % 7 === i));
-  const line = (k: 'mood' | 'energy') =>
-    byDay
-      .map((e, i) => (e ? `${x(i)},${y(e[k])}` : null))
-      .filter(Boolean)
-      .join(' ');
-  return (
-    <section className="forme-list">
-      <div className="row between">
-        <h2 className="forme-h">Twój tydzień</h2>
-        <span className="board-legend tiny muted">
-          <i style={{ background: 'var(--ink)' }} /> nastrój <i style={{ background: 'var(--brand)' }} /> energia
-        </span>
-      </div>
-      <button className="card board-chart" onClick={onOpen} aria-label="Twój tydzień w dzienniku">
-        {entries.length ? (
-          <svg viewBox={`0 0 ${W} ${H}`} width="100%" aria-hidden="true">
-            {[1, 3, 5].map((v) => (
-              <line key={v} x1={pad} x2={W - pad} y1={y(v)} y2={y(v)} stroke="var(--line)" strokeDasharray={v === 3 ? '0' : '2 4'} />
-            ))}
-            <rect x={x(todayIdx) - 14} y={4} width={28} height={H - 8} rx={14} fill="var(--soft)" opacity={0.7} />
-            {(['energy', 'mood'] as const).map((k) => (
-              <g key={k} stroke={k === 'mood' ? 'var(--ink)' : 'var(--brand)'}>
-                <polyline points={line(k)} fill="none" strokeWidth={1.5} strokeLinejoin="round" />
-                {byDay.map((e, i) => e && <circle key={i} cx={x(i)} cy={y(e[k])} r={3.5} fill="var(--surface)" strokeWidth={1.5} />)}
-              </g>
-            ))}
-          </svg>
-        ) : (
-          <p className="serif board-chart-empty">Zapisz, jak się czujesz – tu zobaczysz rytm swojego tygodnia.</p>
-        )}
-        <span className="board-days">
-          {DAYS.map((d, i) => (
-            <span key={d} className={i === todayIdx ? 'is-today' : ''}>
-              <b className={byDay[i] ? 'is-on' : ''} aria-hidden="true" />
-              {d}
-              {breath[i] && <i className="board-breath" title="Oddech" />}
-            </span>
-          ))}
-        </span>
-      </button>
-    </section>
   );
 }

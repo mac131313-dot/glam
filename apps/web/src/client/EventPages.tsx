@@ -3,7 +3,7 @@
 // notatką dla trenerki, zmianą godziny, odwołaniem i zaproszeniami dla gości (link, QR, RSVP).
 import { useState } from 'react';
 import { api, fmtDay, goToCheckout, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Avatar, Empty, Field, availableMethods, PAYMENT_LABELS, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
+import { Avatar, Empty, Field, availableMethods, PAYMENT_LABELS, Pending, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -27,7 +27,7 @@ export default function EventPages({ route, arg, close }: RouteProps) {
 function MyEvents() {
   const { open } = useClient();
   const list = useApi<{ id: string; kindLabel: string; starts_at: string; statusLabel: string; guests: number }[]>('/my/events');
-  if (!list.data) return <Spinner />;
+  if (!list.data) return <Pending error={list.error} reload={list.reload} />;
   return (
     <div className="stack">
       <button className="btn" onClick={() => open('event-new')}>
@@ -67,7 +67,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
   const p = opts.data?.packages.find((x) => x.id === pkg);
   const slots = useApi<{ startsAt: string; time: string }[]>(date && zone && trainer ? `/events/slots?date=${date}&zoneId=${zone}&trainerId=${trainer}&durationMin=${p?.duration_min ?? 90}` : null, [date, zone, trainer, pkg]);
   if (opts.error?.code === 'feature_off') return <Empty>Studio nie organizuje teraz wydarzeń.</Empty>;
-  if (!opts.data) return <Spinner />;
+  if (!opts.data) return <Pending error={opts.error} reload={opts.reload} />;
   const o = opts.data;
   // Kreator sam pilnuje poprawnych wartości – klientka nie dowiaduje się o błędzie dopiero w ostatnim kroku.
   const range = (id: string | null) => {
@@ -157,7 +157,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
       </Field>
       {date && zone && trainer && (
         <div className="pill-row">
-          {!slots.data ? <Spinner /> : slots.data.length === 0 ? <span className="small muted">Ten dzień jest zajęty – wybierz inny.</span> : null}
+          {!slots.data ? <Pending error={slots.error} reload={slots.reload} /> : slots.data.length === 0 ? <span className="small muted">Ten dzień jest zajęty – wybierz inny.</span> : null}
           {slots.data?.map((s) => (
             <button key={s.startsAt} className="chip" aria-pressed={slot === s.startsAt} onClick={() => setSlot(s.startsAt)}>
               {s.time}
@@ -255,12 +255,12 @@ type EventView = {
 };
 
 function EventDetail({ id }: { id: string }) {
-  const { data, reload } = useApi<EventView>(`/events/${id}`);
+  const { data, error, reload } = useApi<EventView>(`/events/${id}`);
   const [method, setMethod] = useState('blik');
   const [note, setNote] = useState<string | null>(null);
   const { run, busy } = useAction();
   const toast = useToast();
-  if (!data) return <Spinner />;
+  if (!data) return <Pending error={error} reload={reload} />;
   const act = (body: object, msg?: string) => run(() => api<{ checkoutUrl?: string }>(`/events/${id}/client`, { method: 'POST', body }).then((r) => (goToCheckout(r) || reload(), r)), msg);
   const yes = data.guestsList.filter((g) => g.rsvp === 'yes').length;
   return (

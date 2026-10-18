@@ -2,12 +2,13 @@
 // trening we dwie (#6), rezerwacja „na stałe”, lista oczekujących, odwołanie, „umów się z dziewczynami”,
 // playlista zajęć, synchronizacja z kalendarzem telefonu. Widok dnia: karuzela „Dopasowane do Ciebie” (ankieta
 // + ulubione, core/classfit) i pod nią karuzela pozostałych zajęć tego dnia.
-import { useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { dayTimesOf, FIT_THRESHOLD, fitReason, fitScore, type ClassAudience, type ClassFit } from '@glam/core';
 import { Icon } from '../icons.tsx';
 import { ClassFitSheet } from './ClassFitQuestions.tsx';
 import { addDaysStr, api, ApiError, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
-import { Empty, Field, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
+import { Empty, Field, Fold, reducedMotion, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { ClassHistory } from './ClassHistory.tsx';
 import { useClient } from './ClientApp.tsx';
@@ -49,28 +50,51 @@ type Session = {
 
 type ForYou = { s: Session; fav: boolean; reason: string | null };
 
+/** Przelot zdjęcia kafelek → arkusz tylko tam, gdzie przeglądarka je ma i nikt nie wyłączył animacji (system albo ustawienia aplikacji). */
+const canMorph = () => typeof document.startViewTransition === 'function' && !reducedMotion();
+
+/** „jedne zajęcia”, „3 zajęcia”, „12 zajęć” – zajęcia mają tylko liczbę mnogą. */
+const classCount = (n: number) => (n === 1 ? 'jedne zajęcia' : `${n} ${n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'zajęcia' : 'zajęć'}`);
+
 const DOW = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
-/** Nazwa dnia w kalendarzu miesiąca (dla czytnika ekranu) – daty to „YYYY-MM-DD” w południe UTC. */
-const MONTH_DAY = new Intl.DateTimeFormat('pl-PL', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
 type View = 'day' | 'week' | 'month';
 
 export function Schedule() {
   const { studio, openShop, open } = useClient();
   const today = localDate();
   const [view, setView] = useState<View>('day');
-  // Tydzień może zacząć się od ostatniego dnia z paska (dziś + 13), więc pobieramy 21 dni.
-  const span = view === 'month' ? 35 : 21;
-  const { data, reload } = useApi<{ sessions: Session[]; fit: ClassFit | null; favorites: string[] }>(`/schedule?from=${today}&days=${span}`, [span]);
+  const [day, setDay] = useState(today);
+  /** Miesiąc: bieżący (0) albo następny (1) – zapisy i tak otwierają się z wyprzedzeniem najwyżej kilku tygodni. */
+  const [monthOffset, setMonthOffset] = useState(0);
+  const month = monthBounds(today, monthOffset);
+  // Dzień i tydzień: od dziś co najmniej 21 dni i zawsze 7 dni za wybranym dniem (pasek dni sięga dziś + 13).
+  // Miesiąc: od dziś (albo od 1. dnia następnego miesiąca) do ostatniego dnia miesiąca.
+  const ahead = daysBetween(today, day);
+  const from = view === 'month' && month.first > today ? month.first : today;
+  const span = view === 'month' ? daysBetween(from, month.last) + 1 : Math.min(42, Math.max(21, ahead + 7));
+  const { data, error, reload } = useApi<{ sessions: Session[]; fit: ClassFit | null; favorites: string[] }>(`/schedule?from=${from}&days=${span}`);
+  /** Panel zajęć wybranego dnia pod kalendarzem miesiąca – po wybraniu dnia strona płynnie do niego podjeżdża. */
+  const monthDayRef = useRef<HTMLElement>(null);
+  const pickMonthDay = (d: string) => {
+    setDay(d);
+    requestAnimationFrame(() => {
+      const el = monthDayRef.current;
+      if (el && el.getBoundingClientRect().top > window.innerHeight * 0.6) el.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    });
+  };
+  const changeView = (v: View) => {
+    // Miesiąc otwiera się na miesiącu wybranego dnia (pasek dni może sięgać już następnego).
+    if (v === 'month') setMonthOffset(day > monthBounds(today, 0).last ? 1 : 0);
+    setView(v);
+  };
+  const changeMonth = (o: number) => {
+    setMonthOffset(o);
+    const b = monthBounds(today, o);
+    setDay(b.first > today ? b.first : today);
+  };
   /** Serduszka zmieniamy od razu na ekranie, serwer dostaje zmianę w tle. */
   const [favs, setFavs] = useState<string[] | null>(null);
   const [askFit, setAskFit] = useState(false);
-  const [day, setDay] = useState(today);
-  const [type, setType] = useState<string | null>(null);
-  const [trainer, setTrainer] = useState<string | null>(null);
-  const [level, setLevel] = useState<string | null>(null);
-  const [zone, setZone] = useState<string | null>(null);
-  const [onlyFree, setOnlyFree] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
   const [detail, setDetail] = useState<Session | null>(null);
   const [busy, setBusy] = useState(false);
   /** Odwołanie po terminie (wejście przepada) wymaga drugiego dotknięcia. */
@@ -79,15 +103,49 @@ export function Schedule() {
   const [guest, setGuest] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
   const toast = useToast();
+  /** Pasek dni płynnie przesuwa wybrany dzień na środek – także gdy dzień zmienił się z planszy „Najbliższe” albo z miesiąca. */
+  const stripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = stripRef.current;
+    const chip = strip?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!strip || !chip) return;
+    strip.scrollTo({ left: chip.offsetLeft - strip.offsetLeft - (strip.clientWidth - chip.clientWidth) / 2, behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }, [day, view]);
+  /** Każde zajęcia otwierają się „na czysto” – „we dwie”, imię gościa i numer koleżanki nie przechodzą z poprzednich. */
+  const openDetail = (s: Session) => {
+    setDetail(s);
+    setConfirmCancel(false);
+    setWithFriend(false);
+    setGuest('');
+    setInvitePhone('');
+  };
+  /** Zdjęcie kafelka, z którego otwarto arkusz – przy zamknięciu zdjęcie wraca na swoje miejsce. */
+  const photoRef = useRef<HTMLElement | null>(null);
+  const [morph, setMorph] = useState(false);
+  const openFromTile = (s: Session, tile: HTMLElement) => {
+    const photo = tile.querySelector<HTMLElement>('.cover-img');
+    photoRef.current = photo;
+    if (!photo || !canMorph()) return (setMorph(false), openDetail(s));
+    // Zdjęcie przelatuje z kafelka na górę arkusza: przed zmianą nazwa przejścia jest na zdjęciu kafelka,
+    // po zmianie – na zdjęciu arkusza (.class-sheet.morph .sheet-hero > img).
+    photo.style.viewTransitionName = 'class-photo';
+    document.startViewTransition(() => {
+      photo.style.viewTransitionName = '';
+      flushSync(() => (setMorph(true), openDetail(s)));
+    });
+  };
+  const closeDetail = () => {
+    const photo = photoRef.current;
+    if (!morph || !photo?.isConnected || !canMorph()) return (setDetail(null), setMorph(false));
+    const t = document.startViewTransition(() => {
+      flushSync(() => (setDetail(null), setMorph(false)));
+      photo.style.viewTransitionName = 'class-photo';
+    });
+    t.finished.finally(() => (photo.style.viewTransitionName = ''));
+  };
 
-  const uniq = (key: keyof Session) => [...new Set((data?.sessions ?? []).map((s) => s[key]).filter(Boolean))] as string[];
-  const types = useMemo(() => uniq('class_name'), [data]);
-  const trainers = useMemo(() => uniq('trainer_name'), [data]);
-  const levels = useMemo(() => uniq('level'), [data]);
-  const zones = useMemo(() => uniq('zone_name'), [data]);
-  const matches = (s: Session) => (!type || s.class_name === type) && (!trainer || s.trainer_name === trainer) && (!level || s.level === level) && (!zone || s.zone_name === zone) && (!onlyFree || s.taken < s.capacity);
-  const filtered = (data?.sessions ?? []).filter(matches);
-  const list = view === 'day' ? filtered.filter((s) => localDate(new Date(s.starts_at)) === day) : filtered.filter((s) => localDate(new Date(s.starts_at)) >= day && localDate(new Date(s.starts_at)) < addDaysStr(day, 7));
+  const sessions = data?.sessions ?? [];
+  const list = view === 'week' ? sessions.filter((s) => localDate(new Date(s.starts_at)) >= day && localDate(new Date(s.starts_at)) < addDaysStr(day, 7)) : sessions.filter((s) => localDate(new Date(s.starts_at)) === day);
 
   const act = async (fn: () => Promise<{ message?: string }>) => {
     setBusy(true);
@@ -95,6 +153,7 @@ export function Schedule() {
       const res = await fn();
       if (res?.message) toast(res.message);
       setDetail(null);
+      setMorph(false);
       setConfirmCancel(false);
       setWithFriend(false);
       setGuest('');
@@ -139,43 +198,24 @@ export function Schedule() {
   const rest = list.filter((s) => !forYou.some((f) => f.s.id === s.id));
 
   const started = (s: Session) => Date.parse(s.starts_at) <= Date.now();
-  const activeFilters = [type, trainer, level, zone].filter(Boolean).length + Number(onlyFree);
-  /** Pusty dzień (bez filtrów): „odpoczywa” – nic w grafiku, „done” – dziś wszystko już się odbyło. Wtedy zamiast list pokazujemy spokojną planszę. */
+  /** Pusty dzień: „odpoczywa” – nic w grafiku, „done” – dziś wszystko już się odbyło. Wtedy zamiast list pokazujemy spokojną planszę. */
   const dayRest: DayRestKind | null =
-    view !== 'day' || activeFilters > 0 ? null : list.length === 0 ? (day === today ? 'today-empty' : 'empty') : day === today && list.every((s) => started(s) || s.status === 'cancelled') ? 'done' : null;
+    view !== 'day' ? null : list.length === 0 ? (day === today ? 'today-empty' : 'empty') : day === today && list.every((s) => started(s) || s.status === 'cancelled') ? 'done' : null;
   /** Najbliższe zajęcia po wybranym dniu (i po teraz) – plansza od razu do nich prowadzi. */
   const nextAfterDay = dayRest ? (data?.sessions ?? []).find((s) => s.status !== 'cancelled' && !started(s) && localDate(new Date(s.starts_at)) > day) ?? null : null;
   const canQuickBook = (s: Session) => !s.my_status && s.status !== 'cancelled' && !started(s) && s.taken < s.capacity;
   const lateCancel = (s: Session) => Date.parse(s.starts_at) - Date.now() < studio.policy.cancelMinutesBefore * 60_000;
   const days = Array.from({ length: 14 }, (_, i) => addDaysStr(today, i));
-
-  // „Dopasowane do Ciebie”: karuzela, gdy coś pasuje; bez ankiety – zachęta do niej. Ankieta jest, a nic nie pasuje – sekcji nie ma.
-  const forYouSection = (
-    <section className="stack gap-2" aria-label="Dopasowane do Ciebie">
-      <div className="row between">
-        <h2 className="carousel-title">
-          Dopasowane <span className="serif">do Ciebie</span>
-        </h2>
-        {fit && (
-          <button className="link small" style={{ whiteSpace: 'nowrap' }} onClick={() => setAskFit(true)} aria-label="Zmień odpowiedzi z ankiety">
-            Zmień
-          </button>
-        )}
-      </div>
-      {forYou.length > 0 ? (
-        <div className="cover-carousel">
-          {forYou.map(({ s, fav, reason }) => (
-            <SessionCard key={s.id} s={s} fav={fav} onFav={() => toggleFav(s)} onOpen={() => setDetail(s)} reason={reason} />
-          ))}
-        </div>
-      ) : (
-        <button className="fit-prompt" onClick={() => setAskFit(true)}>
-          <b>Trzy pytania i wiemy, co Ci polecić</b>
-          <span className="small muted">Poziom, cel i pora dnia – zajmie mniej niż minutę. Serduszkiem dodasz też ulubione zajęcia.</span>
-        </button>
-      )}
-    </section>
-  );
+  /** Tydzień pogrupowany po dniach – każdy dzień to osobna zwijana sekcja. */
+  const weekDays: { date: string; items: Session[] }[] = [];
+  if (view === 'week') {
+    for (const s of list) {
+      const d = localDate(new Date(s.starts_at));
+      const last = weekDays[weekDays.length - 1];
+      if (last?.date === d) last.items.push(s);
+      else weekDays.push({ date: d, items: [s] });
+    }
+  }
 
   return (
     <div className="stack">
@@ -189,7 +229,7 @@ export function Schedule() {
               ['month', 'Miesiąc'],
             ] as const
           ).map(([v, l]) => (
-            <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>
+            <button key={v} aria-pressed={view === v} onClick={() => changeView(v)}>
               {l}
             </button>
           ))}
@@ -197,9 +237,9 @@ export function Schedule() {
       </div>
 
       {view === 'month' ? (
-        <MonthGrid today={today} sessions={filtered} selected={day} onPick={(d) => (setDay(d), setView('day'))} />
+        <MonthGrid month={month} today={today} sessions={sessions} selected={day} onPick={pickMonthDay} offset={monthOffset} onMonth={changeMonth} />
       ) : (
-        <div className="chips" role="group" aria-label="Wybierz dzień">
+        <div className="chips" role="group" aria-label="Wybierz dzień" ref={stripRef}>
           {days.map((d) => {
             const date = new Date(`${d}T12:00:00Z`);
             return (
@@ -215,72 +255,97 @@ export function Schedule() {
         </div>
       )}
 
-      {/* Kalendarz telefonu jest w Profilu (Logowanie i urządzenia) – w grafiku tylko filtry. */}
-      <div className="row">
-        <button className="chip" aria-pressed={showFilters || activeFilters > 0} onClick={() => setShowFilters(!showFilters)}>
-          Filtry{activeFilters ? ` (${activeFilters})` : ''}
-        </button>
-      </div>
-      {showFilters && (
-        <div className="stack gap-2">
-          {[
-            ['Typ', types, type, setType],
-            ['Trenerka', trainers, trainer, setTrainer],
-            ['Poziom', levels, level, setLevel],
-            ['Sala', zones, zone, setZone],
-          ].map(([label, options, value, set]) => (
-            <div key={label as string} className="chips" role="group" aria-label={`Filtr: ${label}`}>
-              {(options as string[]).map((o) => (
-                <button key={o} className="chip" aria-pressed={value === o} onClick={() => (set as (v: string | null) => void)(value === o ? null : o)}>
-                  {o}
+      {/* Błąd przy pierwszym wczytaniu – zamiast spinnera bez końca. */}
+      {!data && error && (
+        <Empty>
+          Nie udało się wczytać grafiku.{' '}
+          <button className="link" onClick={reload}>
+            Spróbuj ponownie
+          </button>
+        </Empty>
+      )}
+      {view === 'day' && !data && !error && <Spinner />}
+      {view === 'day' && data && dayRest && <DayRest kind={dayRest} next={nextAfterDay} onNext={(d) => setDay(d)} />}
+      {/* Dzień: dwie zwijane sekcje zamiast długiej ściany kafelków. Stan rozwinięcia wraca do domyślnego przy zmianie dnia. */}
+      {view === 'day' && data && !dayRest && list.length > 0 && (
+        <div className="folds">
+          <Fold key={`fit-${day}`} title={<>Dopasowane <span className="serif">do Ciebie</span></>} meta={forYou.length ? classCount(forYou.length) : fit ? '' : '3 pytania'} defaultOpen={forYou.length > 0}>
+            <div className="stack" style={{ gap: 12 }}>
+              {forYou.length > 0 ? (
+                <div className="session-grid">
+                  {forYou.map(({ s, fav, reason }) => (
+                    <SessionCard key={s.id} s={s} fav={fav} onFav={() => toggleFav(s)} onOpen={(el) => openFromTile(s, el)} reason={reason} />
+                  ))}
+                </div>
+              ) : !fit ? (
+                <button className="fit-prompt" onClick={() => setAskFit(true)}>
+                  <span>
+                    <b>Trzy pytania i wiemy, co Ci polecić</b>
+                    <span className="small muted">Poziom, cel i pora dnia – mniej niż minuta.</span>
+                  </span>
+                  <Icon name="chevron" size={18} />
                 </button>
-              ))}
+              ) : (
+                <p className="small muted" style={{ margin: 0 }}>
+                  Tego dnia nic szczególnie pod Ciebie – zerknij niżej albo na kolejny dzień.
+                </p>
+              )}
+              {fit && (
+                <button className="link small" style={{ justifySelf: 'start' }} onClick={() => setAskFit(true)}>
+                  Zmień odpowiedzi z ankiety
+                </button>
+              )}
             </div>
-          ))}
-          <div className="chips">
-            <button className="chip" aria-pressed={onlyFree} onClick={() => setOnlyFree(!onlyFree)}>
-              Tylko wolne miejsca
-            </button>
-          </div>
+          </Fold>
+          {rest.length > 0 && (
+            <Fold key={`rest-${day}`} title={forYou.length ? 'Pozostałe zajęcia' : 'Zajęcia tego dnia'} meta={classCount(rest.length)} defaultOpen>
+              <div className="session-grid">
+                {rest.map((s) => (
+                  <SessionCard key={s.id} s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={(el) => openFromTile(s, el)} />
+                ))}
+              </div>
+            </Fold>
+          )}
         </div>
       )}
 
-      {view === 'day' && !data && <Spinner />}
-      {view === 'day' && data && dayRest && <DayRest kind={dayRest} next={nextAfterDay} onNext={(d) => setDay(d)} />}
-      {view === 'day' && data && !dayRest && (
-        <>
-          {/* Nic ulubionego ani dopasowanego → najpierw wszystkie zajęcia dnia; zachęta do ankiety ląduje pod nimi. */}
-          {forYou.length > 0 && forYouSection}
-
-          {rest.length > 0 && (
-            <section className="stack gap-2" aria-label="Pozostałe zajęcia tego dnia">
-              <h2 className="carousel-title">{forYou.length ? 'Pozostałe zajęcia' : 'Zajęcia tego dnia'}</h2>
-              <div className="cover-carousel">
-                {rest.map((s) => (
-                  <SessionCard key={s.id} s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={() => setDetail(s)} />
-                ))}
-              </div>
-            </section>
+      {/* Miesiąc: zajęcia wybranego dnia od razu pod kalendarzem, bez przechodzenia do widoku dnia. */}
+      {view === 'month' && data && (
+        <section ref={monthDayRef} key={day} className="month-day" aria-live="polite">
+          <div className="month-day-head">
+            <h2>{fmtLongDay(`${day}T12:00:00Z`)}</h2>
+            {list.length > 0 && <span className="fold-meta">{classCount(list.length)}</span>}
+          </div>
+          {list.length > 0 ? (
+            <div className="session-grid">
+              {list.map((s) => (
+                <SessionCard key={s.id} s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={(el) => openFromTile(s, el)} />
+              ))}
+            </div>
+          ) : (
+            <p className="small muted" style={{ margin: 0 }}>
+              Tego dnia studio odpoczywa.
+            </p>
           )}
-          {forYou.length === 0 && !fit && forYouSection}
-          {list.length === 0 && filtered.length > 0 && activeFilters > 0 && <Empty>Nic nie pasuje do filtrów tego dnia.</Empty>}
-        </>
+        </section>
       )}
+      {view === 'month' && !data && !error && <Spinner />}
 
       {view === 'week' && (
         <>
-          {!data && <Spinner />}
-          {data && list.length === 0 && <Empty>Nic nie pasuje. Zajrzyj na inny dzień albo zmień filtry.</Empty>}
-          <div className="cover-list">
-            {list.map((s, i) => {
-              const newDay = i === 0 || localDate(new Date(list[i - 1].starts_at)) !== localDate(new Date(s.starts_at));
-              return (
-                <div key={s.id} style={{ display: 'contents' }}>
-                  {newDay && <div className="eyebrow" style={{ marginTop: 10 }}>{fmtLongDay(s.starts_at)}</div>}
-                  <SessionCard s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={() => setDetail(s)} bleed />
+          {!data && !error && <Spinner />}
+          {data && list.length === 0 && <Empty>W tym tygodniu nie ma zajęć.</Empty>}
+          {/* Tydzień: każdy dzień to zwijana sekcja – rozwinięty tylko pierwszy, reszta to spokojna lista dni z liczbą zajęć. */}
+          <div className="folds">
+            {weekDays.map((g, i) => (
+              <Fold key={`${day}-${g.date}`} title={fmtLongDay(g.items[0].starts_at)} meta={classCount(g.items.length) + (g.items.some((s) => s.my_status === 'booked' || s.my_status === 'waitlist') ? ' · Twój zapis' : '')} defaultOpen={i === 0}>
+                <div className="session-grid">
+                  {g.items.map((s) => (
+                    <SessionCard key={s.id} s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={(el) => openFromTile(s, el)} />
+                  ))}
                 </div>
-              );
-            })}
+              </Fold>
+            ))}
           </div>
         </>
       )}
@@ -288,7 +353,7 @@ export function Schedule() {
       {askFit && <ClassFitSheet initial={fit} onClose={() => setAskFit(false)} onSaved={reload} />}
 
       {detail && (
-        <Sheet onClose={() => (setDetail(null), setConfirmCancel(false))} label={detail.class_name}>
+        <Sheet onClose={closeDetail} label={detail.class_name} className={morph ? 'class-sheet morph' : 'class-sheet'}>
           <div className="stack">
             {/* Ze zdjęciem: zdjęcie na całą szerokość arkusza, data i nazwa leżą na nim. Bez zdjęcia – zwykły nagłówek. */}
             {detail.photo_url ? (
@@ -341,7 +406,7 @@ export function Schedule() {
             ) : detail.my_status === 'booked' ? (
               <>
                 {detail.my_guest && <p className="small">Zapisane we dwie – z Tobą idzie {detail.my_guest}.</p>}
-                {!detail.my_confirmed_at && Date.parse(detail.starts_at) - Date.now() < 24 * 3_600_000 && (
+                {!detail.my_confirmed_at && !started(detail) && Date.parse(detail.starts_at) - Date.now() < 24 * 3_600_000 && (
                   <button className="btn block" disabled={busy} onClick={() => act(() => api(`/bookings/${detail.my_booking_id}/confirm`, { method: 'POST' }))}>
                     Potwierdzam obecność
                   </button>
@@ -430,24 +495,23 @@ export function Schedule() {
   );
 }
 
-/** Karta zajęć z serduszkiem. W karuzeli – stała wysokość, w tygodniu – pełna szerokość jak dotąd. */
-function SessionCard({ s, fav, onFav, onOpen, reason, bleed }: { s: Session; fav: boolean; onFav: () => void; onOpen: () => void; reason?: string | null; bleed?: boolean }) {
+/** Mały kafelek zajęć do siatki w dwóch kolumnach: godzina, nazwa, prowadząca i wolne miejsca – reszta w arkuszu. */
+function SessionCard({ s, fav, onFav, onOpen, reason }: { s: Session; fav: boolean; onFav: () => void; onOpen: (tile: HTMLElement) => void; reason?: string | null }) {
   const free = s.capacity - s.taken;
   const past = Date.parse(s.starts_at) < Date.now();
   return (
-    <div className={bleed ? 'fav-wrap' : 'fav-wrap cc-item'}>
+    <div className="fav-wrap">
       <ClassCover
-        bleed={bleed}
+        compact
         photoUrl={s.photo_url}
-        photoRatio={s.photo_ratio}
-        onClick={onOpen}
+        onClick={(e) => onOpen(e.currentTarget)}
         dimmed={past || s.status === 'cancelled'}
-        eyebrow={`${fmtTime(s.starts_at)} · ${Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000)} min${s.kind === 'themed' ? ' · tematyczne' : s.kind === 'special' ? ' · specjalne' : ''}`}
+        eyebrow={`${fmtTime(s.starts_at)} · ${Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000)} min`}
         title={s.class_name}
         aside={<TrainerFace name={s.trainer_name} url={s.trainer_avatar_url} />}
         corner={
           s.my_status === 'booked' ? (
-            <span className="badge ok">{s.my_guest ? 'zapisane we dwie' : 'zapisana'}</span>
+            <span className="badge ok">{s.my_guest ? 'we dwie' : 'zapisana'}</span>
           ) : s.my_status === 'attended' ? (
             <span className="badge">byłaś</span>
           ) : s.my_status === 'waitlist' ? (
@@ -456,12 +520,14 @@ function SessionCard({ s, fav, onFav, onOpen, reason, bleed }: { s: Session; fav
             <span className="badge">odwołane</span>
           ) : reason && reason !== 'ulubione' ? (
             <span className="badge">{reason}</span>
+          ) : s.kind === 'themed' || s.kind === 'special' ? (
+            <span className="badge">{s.kind === 'themed' ? 'tematyczne' : 'specjalne'}</span>
           ) : null
         }
-        footer={s.status !== 'cancelled' && !past ? (free > 0 ? `${free} ${free === 1 ? 'wolne miejsce' : free < 5 ? 'wolne miejsca' : 'wolnych miejsc'}` : `Komplet · oczekujące: ${s.waiting}`) : null}
+        footer={s.status !== 'cancelled' && !past ? (free > 0 ? `${free} ${free === 1 ? 'wolne miejsce' : free < 5 ? 'wolne miejsca' : 'wolnych miejsc'}` : 'Komplet') : null}
       />
       <button type="button" className={`fav-btn${s.photo_url ? ' on-photo' : ''}`} aria-pressed={fav} aria-label={fav ? `Usuń ${s.class_name} z ulubionych` : `Dodaj ${s.class_name} do ulubionych`} onClick={onFav}>
-        <Icon name="heart" size={20} />
+        <Icon name="heart" size={16} />
       </button>
     </div>
   );
@@ -507,49 +573,72 @@ function DayRest({ kind, next, onNext }: { kind: DayRestKind; next: Session | nu
   );
 }
 
-function MonthGrid({ today, sessions, selected, onPick }: { today: string; sessions: Session[]; selected: string; onPick: (d: string) => void }) {
-  const first = new Date(`${today}T12:00:00Z`);
-  const offset = (first.getUTCDay() + 6) % 7;
-  const start = addDaysStr(today, -offset);
-  const cells = Array.from({ length: 35 }, (_, i) => addDaysStr(start, i));
+const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
+const MONTHS_OF = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'];
+
+/** Pierwszy i ostatni dzień miesiąca (YYYY-MM-DD) – bieżącego albo o `offset` dalej. */
+function monthBounds(today: string, offset: number) {
+  const [y, m] = today.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + offset, 1));
+  const last = new Date(Date.UTC(y, m + offset, 0));
+  return { first: first.toISOString().slice(0, 10), last: last.toISOString().slice(0, 10), month: first.getUTCMonth(), year: first.getUTCFullYear() };
+}
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
+
+/** Kalendarz jednego miesiąca: tylko jego dni, kropka – są zajęcia, ciemna kropka – Twój zapis. Minione dni wyciszone. */
+function MonthGrid({ month, today, sessions, selected, onPick, offset, onMonth }: { month: ReturnType<typeof monthBounds>; today: string; sessions: Session[]; selected: string; onPick: (d: string) => void; offset: number; onMonth: (o: number) => void }) {
+  const lead = (new Date(`${month.first}T12:00:00Z`).getUTCDay() + 6) % 7;
+  const cells = Array.from({ length: daysBetween(month.first, month.last) + 1 }, (_, i) => addDaysStr(month.first, i));
   const count = new Map<string, { all: number; mine: number }>();
   for (const s of sessions) {
+    if (s.status === 'cancelled') continue;
     const d = localDate(new Date(s.starts_at));
     const c = count.get(d) ?? { all: 0, mine: 0 };
     c.all++;
-    if (s.my_status) c.mine++;
+    if (s.my_status === 'booked' || s.my_status === 'waitlist') c.mine++;
     count.set(d, c);
   }
   return (
-    <div>
-      <div className="month-days">
+    <div className="month">
+      <div className="month-head">
+        <button type="button" className="month-nav prev" disabled={offset === 0} onClick={() => onMonth(0)} aria-label="Poprzedni miesiąc">
+          <Icon name="chevron" size={18} />
+        </button>
+        <span className="month-name">
+          {MONTHS[month.month]} <span className="muted">{month.year}</span>
+        </span>
+        <button type="button" className="month-nav" disabled={offset === 1} onClick={() => onMonth(1)} aria-label="Następny miesiąc">
+          <Icon name="chevron" size={18} />
+        </button>
+      </div>
+      <div className="month-grid" role="group" aria-label={`${MONTHS[month.month]} ${month.year}`}>
         {['pn', 'wt', 'śr', 'czw', 'pt', 'sob', 'nd'].map((d) => (
-          <div key={d} className="tiny muted center">
+          <span key={d} className="month-dow" aria-hidden="true">
             {d}
-          </div>
+          </span>
+        ))}
+        {Array.from({ length: lead }, (_, i) => (
+          <span key={`lead-${i}`} aria-hidden="true" />
         ))}
         {cells.map((d) => {
           const c = count.get(d);
-          const past = d < today;
-          const label = `${MONTH_DAY.format(new Date(`${d}T12:00:00Z`))}${c ? ` · zajęcia: ${c.all}${c.mine ? ', jesteś zapisana' : ''}` : ' · brak zajęć'}`;
+          const n = Number(d.slice(8));
           return (
             <button
               key={d}
-              className={`month-day${c && !past ? ' has-classes' : ''}${c?.mine && !past ? ' mine' : ''}`}
-              disabled={past}
+              type="button"
+              className={d === today ? 'month-cell is-today' : 'month-cell'}
+              disabled={d < today}
               aria-pressed={d === selected}
-              aria-label={label}
+              aria-label={`${n} ${MONTHS_OF[month.month]}, ${c ? classCount(c.all) : 'bez zajęć'}${c?.mine ? ', Twój zapis' : ''}`}
               onClick={() => onPick(d)}
             >
-              {Number(d.slice(8))}
+              {n}
+              <i className={c?.mine ? 'mine' : c ? 'has' : ''} aria-hidden="true" />
             </button>
           );
         })}
       </div>
-      <p className="tiny muted month-legend">
-        <span className="month-swatch has-classes" /> zajęcia
-        <span className="month-swatch mine" /> Twój zapis
-      </p>
     </div>
   );
 }

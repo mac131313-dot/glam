@@ -1,19 +1,19 @@
 // Podstrony aplikacji klientki: stos „otwórz → wróć” nad pięcioma zakładkami. Trasa to krótki tekst,
 // np. „passes”, „course/co1”, „survey/abc” – te same, które przychodzą w powiadomieniach (pole action).
-import { lazy, Suspense, type ComponentType } from 'react';
+import { useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react';
 import { DirectChatPage, GroupChatPage } from '../groupChat.tsx';
-import { Page, Spinner } from '../ui.tsx';
+import { Lazy, lazyRetry, Page, takeOrigin } from '../ui.tsx';
 
-const AccountPages = lazy(() => import('./AccountPages.tsx'));
-const PassPages = lazy(() => import('./PassPages.tsx'));
-const LoyaltyPages = lazy(() => import('./LoyaltyPages.tsx'));
-const WellbeingPages = lazy(() => import('./WellbeingPages.tsx'));
-const CommunityPages = lazy(() => import('./CommunityPages.tsx'));
-const CoursePages = lazy(() => import('./CoursePages.tsx'));
-const ShopPages = lazy(() => import('./ShopPages.tsx'));
-const EventPages = lazy(() => import('./EventPages.tsx'));
-const FeedbackPages = lazy(() => import('./Feedback.tsx'));
-const TrainerPages = lazy(() => import('./TrainerPages.tsx'));
+export const AccountPages = lazyRetry(() => import('./AccountPages.tsx'));
+const PassPages = lazyRetry(() => import('./PassPages.tsx'));
+const LoyaltyPages = lazyRetry(() => import('./LoyaltyPages.tsx'));
+const WellbeingPages = lazyRetry(() => import('./WellbeingPages.tsx'));
+export const CommunityPages = lazyRetry(() => import('./CommunityPages.tsx'));
+const CoursePages = lazyRetry(() => import('./CoursePages.tsx'));
+const ShopPages = lazyRetry(() => import('./ShopPages.tsx'));
+const EventPages = lazyRetry(() => import('./EventPages.tsx'));
+const FeedbackPages = lazyRetry(() => import('./Feedback.tsx'));
+const TrainerPages = lazyRetry(() => import('./TrainerPages.tsx'));
 
 export type RouteProps = { route: string; arg: string | null; close: () => void };
 
@@ -122,9 +122,50 @@ export function RouteView({ route, close, open }: { route: string; close: () => 
   if (head === 'groups' && arg) return <GroupChatPage groupId={arg} onBack={close} onWriteTrainer={(t) => open(`dm/${t}`)} />;
   // „Napisz do trenerki” – prywatna rozmowa (także z powiadomienia „dm/<trenerka>”).
   if (head === 'dm' && arg) return <DirectChatPage path={`/dm/${arg}`} onBack={close} hint="prywatnie · widzicie to tylko Wy dwie" />;
+  const body = <Lazy>{Group ? <Group route={head} arg={arg} close={close} /> : <p className="muted">Nie ma takiej strony.</p>}</Lazy>;
+  // Kod wejścia wyrasta z karty, którą kliknięto, i przy wyjściu do niej wraca.
+  if (head === 'checkin') return <PassPage title={TITLES[head]} close={close}>{body}</PassPage>;
   return (
     <Page title={TITLES[head] ?? ''} onBack={close}>
-      <Suspense fallback={<Spinner />}>{Group ? <Group route={head} arg={arg} close={close} /> : <p className="muted">Nie ma takiej strony.</p>}</Suspense>
+      {body}
+    </Page>
+  );
+}
+
+/** Strona, która wyrasta z klikniętego elementu (skala od jego środka) i przy wyjściu do niego wraca. */
+function PassPage({ title, close, children }: { title: string; close: () => void; children: ReactNode }) {
+  const [origin] = useState(() => {
+    const r = takeOrigin();
+    if (!r) return undefined;
+    return {
+      '--ox': `${r.left + r.width / 2}px`,
+      '--oy': `${r.top + r.height / 2}px`,
+      // Startowo strona jest niewiele większa od karty – nie mniej niż 0.12, żeby od razu było widać ruch.
+      '--os': Math.max(0.12, (r.width * 2) / window.innerWidth).toFixed(3),
+    } as CSSProperties;
+  });
+  const [leaving, setLeaving] = useState(false);
+  const done = useRef(false);
+  const finish = () => {
+    if (done.current) return;
+    done.current = true;
+    close();
+  };
+  const leave = () => {
+    if (leaving) return;
+    setLeaving(true);
+    // Zapas, gdyby animationend nie przyszło (np. karta w tle).
+    setTimeout(finish, 600);
+  };
+  return (
+    <Page
+      title={title}
+      onBack={leave}
+      className={`pass-page${leaving ? ' leaving' : ''}`}
+      style={origin}
+      onAnimationEnd={(e) => e.target === e.currentTarget && e.animationName === 'pass-close' && finish()}
+    >
+      {children}
     </Page>
   );
 }

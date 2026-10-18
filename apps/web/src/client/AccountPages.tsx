@@ -1,12 +1,12 @@
 // Konto i ustawienia (3, 2.2, 8, 8.1, 10, 11): powiadomienia per typ, ciche godziny, okolicznościowe,
 // prywatność i zgody, biometria, zmiana numeru, kalendarz, integracje, dostępność, eksport i usunięcie danych,
 // skrzynka Wiadomości (rozmowy + powiadomienia), czat z recepcją, pomoc (FAQ, regulamin, telefon), kod QR do wejścia.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CLASS_REMINDER_OPTIONS, classReminderOffsets, receptionSlots, WEEKDAY_LONG } from '@glam/core';
 import { api, fmtDay, fmtTime, session, useApi } from '../api.ts';
 import { getAppearance, setAppearance, type Appearance } from '../look.ts';
 import { disablePush, enablePush, passkeySupported, pushEnabled, pushSupported, registerPasskey } from '../push.ts';
-import { AuthVideo, Empty, Field, ListRow, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
+import { AuthVideo, Empty, Field, ListRow, QrCode, Pending, Toggle, useAction, useToast } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
 import { useClient } from './ClientApp.tsx';
@@ -49,8 +49,10 @@ export default function AccountPages({ route, close }: RouteProps) {
 function useSave() {
   const { reloadMe, reloadStudio } = useClient();
   const { run, busy } = useAction();
-  const save = (patch: Record<string, unknown>, msg = 'Zapisane') =>
+  /** `before` – krok, który musi się udać przed zapisem (np. zgoda na adres); jego błąd też trafia do komunikatu. */
+  const save = (patch: Record<string, unknown>, msg = 'Zapisane', before?: () => Promise<unknown>) =>
     run(async () => {
+      await before?.();
       await api('/me', { method: 'PATCH', body: patch, global: true });
       await reloadMe();
       await reloadStudio();
@@ -116,10 +118,7 @@ function Settings() {
           <button
             className="btn sm"
             disabled={!addr.line || !addr.city}
-            onClick={async () => {
-              await api('/me/consents', { method: 'PUT', global: true, body: { kind: 'address', granted: true } });
-              save({ address: addr }, 'Adres zapisany');
-            }}
+            onClick={() => save({ address: addr }, 'Adres zapisany', () => api('/me/consents', { method: 'PUT', global: true, body: { kind: 'address', granted: true } }))}
           >
             Zapisz adres
           </button>
@@ -354,7 +353,7 @@ function Privacy({ close }: { close: () => void }) {
         <p className="tiny muted m-0">Prywatny: przy Twoich wpisach widać tylko inicjał. Społeczność jest zamknięta w obrębie studia.</p>
       </section>
       {!consents.data ? (
-        <Spinner />
+        <Pending error={consents.error} reload={consents.reload} />
       ) : (
         <section>
           <div className="eyebrow">Zgody</div>
@@ -369,15 +368,23 @@ function Privacy({ close }: { close: () => void }) {
       )}
       <section className="stack">
         <div className="eyebrow">Twoje dane (RODO)</div>
-        <a className="btn ghost" href="/api/me/export" onClick={async (e) => {
-          e.preventDefault();
-          const res = await fetch('/api/me/export', { headers: { authorization: `Bearer ${session.token}` } });
-          const blob = await res.blob();
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = 'glam-moje-dane.json';
-          a.click();
-        }}>
+        <a
+          className="btn ghost"
+          href="/api/me/export"
+          onClick={(e) => {
+            e.preventDefault();
+            // Przez api(): błąd (brak sieci, wygasła sesja) kończy się komunikatem, a nie plikiem z treścią błędu.
+            run(async () => {
+              const data = await api('/me/export', { global: true });
+              const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `glam-moje-dane-${new Date().toISOString().slice(0, 10)}.json`;
+              a.click();
+              setTimeout(() => URL.revokeObjectURL(url), 10_000);
+            }, 'Kopia danych pobrana');
+          }}
+        >
           Pobierz kopię moich danych
         </a>
         <details>
@@ -578,7 +585,7 @@ function Accessibility() {
 const threadRoute = (t: ThreadItem) => (t.kind === 'reception' ? 'chat' : t.kind === 'dm' ? `dm/${t.id}` : `groups/${t.id}`);
 
 /**
- * Skrzynka „Wiadomości” (wejście z Start): wszystkie rozmowy na jednej liście – recepcja, trenerki, grupy –
+ * Skrzynka „Wiadomości” (zakładka w Razem): wszystkie rozmowy na jednej liście – recepcja, trenerki, grupy –
  * a pod nimi powitania i powiadomienia studia. Grupy, do których jeszcze nie należy, są w Razem → Grupy.
  */
 function Inbox() {
@@ -592,7 +599,7 @@ function Inbox() {
     const t = setInterval(() => document.visibilityState === 'visible' && reload(), 15_000);
     return () => clearInterval(t);
   }, [reload]);
-  if (!inbox.data || !threads.data) return <Spinner />;
+  if (!inbox.data || !threads.data) return <Pending error={inbox.error ?? threads.error} reload={() => (inbox.reload(), threads.reload())} />;
   return (
     <div className="stack-lg">
       <section>
@@ -651,7 +658,7 @@ function Chat() {
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' });
   }, [chat.data]);
-  if (!chat.data) return <Spinner />;
+  if (!chat.data) return <Pending error={chat.error} reload={chat.reload} />;
   return (
     <div className="stack">
       <p className="tiny muted center">{chat.data.open ? 'Recepcja jest teraz w studiu' : chat.data.next ? `Recepcja odpisze ${chat.data.next}` : 'Recepcja odpisze w godzinach pracy studia'}</p>
@@ -715,17 +722,62 @@ function Faq() {
 }
 
 function Checkin() {
-  const { data, reload } = useApi<{ code: string }>('/my/checkin-code');
+  const { data, error, reload } = useApi<{ code: string; short: string }>('/my/checkin-code');
   useEffect(() => {
     const t = setInterval(reload, 60 * 60_000);
     return () => clearInterval(t);
   }, [reload]);
-  if (!data) return <Spinner />;
+  // Pas tła zaczyna się w połowie kafelka – mierzymy, bo wysokość tekstu nad nim zależy od ekranu.
+  const tile = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = tile.current;
+    const page = el?.closest<HTMLElement>('.page');
+    if (!el || !page) return;
+    // offsetTop sumowany do .page – transformacje z animacji wejścia go nie przesuwają.
+    const place = () => {
+      let top = el.offsetHeight / 2;
+      for (let n: HTMLElement | null = el; n && n !== page; n = n.offsetParent as HTMLElement | null) top += n.offsetTop;
+      page.style.setProperty('--band', `${top}px`);
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [data]);
+  // Bez spinnera: układ stoi od pierwszej klatki (kafelek ma swój rozmiar), kod tylko się w nim pojawia.
   return (
-    <div className="stack center">
-      <p className="muted">Pokaż ten kod w recepcji albo przy bramce. Kod zmienia się codziennie.</p>
-      <QrCode text={data.code} size={240} label="Kod wejścia" />
-      <p className="tiny muted">Zrzut ekranu z wczoraj nie zadziała – otwieraj kod w aplikacji.</p>
+    // Kod na jasnym, uniesionym kafelku; od jego połowy w dół – spokojny pas tła (.pass-page::before).
+    <div className="pass-view">
+      <p className="pass-lead">Pokaż ten kod w recepcji.</p>
+      <div ref={tile} className="pass-tile">
+        {data ? <QrCode text={data.code} size={210} label="Kod wejścia" /> : <div className="qr" style={{ width: 210, height: 210 }} />}
+        {/* Gdy QR się nie czyta: 6 liter do podania na głos albo wpisania w recepcji. Miejsce zarezerwowane od początku. */}
+        <div className="pass-short">
+          <span className="pass-short-code">
+            {data ? (
+              <>
+                {data.short.slice(0, 3)}
+                <i aria-hidden="true">·</i>
+                {data.short.slice(3)}
+              </>
+            ) : (
+              ' '
+            )}
+          </span>
+          <span className="pass-short-label">kod, gdy QR nie działa</span>
+        </div>
+      </div>
+      {/* Bez zasięgu w recepcji i bez kodu zapisanego dziś w telefonie: mówimy, co zrobić, zamiast pustego kafelka. */}
+      {!data && error ? (
+        <p className="pass-note" role="alert">
+          Nie udało się pobrać kodu. Podaj w recepcji swój numer telefonu albo{' '}
+          <button className="link" onClick={reload}>
+            spróbuj ponownie
+          </button>
+          .
+        </p>
+      ) : (
+        <p className="pass-note">Zrzut ekranu z wczoraj nie zadziała – otwieraj kod w aplikacji.</p>
+      )}
     </div>
   );
 }

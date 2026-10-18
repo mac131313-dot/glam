@@ -41,7 +41,7 @@ import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { bookSession, cancelBooking, confirmAttendance, rateSession } from '../services/booking.ts';
 import { clientThreads } from './threads.ts';
 import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
-import { checkinCode } from '../services/checkin.ts';
+import { checkinCode, shortCheckinCode } from '../services/checkin.ts';
 import { logUsage } from '../services/dispatch.ts';
 import { attendedCount, awardPoints, badgeList, pointsOf, rewardProgress } from '../services/motivation.ts';
 import { notify } from '../services/notify.ts';
@@ -441,7 +441,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/my/bookings', member, async (req) => {
     const { scope, user } = ctx(req);
     return scope.all(
-      `SELECT b.id, b.status, b.rating, b.guest_name, s.starts_at, COALESCE(s.title, ct.name) AS class_name, u.name AS trainer_name
+      `SELECT b.id, b.status, b.rating, b.guest_name, s.starts_at, s.ends_at, COALESCE(s.title, ct.name) AS class_name, u.name AS trainer_name
        FROM bookings b JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id JOIN users u ON u.id = s.trainer_id
        WHERE b.studio_id = $studio AND b.user_id = $user ORDER BY s.starts_at DESC LIMIT 80`,
       { user: user.id },
@@ -459,6 +459,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const { studio, scope, user } = ctx(req);
     const b = req.body ?? ({} as typeof req.body);
     if (!['vacation', 'illness', 'pregnancy', 'loss', 'other'].includes(b.reason)) throw badRequest('Wybierz powód zawieszenia.');
+    // Starsze aplikacje mogą jeszcze wysłać „ciążę” – zapisujemy tylko ogólne „zdrowie” (dana szczególna, RODO art. 9).
+    if (b.reason === 'pregnancy') b.reason = 'illness';
     const row = scope.get<{ rules_json: string; valid_until: string; status: string; freezes_used: number; freeze_days_used: number }>('SELECT * FROM passes WHERE studio_id = $studio AND id = $id AND user_id = $u', { id: req.params.id, u: user.id });
     if (!row) throw notFound('Nie znaleziono karnetu.');
     const rules = JSON.parse(row.rules_json) as ProductRules;
@@ -899,7 +901,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
   // Kod QR do check-inu w recepcji / na bramce (C3) – zmienia się codziennie.
   app.get('/api/my/checkin-code', member, async (req) => {
     const { studio, user } = ctx(req);
-    return { code: checkinCode(studio.id, user.id, localParts(new Date(), studio.timezone).date) };
+    const date = localParts(new Date(), studio.timezone).date;
+    return { code: checkinCode(studio.id, user.id, date), short: shortCheckinCode(studio.id, user.id, date) };
   });
 
   app.get('/api/partners', member, async (req) => {

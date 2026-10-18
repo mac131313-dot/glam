@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { goalCount, goalExtra, plural, rewardCounterCopy } from '@glam/core';
 import { api, fmtDay, fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
-import { Empty, ListRow, Progress, QrCode, Sheet, Spinner, useAction } from '../ui.tsx';
+import { Empty, ListRow, Progress, Pending, QrCode, Sheet, rememberOrigin, useAction } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { PassMeter, type Meter } from './PassMeter.tsx';
@@ -60,19 +60,34 @@ const RITUALS = [
   'Mały krok też jest krokiem.',
 ];
 
+/**
+ * Kod wejścia ma się otworzyć płynnie – kod strony i generator QR ładujemy zawczasu, nie w trakcie animacji.
+ * Sam dzisiejszy kod też pobieramy od razu: service worker go zapisze, więc w recepcji zadziała i bez zasięgu.
+ */
+const preloadPass = () => {
+  import('./AccountPages.tsx').catch(() => {});
+  import('qrcode-generator').catch(() => {});
+  api('/my/checkin-code').catch(() => {});
+};
+
 export function Start() {
   const { studio, me, go, openShop, openBreath, open } = useClient();
   const { run } = useAction();
-  const { data: home, reload } = useApi<Home>('/home');
+  const { data: home, error, reload } = useApi<Home>('/home');
   const [popupDismissed, setPopupDismissed] = useState(false);
   const [ticket, setTicket] = useState<Upcoming | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(preloadPass, 1500);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     window.addEventListener('glam:passes-changed', reload);
     return () => window.removeEventListener('glam:passes-changed', reload);
   }, [reload]);
 
-  if (!home) return <Spinner />;
+  if (!home) return <Pending error={error} reload={reload} />;
   const next = home.upcoming[0];
   const ritual = home.ritual ?? RITUALS[new Date().getDate() % RITUALS.length];
   const [hello] = home.greeting.split(',');
@@ -80,14 +95,17 @@ export function Start() {
   return (
     <div className="stack-lg">
       <section style={{ paddingTop: 8, position: 'relative' }}>
-        {/* Jedno wejście do wszystkich rozmów i powiadomień; kropka – coś czeka na przeczytanie. */}
+        {/* Kod wejścia zawsze pod ręką – ten sam co w Profilu. Wiadomości są w Razem. */}
         <button
           className="icon-btn inbox-btn"
-          onClick={() => open('messages')}
-          aria-label={home.messagesUnread + home.unread > 0 ? `Wiadomości, nieprzeczytane: ${home.messagesUnread + home.unread}` : 'Wiadomości'}
+          onPointerDown={preloadPass}
+          onClick={(e) => {
+            rememberOrigin(e.currentTarget);
+            open('checkin');
+          }}
+          aria-label="Mój kod wejścia"
         >
-          <Icon name="chat" size={22} />
-          {home.messagesUnread + home.unread > 0 && <span className="inbox-dot" aria-hidden />}
+          <Icon name="pass" size={22} />
         </button>
         <p className="eyebrow">{new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}</p>
         <h1 style={{ fontSize: '2.4rem', lineHeight: 1.05 }}>
@@ -148,7 +166,14 @@ export function Start() {
       </section>
 
       <section className="card soft stack">
-        <div className="eyebrow">Mój karnet</div>
+        <div className="row between">
+          <div className="eyebrow" style={{ margin: 0 }}>Mój karnet</div>
+          {home.passes.length > 0 && (
+            <button className="link small" onClick={() => open('passes')}>
+              Szczegóły
+            </button>
+          )}
+        </div>
         {home.passes.length === 0 ? (
           <>
             <p style={{ margin: 0 }}>Nie masz aktywnego karnetu.</p>
@@ -216,7 +241,7 @@ export function Start() {
 
       <hr className="hairline" />
 
-      {/* Na dole tylko skróty do rzeczy dla siebie. Pomoc i telefon do studia są w Profilu → Pomoc, rozmowy pod ikoną u góry. */}
+      {/* Na dole tylko skróty do rzeczy dla siebie. Pomoc i telefon do studia są w Profilu → Pomoc, rozmowy w Razem → Wiadomości. */}
       <div className="list-rows">
         <ListRow title="Trzy minuty oddechu" hint="Rytm 4–6, prowadzi aplikacja" onClick={() => openBreath({ patternId: 'calm', minutes: 3 })} />
         {hasFeature(studio, 'shop') && <ListRow title="Sklep studia" hint="Maty, akcesoria i stroje do domu" onClick={() => open('shop')} />}
@@ -226,9 +251,10 @@ export function Start() {
       {home.welcome && !popupDismissed && (
         <WelcomePopup
           welcome={home.welcome}
-          onClose={async () => {
+          onClose={() => {
             setPopupDismissed(true);
-            await api(`/welcome/${home.welcome!.id}/seen`, { method: 'POST' });
+            // Bez sieci powitanie pokaże się jeszcze raz przy następnym wejściu – nic więcej się nie stanie.
+            api(`/welcome/${home.welcome!.id}/seen`, { method: 'POST' }).catch(() => {});
           }}
           onBook={() => go('schedule')}
           onStudio={() => go('community')}

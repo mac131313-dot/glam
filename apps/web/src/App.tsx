@@ -7,16 +7,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { can, type Look } from '@glam/core';
 import { api, session, SURFACE } from './api.ts';
 import { PERSONAS } from './demo.ts';
-import { ClientApp } from './client/ClientApp.tsx';
 import { applyLook, applySystemLook } from './look.ts';
 import { DeviceFrame, Landing } from './screens/Landing.tsx';
 import { StudioPicker } from './screens/StudioPicker.tsx';
-import { CourseSite } from './site/CourseSite.tsx';
-import { ShopSite } from './site/ShopSite.tsx';
-import { StudioSite } from './site/StudioSite.tsx';
-import { StaffApp } from './staff/StaffApp.tsx';
-import { SiteEditor } from './staff/site-editor/SiteEditor.tsx';
-import { Spinner } from './ui.tsx';
+import { Lazy, lazyRetry, Spinner } from './ui.tsx';
+
+// Każda powierzchnia osobno, na żądanie: klientka nie pobiera panelu studia ani stron WWW (i odwrotnie).
+const ClientApp = lazyRetry(() => import('./client/ClientApp.tsx').then((m) => ({ default: m.ClientApp })));
+const StaffApp = lazyRetry(() => import('./staff/StaffApp.tsx').then((m) => ({ default: m.StaffApp })));
+const SiteEditor = lazyRetry(() => import('./staff/site-editor/SiteEditor.tsx').then((m) => ({ default: m.SiteEditor })));
+const CourseSite = lazyRetry(() => import('./site/CourseSite.tsx').then((m) => ({ default: m.CourseSite })));
+const ShopSite = lazyRetry(() => import('./site/ShopSite.tsx').then((m) => ({ default: m.ShopSite })));
+const StudioSite = lazyRetry(() => import('./site/StudioSite.tsx').then((m) => ({ default: m.StudioSite })));
 
 export type MeStudio = { id: string; name: string; city: string; logo: string; logoUrl: string | null; logoWide: boolean; accent: string; tagline: string; roles: string[]; look: Look; panelTint?: string };
 export type UserPrefs = {
@@ -61,11 +63,11 @@ export function App() {
   // Publiczna strona studia: /s/:slug – bez logowania, dane z /api/public.
   // Strona sprzedażowa kursu: /s/:slug/kurs/:id. Sklep: /s/:slug/sklep i /s/:slug/sklep/:id.
   const coursePage = location.pathname.match(/^\/s\/([^/]+)\/kurs\/([^/]+)/);
-  if (coursePage) return <CourseSite slug={decodeURIComponent(coursePage[1])} courseId={decodeURIComponent(coursePage[2])} />;
+  if (coursePage) return <Lazy><CourseSite slug={decodeURIComponent(coursePage[1])} courseId={decodeURIComponent(coursePage[2])} /></Lazy>;
   const shopPage = location.pathname.match(/^\/s\/([^/]+)\/sklep(?:\/([^/]+))?\/?$/);
-  if (shopPage) return <ShopSite slug={decodeURIComponent(shopPage[1])} productId={shopPage[2] ? decodeURIComponent(shopPage[2]) : null} />;
+  if (shopPage) return <Lazy><ShopSite slug={decodeURIComponent(shopPage[1])} productId={shopPage[2] ? decodeURIComponent(shopPage[2]) : null} /></Lazy>;
   const site = location.pathname.match(/^\/s\/([^/]+)/);
-  if (site) return <StudioSite slug={decodeURIComponent(site[1])} />;
+  if (site) return <Lazy><StudioSite slug={decodeURIComponent(site[1])} /></Lazy>;
   if (SURFACE === 'home') return <HomeOrDomain />;
   return SURFACE === 'app' ? (
     <DeviceFrame>
@@ -186,10 +188,11 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
   }
   // Edytor strony WWW: pełny ekran poza menu panelu – z własną bramką uprawnień (layout panelu go nie chroni).
   if (surface === 'panel' && location.pathname.startsWith('/panel/strona')) {
-    return can(studio.roles, 'config.edit') ? <SiteEditor key={studioId} /> : <div className="empty" style={{ paddingTop: 80 }}>Edytor strony jest dostępny dla właścicielki studia.</div>;
+    return can(studio.roles, 'config.edit') ? <Lazy><SiteEditor key={studioId} /></Lazy> : <div className="empty" style={{ paddingTop: 80 }}>Edytor strony jest dostępny dla właścicielki studia.</div>;
   }
   if (surface === 'panel') {
     return (
+      <Lazy>
       <StaffApp
         key={studioId}
         me={me}
@@ -200,7 +203,8 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
         onPreviewClient={() => window.open('/app', 'glam-app')}
         onLogout={() => {}}
       />
+      </Lazy>
     );
   }
-  return <ClientApp key={studioId} me={me} reloadMe={loadMe} onSwitchStudio={() => setPicking(true)} onLogout={() => {}} />;
+  return <Lazy><ClientApp key={studioId} me={me} reloadMe={loadMe} onSwitchStudio={() => setPicking(true)} onLogout={() => {}} /></Lazy>;
 }
