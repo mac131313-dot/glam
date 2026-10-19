@@ -26,6 +26,7 @@ const ScheduleExtras = lazy(() => import('./ScheduleExtras.tsx'));
 const Gifts = lazy(() => import('./Gifts.tsx'));
 const ShopAdmin = lazy(() => import('./ShopAdmin.tsx'));
 const EventsAdmin = lazy(() => import('./EventsAdmin.tsx'));
+const Announcements = lazy(() => import('./Announcements.tsx'));
 const CreatorStudio = lazy(() => import('./CreatorStudio.tsx'));
 const CommunityAdmin = lazy(() => import('./CommunityAdmin.tsx'));
 const MusicAdmin = lazy(() => import('./MusicAdmin.tsx'));
@@ -63,7 +64,6 @@ const SECTIONS: Section[] = [
       { id: 'desk', label: 'Kasa', perms: ['desk.sell'] },
     ],
   },
-  { id: 'passes', label: 'Wejściówki', icon: 'qr', perms: ['participants.manage'], group: 'Codziennie' },
   { id: 'today', label: 'Dziś', icon: 'sun', perms: ['day.own'], group: 'Codziennie' },
   { id: 'clients', label: 'Klientki', icon: 'people', perms: ['clients.view', 'notes.write'], group: 'Codziennie' },
   { id: 'messages', label: 'Wiadomości', icon: 'chat', perms: ['messages.group.own', 'messages.group.all', 'chat.answer', 'community.moderate'], group: 'Codziennie' },
@@ -79,6 +79,7 @@ const SECTIONS: Section[] = [
       { id: 'types', label: 'Typy zajęć', perms: ['schedule.edit'] },
     ],
   },
+  { id: 'passes', label: 'Wejściówki', icon: 'qr', perms: ['participants.manage'], group: 'Codziennie' },
   { id: 'welcomes', label: 'Powitania', icon: 'mail', perms: ['welcomes.write', 'welcomes.approve'], group: 'Relacje' },
   { id: 'profile', label: 'Mój profil', icon: 'user', perms: ['day.own'], group: 'Relacje', role: 'trainer' },
   { id: 'gifts', label: 'Kartki i vouchery', icon: 'pen', perms: ['cards.write', 'cards.manage'], group: 'Relacje' },
@@ -95,6 +96,8 @@ const SECTIONS: Section[] = [
     ],
   },
   { id: 'courses', label: 'Kursy', icon: 'cap', perms: ['courses.create', 'courses.approve'], group: 'Treści' },
+  // Ogłoszenia wydarzeń w studiu z powiadomieniem do wszystkich klientek (bez zapisów – te są w Relacjach).
+  { id: 'announcements', label: 'Wydarzenia', icon: 'flag', perms: ['config.edit'], group: 'Treści' },
   {
     id: 'community',
     label: 'Społeczność',
@@ -262,6 +265,7 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
           {place === 'schedule/extras' && <ScheduleExtras roles={roles} />}
           {place === 'schedule/types' && <ClassTypesAdmin />}
           {section === 'courses' && <CreatorStudio roles={roles} />}
+          {section === 'announcements' && <Announcements />}
           {place === 'community/moderation' && <CommunityAdmin />}
           {place === 'community/music' && <MusicAdmin />}
           {place === 'marketing/campaigns' && <Marketing />}

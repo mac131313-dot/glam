@@ -10,6 +10,7 @@ import { threadRoutes } from './routes/threads.ts';
 import { configRoutes } from './routes/config.ts';
 import { coursePageRoutes } from './routes/coursePage.ts';
 import { courseRoutes } from './routes/courses.ts';
+import { announcementRoutes } from './routes/announcements.ts';
 import { eventRoutes } from './routes/events.ts';
 import { healthRoutes } from './routes/health.ts';
 import { logoRoutes } from './routes/logo.ts';
@@ -70,6 +71,7 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   uploadRoutes(app, deps);
   shopRoutes(app, deps);
   eventRoutes(app, deps);
+  announcementRoutes(app, deps);
   musicRoutes(app, deps);
   platformRoutes(app, deps);
   logoRoutes(app, deps);

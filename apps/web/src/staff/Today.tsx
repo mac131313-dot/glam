@@ -122,7 +122,7 @@ export function Today({ roles }: { roles: Role[] }) {
                       Nie przyszła
                     </button>
                     {isDesk && (
-                      <button className="btn danger sm" onClick={() => run(() => api(`/staff/bookings/${p.booking_id}`, { method: 'DELETE' }).then(reload), 'Odwołane, wejście wróciło')}>
+                      <button className="btn danger sm" onClick={() => window.confirm(`Wypisać ${p.name} z zajęć ${s.class_name}? Wejście wróci na karnet.`) && run(() => api(`/staff/bookings/${p.booking_id}`, { method: 'DELETE' }).then(reload), 'Odwołane, wejście wróciło')}>
                         Odwołaj
                       </button>
                     )}

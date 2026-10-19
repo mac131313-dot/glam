@@ -132,7 +132,7 @@ function Campaigns() {
                 <button className="btn sm" onClick={() => window.confirm('Wysłać teraz?') && run(() => api(`/owner/campaigns/${c.id}/send`, { method: 'POST' }).then((r) => (list.reload(), r)))}>
                   Wyślij teraz
                 </button>
-                <button className="btn ghost sm" onClick={() => run(() => api(`/owner/campaigns/${c.id}`, { method: 'DELETE' }).then(list.reload))}>
+                <button className="btn ghost sm" onClick={() => window.confirm(`Usunąć kampanię „${c.name}”?`) && run(() => api(`/owner/campaigns/${c.id}`, { method: 'DELETE' }).then(list.reload))}>
                   Usuń
                 </button>
               </div>
