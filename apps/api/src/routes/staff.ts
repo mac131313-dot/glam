@@ -6,6 +6,7 @@ import {
   addDays,
   can,
   checkAccess,
+  checkinStep,
   describePass,
   formatPLN,
   localParts,
@@ -36,7 +37,7 @@ import { clientFacts } from '../services/segments.ts';
 import type { Studio } from '../services/studio.ts';
 import { activateGuestPass } from './account.ts';
 import { createGuestPass, deliverGuestPass, guestCode, passesView } from './client.ts';
-import { checkinCodeOtherDay, findByShortCode, isShortCheckinCode, parseCheckinCode } from '../services/checkin.ts';
+import { checkinCodeProblem, findByShortCode, isShortCheckinCode, parseCheckinCode } from '../services/checkin.ts';
 
 export const WELCOME_MAX = 400;
 
@@ -47,7 +48,7 @@ export const WELCOME_TEMPLATES = [
   { id: 'humor', label: 'Z humorem', body: 'Hej! Jestem {trenerka} i obiecuję, że nie będę się śmiać, jeśli za pierwszym razem coś Ci nie wyjdzie. Każda z nas kiedyś zaczynała od drżących kolan 😄' },
 ];
 
-/** Kod wejściówki od znajomej: sam kod (8 znaków) albo link z QR (…/app?wejsciowka=KOD). Kod klientki (GLAM1.…) to nie wejściówka. */
+/** Kod wejściówki od znajomej: sam kod (8 znaków) albo link z QR (…/app?wejsciowka=KOD). Kod klientki (GLAM2.…) to nie wejściówka. */
 export function guestPassCodeOf(raw: string): string | null {
   const fromUrl = /[?&]wejsciowka=([A-Za-z0-9]+)/.exec(raw)?.[1];
   if (fromUrl) return fromUrl.toUpperCase();
@@ -260,13 +261,16 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
           activated = variant;
         }
       } else if (shortMatch) clientId = shortMatch;
-      else if (raw) clientId = parseCheckinCode(studio.id, raw, today);
+      else if (raw) clientId = parseCheckinCode(studio.id, raw, today, checkinStep(now.getTime()));
       else if (body.phone) clientId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(normalizePhone(body.phone)) as { id: string } | undefined)?.id ?? null;
 
       if (!clientId || !scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: clientId })) {
-        const otherDay = raw ? checkinCodeOtherDay(studio.id, raw, today) : null;
-        if (otherDay) {
-          throw conflict('code_other_day', `Ten kod jest na ${otherDay.split('-').reverse().join('.')}, a działa tylko w swoim dniu. Poproś o otwarcie „Mój kod wejścia” w aplikacji albo wpisz numer telefonu.`);
+        const problem = raw ? checkinCodeProblem(studio.id, raw, today) : null;
+        if (problem?.kind === 'other_day') {
+          throw conflict('code_other_day', `Ten kod jest na ${problem.date.split('-').reverse().join('.')}, a działa tylko w swoim dniu. Poproś o otwarcie „Mój kod wejścia” w aplikacji albo wpisz numer telefonu.`);
+        }
+        if (problem?.kind === 'expired') {
+          throw conflict('code_expired', 'Ten kod wygasł – to pewnie zrzut ekranu. Kod w aplikacji zmienia się co 30 sekund: poproś o otwarcie „Mój kod wejścia” albo wpisz numer telefonu.');
         }
         throw notFound(body.phone ? 'Nie ma klientki z tym numerem w studiu.' : 'Nie rozpoznałyśmy kodu. Poproś o odświeżenie kodu w aplikacji albo wpisz numer telefonu.');
       }

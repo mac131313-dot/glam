@@ -41,7 +41,7 @@ import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { bookSession, cancelBooking, confirmAttendance, rateSession } from '../services/booking.ts';
 import { clientThreads } from './threads.ts';
 import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
-import { checkinCode, shortCheckinCode } from '../services/checkin.ts';
+import { checkinSeed, shortCheckinCode } from '../services/checkin.ts';
 import { logUsage } from '../services/dispatch.ts';
 import { attendedCount, awardPoints, badgeList, pointsOf, rewardProgress } from '../services/motivation.ts';
 import { notify } from '../services/notify.ts';
@@ -220,8 +220,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       { user: user.id, now: now.toISOString() },
     ).map((u) => ({
       ...u,
-      // Kod wejścia – ten sam, który recepcja skanuje w /staff/checkin. Wydajemy go dopiero w dniu zajęć, bo wcześniej i tak by nie zadziałał.
-      checkin_code: u.status === 'booked' && localParts(new Date(u.starts_at), studio.timezone).date === lp.date ? checkinCode(studio.id, user.id, lp.date) : null,
+      // Sekret kodu wejścia – telefon liczy z niego QR co 30 s, recepcja skanuje go w /staff/checkin. Wydajemy go dopiero w dniu zajęć, bo wcześniej i tak by nie zadziałał.
+      checkin: u.status === 'booked' && localParts(new Date(u.starts_at), studio.timezone).date === lp.date ? checkinSeed(studio.id, user.id, lp.date) : null,
     }));
     const welcome = scope.get<Record<string, unknown>>(
       `SELECT w.id, w.body, w.kind, w.video_id, u.name AS trainer_name FROM welcome_messages w LEFT JOIN users u ON u.id = w.trainer_id
@@ -898,11 +898,11 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     return { ok: true };
   });
 
-  // Kod QR do check-inu w recepcji / na bramce (C3) – zmienia się codziennie.
+  // Kod QR do check-inu w recepcji / na bramce (C3): dzienny sekret, z którego telefon liczy QR co 30 s, i zapasowy kod z liter.
   app.get('/api/my/checkin-code', member, async (req) => {
     const { studio, user } = ctx(req);
     const date = localParts(new Date(), studio.timezone).date;
-    return { code: checkinCode(studio.id, user.id, date), short: shortCheckinCode(studio.id, user.id, date) };
+    return { ...checkinSeed(studio.id, user.id, date), short: shortCheckinCode(studio.id, user.id, date) };
   });
 
   app.get('/api/partners', member, async (req) => {

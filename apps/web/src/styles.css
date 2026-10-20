@@ -59,6 +59,8 @@
   --font-label: 'Outfit', system-ui, sans-serif;
   --shadow: 0 1px 2px rgb(27 23 21 / 0.03), 0 12px 32px -26px rgb(27 23 21 / 0.14);
   --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
+  /* Krzywa jak sprężyna bez odbicia (tłumienie 1.0) – okna i przełączniki w panelu. */
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   color-scheme: light;
 }
 :root[data-theme='dark'] { color-scheme: dark; --danger: #e3a194; --shadow: 0 18px 40px -22px rgb(0 0 0 / 0.6); }
@@ -407,6 +409,72 @@ textarea.input { border-radius: var(--radius-sm); resize: vertical; min-height: 
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-4); flex-wrap: wrap; }
 .page-head h1 { margin: 0; }
 
+/* ——— Panel: odpowiedź na dotyk, ruch i materiały ———
+   Reakcja w chwili wciśnięcia (nie po puszczeniu), okna wchodzą i wychodzą tą samą drogą, zakładki przesuwają
+   jedno tło. Tylko panel – aplikacja klientki ma własne animacje. */
+.side-group-label { letter-spacing: 0.02em; } /* drobny tekst czyta się lepiej odrobinę rozstrzelony */
+.todo-row { transition: background 0.2s var(--ease); }
+.staff :is(.side-link, .todo-row, .list-row, .chip, .tint-option, .wb-slot, .seg-tab, .btn):active { transition-duration: 0s; }
+.staff .side-link:active { background: color-mix(in srgb, var(--ink) 7%, var(--soft)); }
+.staff :is(.todo-row, .list-row):active { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+.staff :is(.chip, .tint-option):active { transform: scale(0.97); }
+.staff .wb-slot:active { transform: scale(0.98); border-color: var(--ink); }
+
+/* Zakładki sekcji: przełącznik segmentowy z jednym tłem, które jedzie pod wybraną zakładkę (StaffApp → SectionTabs). */
+.seg-tabs { position: relative; isolation: isolate; display: inline-flex; gap: 2px; max-width: 100%; padding: 3px; overflow-x: auto; scrollbar-width: none; background: var(--soft); border-radius: 10px; }
+.seg-tabs::-webkit-scrollbar { display: none; }
+.seg-tab { flex: none; min-height: 32px; padding: 6px 14px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-family: var(--font-head); font-size: var(--text-sm); font-weight: 500; white-space: nowrap; cursor: pointer; transition: color 0.2s var(--ease), transform 0.2s var(--ease); }
+.seg-tab:hover, .seg-tab[aria-selected='true'] { color: var(--ink); }
+.seg-tab:active { transform: scale(0.96); }
+.seg-tab:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+.seg-thumb { position: absolute; z-index: -1; top: 3px; bottom: 3px; left: 0; border-radius: 8px; background: var(--surface); box-shadow: 0 1px 2px rgb(27 23 21 / 0.08), 0 0 0 0.5px rgb(27 23 21 / 0.06); transition: transform 0.4s var(--ease-spring), width 0.4s var(--ease-spring); }
+
+/* Zmiana ekranu: krótkie przenikanie. Tylko opacity – transform na rodzicu psułby okna z position: fixed. */
+.staff-view { animation: fade 0.22s var(--ease); }
+
+/* Okna: tło matowieje stopniowo, okno rośnie z lekkiego pomniejszenia i wraca tą samą drogą (ui.tsx → Sheet). */
+.staff .overlay { animation: scrim-in 0.3s var(--ease); }
+.staff .overlay.is-closing { animation: scrim-out 0.2s ease-in forwards; pointer-events: none; }
+.staff .overlay.is-closing .sheet { animation: sheet-down 0.2s ease-in forwards; }
+@media (min-width: 720px) {
+  /* Okno na środku nie daje się przeciągać – uchwyt obiecywałby gest, którego nie ma. */
+  .staff .sheet-handle { display: none; }
+  .staff .sheet { animation: sheet-in 0.36s var(--ease-spring); }
+  .staff .overlay.is-closing .sheet { animation-name: sheet-out; }
+}
+@keyframes scrim-in { from { background-color: transparent; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); } }
+@keyframes scrim-out { to { background-color: transparent; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); } }
+@keyframes sheet-in { from { opacity: 0; transform: scale(0.96); } }
+@keyframes sheet-out { to { opacity: 0; transform: scale(0.97); } }
+@keyframes sheet-down { to { opacity: 0; transform: translateY(30px); } }
+
+/* Lista rozwijana w panelu rośnie od pola, które ją otworzyło (transform-origin ustawia Select). */
+.select-list.from-trigger { animation: menu-in 0.22s var(--ease-spring); }
+@keyframes menu-in { from { opacity: 0; transform: scale(0.97); } }
+
+/* Komunikat w panelu siedzi nisko – nie ma tu pływającej nawigacji aplikacji. */
+body:has(.staff) .toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
+
+@media (max-width: 820px) {
+  /* Pasek panelu na telefonie: półprzezroczysty materiał, treść przewija się pod nim. */
+  .staff .mobile-nav { background: color-mix(in srgb, var(--bg) 80%, transparent); backdrop-filter: blur(20px) saturate(1.4); -webkit-backdrop-filter: blur(20px) saturate(1.4); }
+  /* Linia pod paskiem pojawia się dopiero, gdy coś pod nim jest – na górze strony pasek zlewa się z tłem. */
+  @supports (animation-timeline: scroll()) {
+    .staff .mobile-nav { border-bottom-color: transparent; animation: edge-in linear both; animation-timeline: scroll(root); animation-range: 0 24px; }
+  }
+}
+@keyframes edge-in { to { border-bottom-color: var(--line); } }
+
+@media (prefers-reduced-transparency: reduce) {
+  .staff .overlay { backdrop-filter: none; -webkit-backdrop-filter: none; background: color-mix(in srgb, var(--ink) 45%, transparent); }
+  .staff .mobile-nav { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+  .staff { --line: color-mix(in srgb, var(--ink) 35%, var(--bg)); --muted: color-mix(in srgb, var(--ink) 82%, var(--bg)); }
+  .staff .side-link[aria-current='page'] { box-shadow: inset 0 0 0 1px var(--ink); }
+  .seg-thumb { box-shadow: 0 0 0 1px var(--ink); }
+}
+
 @media (max-width: 820px) {
   /* Pasek ma swoją wysokość, a nadmiar miejsca na krótkiej stronie idzie do treści – inaczej wiersz paska rósł i zostawiał pusty pas. */
   .staff { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
@@ -592,6 +660,16 @@ label.btn { cursor: pointer; }
 .list-row-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; flex: none; }
 .field-label { font-family: var(--font-head); font-size: var(--text-xs); letter-spacing: 0.04em; color: var(--muted); }
 .qr { border-radius: 14px; display: block; margin: 0 auto; background: #fff; }
+/* Kod wejścia na żywo: pod QR kreska odliczająca 30 s do zmiany kodu i zegar z sekundami z pulsującą kropką.
+   Na zrzucie ekranu wszystko stoi – recepcja widzi to od razu. Cyfry bez szeryfu i o stałej szerokości, żeby zegar nie skakał. */
+.live-qr { display: grid; justify-items: center; gap: 10px; }
+.live-qr-bar { display: block; width: 56%; height: 2px; border-radius: 1px; background: color-mix(in srgb, currentColor 12%, transparent); overflow: hidden; }
+.live-qr-bar i { display: block; height: 100%; background: currentColor; opacity: 0.5; transform-origin: left; transition: transform 1s linear; }
+.live-qr-clock { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-head); font-size: 0.72rem; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; opacity: 0.55; }
+.live-qr-clock i { width: 6px; height: 6px; border-radius: 50%; background: #3f8f5a; animation: live-pulse 1.6s ease-in-out infinite; }
+.pass-tile .live-qr { color: rgb(27 23 21 / 0.9); }
+@keyframes live-pulse { 50% { opacity: 0.25; transform: scale(0.7); } }
+@media (prefers-reduced-motion: reduce) { .live-qr-clock i { animation: none; } }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap-grid); }
 .pill-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* Skala 1–5 (LevelPicker): słowo poziomu nad cienkim suwakiem; 5 kropek-stopni na szynie, przebyty odcinek w kolorze tekstu.
@@ -1250,9 +1328,15 @@ html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
 .month-day-head h2 { margin: 0; font-size: 1.12rem; letter-spacing: -0.01em; }
 .month-day-head h2::first-letter { text-transform: uppercase; }
 
-/* ——— Grafik: siatka zajęć w dwóch kolumnach („Dopasowane do Ciebie”, pozostałe, tydzień), serduszko ulubionych, ankieta ——— */
+/* ——— Grafik: karuzela dużych kart zajęć („Dopasowane do Ciebie”, pozostałe, tydzień, miesiąc), serduszko ulubionych, ankieta ——— */
 .carousel-title { margin: 0; font-size: 1.35rem; white-space: nowrap; }
-.session-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+/* Karuzela sięga krawędzi ekranu, a karty zaczynają się na linii treści; kolejna karta zagląda zza prawej krawędzi. */
+.cover-carousel { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scroll-padding-inline: var(--gutter); padding-bottom: 4px; }
+.cover-carousel::-webkit-scrollbar { display: none; }
+.cover-carousel > .cc-item { flex: 0 0 84%; max-width: 380px; scroll-snap-align: start; }
+.cover-carousel > .cc-item:only-child { flex-basis: 100%; max-width: 440px; }
+/* Jedna proporcja 4:5 dla wszystkich kart – równa wysokość w rzędzie, niezależnie od wgranego zdjęcia. */
+.cover-carousel .cover { aspect-ratio: 4 / 5; box-shadow: none; }
 /* Mały kafelek: kwadrat, mniejsze litery, nazwa najwyżej w dwóch linijkach, prowadząca jako mała buźka. */
 .cover.compact { aspect-ratio: 1; min-height: 0; box-shadow: none; border-radius: min(var(--radius), 22px); }
 .cover.compact .cover-body { left: 14px; right: 14px; bottom: 13px; gap: 2px; }
@@ -1264,7 +1348,7 @@ html.a11y-reduce :is(.peony-petals, .peony-bokeh) { display: none; }
 .cover.compact .badge { font-size: 0.64rem; padding: 2px 9px; }
 .cover.compact .cover-aside { right: 12px; bottom: 13px; }
 .cover.compact .cover-face { width: 28px; height: 28px; font-size: 0.9rem; box-shadow: 0 0 0 1.5px rgb(255 255 255 / 0.85); }
-.session-grid .fav-btn { top: 10px; left: 10px; width: 30px; height: 30px; }
+
 .fav-wrap { position: relative; }
 .fav-btn { position: absolute; top: 12px; left: 12px; width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 999px; cursor: pointer; background: rgb(255 255 255 / 0.7); color: var(--ink); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: transform 0.2s var(--ease); }
 .fav-btn.on-photo { background: rgb(255 255 255 / 0.2); color: #fff; }

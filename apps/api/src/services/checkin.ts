@@ -1,24 +1,31 @@
-// Kod QR klientki do check-inu (C3, 4.11): podpisany HMAC, ważny w dniu wystawienia – zrzut ekranu z wczoraj nie zadziała.
+// Kod QR klientki do check-inu (C3, 4.11): zmienia się co 30 s (liveCheckinCode z core), więc zrzut ekranu szybko przestaje działać.
+// Telefon dostaje dzienny sekret i sam liczy kody, także offline; sekret jest podpisany HMAC i ważny tylko w swoim dniu.
 import { createHmac } from 'node:crypto';
+import { acceptCheckinStep, liveCheckinCode, type LiveCheckin } from '@glam/core';
 
 const key = () => process.env.GLAM_QR_KEY ?? 'dev-qr-key';
 
-export function checkinCode(studioId: string, userId: string, date: string): string {
-  const sig = createHmac('sha256', key()).update(`${studioId}:${userId}:${date}`).digest('base64url').slice(0, 16);
-  return `GLAM1.${userId}.${date}.${sig}`;
+export function checkinSeed(studioId: string, userId: string, date: string): LiveCheckin {
+  return { user: userId, date, seed: createHmac('sha256', key()).update(`seed:${studioId}:${userId}:${date}`).digest('base64url').slice(0, 22) };
 }
 
-export function parseCheckinCode(studioId: string, code: string, today: string): string | null {
-  const [v, userId, date] = code.trim().split('.');
-  if (v !== 'GLAM1' || !userId || date !== today) return null;
-  return checkinCode(studioId, userId, date) === code.trim() ? userId : null;
+/** Prawdziwy kod tej klientki (podpis się zgadza) – bez sprawdzania dnia i okna. */
+function genuine(studioId: string, code: string): { user: string; date: string; step: number } | null {
+  const [v, user, date, step] = code.trim().split('.');
+  if (v !== 'GLAM2' || !user || !date || !/^\d+$/.test(step ?? '')) return null;
+  return liveCheckinCode(checkinSeed(studioId, user, date), Number(step)) === code.trim() ? { user, date, step: Number(step) } : null;
 }
 
-/** Data z prawdziwego kodu wystawionego na inny dzień niż dziś (np. zrzut ekranu z wczoraj); w pozostałych przypadkach null. */
-export function checkinCodeOtherDay(studioId: string, code: string, today: string): string | null {
-  const [v, userId, date] = code.trim().split('.');
-  if (v !== 'GLAM1' || !userId || !date || date === today) return null;
-  return checkinCode(studioId, userId, date) === code.trim() ? date : null;
+export function parseCheckinCode(studioId: string, code: string, today: string, nowStep: number): string | null {
+  const c = genuine(studioId, code);
+  return c && c.date === today && acceptCheckinStep(c.step, nowStep) ? c.user : null;
+}
+
+/** Dlaczego prawdziwy kod nie przeszedł: wystawiony na inny dzień albo przeterminowany (zrzut ekranu). Dla obcych kodów null. */
+export function checkinCodeProblem(studioId: string, code: string, today: string): { kind: 'other_day'; date: string } | { kind: 'expired' } | null {
+  const c = genuine(studioId, code);
+  if (!c) return code.trim().startsWith('GLAM1.') ? { kind: 'expired' } : null;
+  return c.date !== today ? { kind: 'other_day', date: c.date } : { kind: 'expired' };
 }
 
 /** Litery bez łatwych do pomylenia (I/L, O/Q) – kod czyta się na głos albo przepisuje z ekranu. */

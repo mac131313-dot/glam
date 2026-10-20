@@ -3,12 +3,12 @@
 // żeby menu było krótkie. Adres: #sekcja albo #sekcja/zakładka; dawne #entrance, #desk, #analytics, #extras działają dalej.
 // Wiadomości łączą dawne Rozmowy (#groups): wątki z klientkami i grupami oraz wiadomość do grupy.
 // Właścicielka: wszystko (panel w stylu Shopify); pozostałe role widzą tylko to, na co pozwala siatka uprawnień.
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { can, ROLE_LABEL, type Permission, type Role } from '@glam/core';
 import type { Me, MeStudio } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
-import { Select, Spinner, Tabs, Watermark } from '../ui.tsx';
+import { Select, Spinner, Watermark } from '../ui.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { Desk } from './Desk.tsx';
 import { Entrance, Passes } from './Entrance.tsx';
@@ -242,38 +242,79 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
       <main className="main">
         {current && tabs.length > 1 && (
           <div style={{ marginBottom: 20 }}>
-            <Tabs label={current.label} value={tab} onChange={(t) => setSection(`${current.id}/${t}`)} options={tabs.map((t) => [t.id, t.label])} />
+            <SectionTabs key={current.id} label={current.label} value={tab} onChange={(t) => setSection(`${current.id}/${t}`)} options={tabs.map((t) => [t.id, t.label])} />
           </div>
         )}
         <Suspense fallback={<Spinner />}>
-          {place === 'dashboard/overview' && <Dashboard go={setSection} />}
-          {place === 'dashboard/kpi' && <Analytics />}
-          {place === 'reception/entrance' && <Entrance roles={roles} go={setSection} />}
-          {place === 'reception/desk' && <Desk />}
-          {section === 'passes' && <Passes />}
-          {section === 'today' && <Today roles={roles} />}
-          {section === 'clients' && <Clients roles={roles} />}
-          {section === 'messages' && <Messages roles={roles} />}
-          {section === 'welcomes' && <Welcomes me={props.me} isOwner={roles.includes('owner')} />}
-          {section === 'profile' && <TrainerProfile me={props.me} reloadMe={props.reloadMe} />}
-          {section === 'gifts' && <Gifts roles={roles} />}
-          {section === 'events' && <EventsAdmin roles={roles} />}
-          {place === 'schedule/plan' && <ScheduleAdmin />}
-          {place === 'schedule/extras' && <ScheduleExtras roles={roles} />}
-          {place === 'schedule/types' && <ClassTypesAdmin />}
-          {section === 'courses' && <CreatorStudio roles={roles} />}
-          {place === 'community/moderation' && <CommunityAdmin />}
-          {place === 'community/music' && <MusicAdmin />}
-          {place === 'marketing/campaigns' && <Marketing />}
-          {place === 'marketing/loyalty' && <LoyaltyAdmin />}
-          {section === 'shop' && <ShopAdmin />}
-          {section === 'products' && <Products />}
-          {section === 'finance' && <Finance roles={roles} />}
-          {section === 'settings' && <Settings studio={props.studio} onSaved={props.reloadMe} />}
-          {place === 'brand/look' && <LookEditor studio={props.studio} onSaved={props.reloadMe} />}
-          {place === 'brand/site' && <SiteOverview />}
+          {/* key – każdy ekran wchodzi krótkim przenikaniem zamiast twardej podmiany treści. */}
+          <div key={place} className="staff-view">
+            {place === 'dashboard/overview' && <Dashboard go={setSection} />}
+            {place === 'dashboard/kpi' && <Analytics />}
+            {place === 'reception/entrance' && <Entrance roles={roles} go={setSection} />}
+            {place === 'reception/desk' && <Desk />}
+            {section === 'passes' && <Passes />}
+            {section === 'today' && <Today roles={roles} />}
+            {section === 'clients' && <Clients roles={roles} />}
+            {section === 'messages' && <Messages roles={roles} />}
+            {section === 'welcomes' && <Welcomes me={props.me} isOwner={roles.includes('owner')} />}
+            {section === 'profile' && <TrainerProfile me={props.me} reloadMe={props.reloadMe} />}
+            {section === 'gifts' && <Gifts roles={roles} />}
+            {section === 'events' && <EventsAdmin roles={roles} />}
+            {place === 'schedule/plan' && <ScheduleAdmin />}
+            {place === 'schedule/extras' && <ScheduleExtras roles={roles} />}
+            {place === 'schedule/types' && <ClassTypesAdmin />}
+            {section === 'courses' && <CreatorStudio roles={roles} />}
+            {place === 'community/moderation' && <CommunityAdmin />}
+            {place === 'community/music' && <MusicAdmin />}
+            {place === 'marketing/campaigns' && <Marketing />}
+            {place === 'marketing/loyalty' && <LoyaltyAdmin />}
+            {section === 'shop' && <ShopAdmin />}
+            {section === 'products' && <Products />}
+            {section === 'finance' && <Finance roles={roles} />}
+            {section === 'settings' && <Settings studio={props.studio} onSaved={props.reloadMe} />}
+            {place === 'brand/look' && <LookEditor studio={props.studio} onSaved={props.reloadMe} />}
+            {place === 'brand/site' && <SiteOverview />}
+          </div>
         </Suspense>
       </main>
+    </div>
+  );
+}
+
+/**
+ * Zakładki sekcji jako przełącznik segmentowy: jedno jasne tło przesuwa się pod wybraną zakładkę.
+ * Przejście CSS rusza z miejsca, w którym tło akurat jest, więc szybka zmiana zdania w trakcie nie daje skoku.
+ * Spokojniejsze niż czarna pigułka – ta zostaje dla jednej głównej akcji ekranu.
+ */
+function SectionTabs({ value, onChange, options, label }: { value: string; onChange: (v: string) => void; options: [string, string][]; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [thumb, setThumb] = useState<CSSProperties>();
+  const placed = useRef(false);
+  useLayoutEffect(() => {
+    const row = ref.current;
+    if (!row) return;
+    const measure = () => {
+      const tab = row.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!tab) return;
+      // Pierwsze ustawienie bez przejazdu – tło nie może wjeżdżać z lewej krawędzi przy otwarciu sekcji.
+      setThumb({ width: tab.offsetWidth, transform: `translateX(${tab.offsetLeft}px)`, transition: placed.current ? undefined : 'none' });
+      placed.current = true;
+      if (tab.offsetLeft < row.scrollLeft || tab.offsetLeft + tab.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollTo({ left: tab.offsetLeft - 16, behavior: 'smooth' });
+    };
+    measure();
+    // Czcionka doładowana po chwili zmienia szerokość zakładek – tło idzie za nimi.
+    const ro = new ResizeObserver(measure);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [value, options.length]);
+  return (
+    <div ref={ref} className="seg-tabs" role="tablist" aria-label={label}>
+      {thumb && <span className="seg-thumb" style={thumb} aria-hidden />}
+      {options.map(([v, l]) => (
+        <button key={v} role="tab" className="seg-tab" aria-selected={value === v} onClick={() => value !== v && onChange(v)}>
+          {l}
+        </button>
+      ))}
     </div>
   );
 }

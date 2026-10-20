@@ -1,7 +1,8 @@
-import { useAuthedUrl } from './api.ts';
+import { SURFACE, useAuthedUrl } from './api.ts';
 import { useLayer } from './back.ts';
-import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type AnimationEvent, type CSSProperties, type ReactNode } from 'react';
+import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnimationEvent, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { CHECKIN_STEP_MS, checkinStep, liveCheckinCode, type LiveCheckin } from '@glam/core';
 
 type Toast = { text: string; kind: 'ok' | 'error' } | null;
 const ToastCtx = createContext<(text: string, kind?: 'ok' | 'error') => void>(() => {});
@@ -110,11 +111,25 @@ export function Fold({ title, meta, defaultOpen = false, children }: { title: Re
   );
 }
 
+/** Ile trwa wyjście okna w panelu – zgodnie z `sheet-out` / `scrim-out` w styles.css. */
+const SHEET_EXIT_MS = 200;
+
 export function Sheet({ onClose, children, label, className }: { onClose: () => void; children: ReactNode; label: string; className?: string }) {
-  useLayer(onClose);
+  // Panel: okno odchodzi tą samą drogą, którą przyszło, i dopiero wtedy znika z drzewa. Tło przestaje łapać
+  // kliknięcia od razu, więc nie trzeba czekać na koniec animacji. Aplikacja klientki zamyka jak dotąd.
+  const [closing, setClosing] = useState(false);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const close = SURFACE === 'panel' && !reducedMotion() ? () => setClosing(true) : onClose;
+  useEffect(() => {
+    if (!closing) return;
+    const t = window.setTimeout(() => closeRef.current(), SHEET_EXIT_MS);
+    return () => window.clearTimeout(t);
+  }, [closing]);
+  useLayer(close);
   const ref = useDialogFocus();
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className={closing ? 'overlay is-closing' : 'overlay'} onClick={close}>
       <div ref={ref} tabIndex={-1} className={className ? `sheet ${className}` : 'sheet'} role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
         {children}
@@ -424,7 +439,8 @@ export function Select({
       const below = window.innerHeight - r.bottom - 12;
       const up = below < 220 && r.top > below;
       const maxHeight = Math.min(300, (up ? r.top : below + 12) - 18);
-      setPos({ left: r.left, minWidth: r.width, maxWidth: window.innerWidth - r.left - 12, maxHeight, ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }) });
+      // transformOrigin – w panelu lista rośnie od pola, które ją otworzyło (w dół albo w górę).
+      setPos({ left: r.left, minWidth: r.width, maxWidth: window.innerWidth - r.left - 12, maxHeight, transformOrigin: up ? 'bottom' : 'top', ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }) });
     };
     place();
     const onDown = (e: MouseEvent) => {
@@ -474,7 +490,7 @@ export function Select({
       </button>
       {open &&
         createPortal(
-        <ul ref={listRef} className="select-list" role="listbox" aria-label={ariaLabel} style={pos}>
+        <ul ref={listRef} className={SURFACE === 'panel' ? 'select-list from-trigger' : 'select-list'} role="listbox" aria-label={ariaLabel} style={pos}>
           {options.map((o, i) => [
             o.group && o.group !== options[i - 1]?.group && (
               <li key={`g:${o.group}`} role="presentation" className="select-group">
@@ -599,6 +615,41 @@ export function QrCode({ text, size = 200, label }: { text: string; size?: numbe
       {/* Jedna ścieżka zamiast setek prostokątów – lżej się rysuje, także w trakcie animacji. */}
       <path d={cells.map((row, r) => row.map((d, c) => (d ? `M${c + 4} ${r + 4}h1v1h-1z` : '')).join('')).join('')} fill="#1b1715" />
     </svg>
+  );
+}
+
+/**
+ * Kod wejścia na żywo: QR liczony w telefonie co 30 s z dziennego sekretu (działa też offline), pod nim kreska
+ * odliczająca do zmiany i zegar z sekundami. Przeglądarka nie pozwala zablokować zrzutu ekranu – zrzut za to szybko
+ * wygasa, a recepcja od razu widzi, czy ekran żyje (ważne przy kodzie z liter, który zostaje dzienny).
+ */
+export function LiveCheckinQr({ checkin, size, label }: { checkin: LiveCheckin; size: number; label: string }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    // Tykamy równo z pełną sekundą – zegar nie odstaje od zegarka na ręce, a kod zmienia się dokładnie na granicy okna.
+    let t = 0;
+    const tick = () => {
+      setNow(Date.now());
+      t = window.setTimeout(tick, 1000 - (Date.now() % 1000));
+    };
+    t = window.setTimeout(tick, 1000 - (Date.now() % 1000));
+    return () => clearTimeout(t);
+  }, []);
+  const step = checkinStep(now);
+  const { user, date, seed } = checkin;
+  const code = useMemo(() => liveCheckinCode({ user, date, seed }, step), [user, date, seed, step]);
+  return (
+    <div className="live-qr" title="Kod zmienia się co 30 sekund">
+      <QrCode text={code} size={size} label={label} />
+      {/* key={step}: nowa kreska w każdym oknie, więc powrót do pełnej długości nie animuje się wstecz. */}
+      <span className="live-qr-bar" aria-hidden="true">
+        <i key={step} style={{ transform: `scaleX(${1 - (now % CHECKIN_STEP_MS) / CHECKIN_STEP_MS})` }} />
+      </span>
+      <span className="live-qr-clock" aria-hidden="true">
+        <i />
+        {new Date(now).toLocaleTimeString('pl-PL')}
+      </span>
+    </div>
   );
 }
 

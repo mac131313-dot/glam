@@ -2,11 +2,11 @@
 // prywatność i zgody, biometria, zmiana numeru, kalendarz, integracje, dostępność, eksport i usunięcie danych,
 // skrzynka Wiadomości (rozmowy + powiadomienia), czat z recepcją, pomoc (FAQ, regulamin, telefon), kod QR do wejścia.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CLASS_REMINDER_OPTIONS, classReminderOffsets, receptionSlots, WEEKDAY_LONG } from '@glam/core';
+import { CLASS_REMINDER_OPTIONS, classReminderOffsets, receptionSlots, WEEKDAY_LONG, type LiveCheckin } from '@glam/core';
 import { api, fmtDay, fmtTime, session, useApi } from '../api.ts';
 import { getAppearance, setAppearance, type Appearance } from '../look.ts';
 import { disablePush, enablePush, passkeySupported, pushEnabled, pushSupported, registerPasskey } from '../push.ts';
-import { AuthVideo, Empty, Field, ListRow, QrCode, Pending, Toggle, useAction, useToast } from '../ui.tsx';
+import { AuthVideo, Empty, Field, ListRow, LiveCheckinQr, Pending, Toggle, useAction, useToast } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
 import { useClient } from './ClientApp.tsx';
@@ -722,7 +722,7 @@ function Faq() {
 }
 
 function Checkin() {
-  const { data, error, reload } = useApi<{ code: string; short: string }>('/my/checkin-code');
+  const { data, error, reload } = useApi<LiveCheckin & { short: string }>('/my/checkin-code');
   useEffect(() => {
     const t = setInterval(reload, 60 * 60_000);
     return () => clearInterval(t);
@@ -749,7 +749,7 @@ function Checkin() {
     <div className="pass-view">
       <p className="pass-lead">Pokaż ten kod w recepcji.</p>
       <div ref={tile} className="pass-tile">
-        {data ? <QrCode text={data.code} size={210} label="Kod wejścia" /> : <div className="qr" style={{ width: 210, height: 210 }} />}
+        {data ? <LiveCheckinQr checkin={data} size={210} label="Kod wejścia" /> : <div className="qr" style={{ width: 210, height: 210 }} />}
         {/* Gdy QR się nie czyta: 6 liter do podania na głos albo wpisania w recepcji. Miejsce zarezerwowane od początku. */}
         <div className="pass-short">
           <span className="pass-short-code">
@@ -776,7 +776,7 @@ function Checkin() {
           .
         </p>
       ) : (
-        <p className="pass-note">Zrzut ekranu z wczoraj nie zadziała – otwieraj kod w aplikacji.</p>
+        <p className="pass-note">Kod zmienia się co 30 sekund, więc zrzut ekranu nie zadziała – otwieraj go w aplikacji.</p>
       )}
     </div>
   );
