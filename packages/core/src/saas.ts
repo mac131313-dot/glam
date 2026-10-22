@@ -93,16 +93,34 @@ export type BillingFacts = {
 
 export type AccessStatus = 'trial' | 'active' | 'suspended';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
- * Dostęp studia do GLAM wynikający z triala i rozliczeń.
+ * Dostęp studia do GLAM wynikający z triala i rozliczeń; pierwsza pasująca reguła wygrywa.
  * - ręczne zawieszenie wygrywa ze wszystkim,
  * - trwający trial daje `trial`, także gdy karta została już dodana,
- * - po trialu: `active` dla aktywnej subskrypcji, dla zaległej płatności przez `BILLING_GRACE_DAYS` dni,
- *   dla anulowanej do końca opłaconego okresu; w pozostałych przypadkach `suspended`.
+ * - brak daty końca triala (`null`) to studio spoza triala (demo, starsze, rozliczane poza systemem): `active`,
+ * - po trialu: `active` dla aktywnej subskrypcji, dla zaległej płatności przez `BILLING_GRACE_DAYS` dni
+ *   (brak daty zaległości liczy się jako „przed chwilą”), dla anulowanej do końca opłaconego okresu;
+ *   w pozostałych przypadkach `suspended`.
  */
 export function accessFromBilling(trialEndsAt: string | null, billing: BillingFacts, now: Date): AccessStatus {
-  // TODO(Maciek): reguły dostępu – spec §4
-  throw new Error('TODO');
+  if (billing.manualSuspension) return 'suspended';
+  if (trialEndsAt === null) return 'active';
+  if (now.getTime() < new Date(trialEndsAt).getTime()) return 'trial';
+  switch (billing.state) {
+    case 'active':
+      return 'active';
+    case 'past_due': {
+      if (!billing.pastDueSince) return 'active';
+      const days = (now.getTime() - new Date(billing.pastDueSince).getTime()) / DAY_MS;
+      return days < BILLING_GRACE_DAYS ? 'active' : 'suspended';
+    }
+    case 'canceled':
+      return billing.currentPeriodEnd && now.getTime() < new Date(billing.currentPeriodEnd).getTime() ? 'active' : 'suspended';
+    default:
+      return 'suspended';
+  }
 }
 
 // ——— Zużycie planu ———

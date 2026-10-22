@@ -40,6 +40,15 @@ test('dostęp: ręczne zawieszenie wygrywa z aktywną subskrypcją', () => {
   assert.equal(accessFromBilling('2026-11-01T00:00:00Z', facts, now), 'suspended');
 });
 
+test('dostęp: studio bez daty końca triala (demo, starsze) jest aktywne, chyba że zawieszone ręcznie', () => {
+  assert.equal(accessFromBilling(null, none, now), 'active');
+  assert.equal(accessFromBilling(null, { ...none, manualSuspension: 'Nieopłacone faktury' }, now), 'suspended');
+});
+
+test('dostęp: zaległa płatność bez daty zaległości liczy się jako świeża', () => {
+  assert.equal(accessFromBilling('2026-11-01T00:00:00Z', { ...none, state: 'past_due' }, now), 'active');
+});
+
 const usage: Usage = { activeClients: 121, smsThisMonth: 310, storageMb: 10, staff: 5, facilities: 1 };
 
 test('limity planu: pozycje w stałej kolejności z polskimi nazwami', () => {
