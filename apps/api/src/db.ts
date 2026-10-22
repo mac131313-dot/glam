@@ -1411,6 +1411,24 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   value TEXT NOT NULL
 );
 
+-- Rozliczenia abonamentu GLAM: stan subskrypcji Stripe, ręczne zawieszenie i dane do faktury. Dostęp studia liczy z tego syncAccess (services/billing.ts).
+CREATE TABLE IF NOT EXISTS studio_billing (
+  studio_id TEXT PRIMARY KEY REFERENCES studios(id),
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  state TEXT NOT NULL DEFAULT 'none' CHECK (state IN ('none', 'active', 'past_due', 'canceled')),
+  current_period_end TEXT,
+  past_due_since TEXT,
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  pending_plan_id TEXT,
+  manual_suspension TEXT,
+  company_name TEXT,
+  nip TEXT,
+  address TEXT,
+  invoice_email TEXT,
+  updated_at TEXT NOT NULL
+);
+
 -- Nieużywana od 17.10.2026 (bez sensorów zdrowia). Zostaje dla starych baz; czyszczona przy usunięciu konta.
 CREATE TABLE IF NOT EXISTS health_sync (
   user_id TEXT NOT NULL REFERENCES users(id),

@@ -56,6 +56,7 @@ export function signupRoutes(app: FastifyInstance, deps: Deps) {
         nowIso(),
       );
       db.prepare("INSERT INTO memberships (studio_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)").run(studioId, user.id, nowIso());
+      db.prepare("INSERT INTO studio_billing (studio_id, state, updated_at) VALUES (?, 'none', ?)").run(studioId, nowIso());
       db.prepare("INSERT INTO facilities (id, studio_id, name) VALUES (?, ?, ?)").run(id(), studioId, b.studioName.trim());
       return { userId: user.id, invite };
     });
