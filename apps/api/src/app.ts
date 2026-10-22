@@ -18,7 +18,7 @@ import { musicRoutes } from './routes/music.ts';
 import { photoRoutes } from './routes/photos.ts';
 import { ownerRoutes } from './routes/owner.ts';
 import { paymentsPublicRoutes } from './routes/payments-public.ts';
-import { platformRoutes } from './routes/platform/index.ts';
+import { bootstrapPlatformStaff, platformAdminPhones, platformRoutes } from './routes/platform/index.ts';
 import { publicRoutes } from './routes/public.ts';
 import { shopRoutes } from './routes/shop.ts';
 import { staffRoutes } from './routes/staff.ts';
@@ -55,6 +55,9 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
       )
       .run(studio, new Date().toISOString().slice(0, 10), reply.statusCode >= 500 ? 1 : 0, ms);
   });
+
+  // Zespół konsoli GLAM: numery z GLAM_PLATFORM_ADMINS bez wpisu zostają adminami (dalej zespołem zarządza się w konsoli).
+  bootstrapPlatformStaff(deps.db, platformAdminPhones());
 
   app.get('/api/health', async () => ({ ok: true }));
   accountRoutes(app, deps);

@@ -1316,6 +1316,25 @@ CREATE TABLE IF NOT EXISTS platform_access_log (
   created_at TEXT NOT NULL
 );
 
+-- Zespół konsoli GLAM: role admin / support / finance; wyłączenie = disabled_at (sesje usuwane osobno).
+CREATE TABLE IF NOT EXISTS platform_staff (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'support', 'finance')),
+  invited_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  disabled_at TEXT
+);
+
+-- Dziennik działań zespołu GLAM w konsoli (kto, co, w którym studiu).
+CREATE TABLE IF NOT EXISTS platform_audit (
+  id TEXT PRIMARY KEY,
+  actor_id TEXT NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL,
+  studio_id TEXT REFERENCES studios(id),
+  details_json TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS support_tickets (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),

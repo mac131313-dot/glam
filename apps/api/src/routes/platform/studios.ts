@@ -3,18 +3,20 @@
 import type { FastifyInstance } from 'fastify';
 import { FEATURE_LABEL, formatPLN, PLANS, planById, TRIAL_DAYS, type Feature } from '@glam/core';
 import type { Deps } from '../../context.ts';
-import { id, nowIso } from '../../db.ts';
+import { id, nowIso, tx } from '../../db.ts';
 import { badRequest, notFound } from '../../errors.ts';
 import { StudioScope } from '../../scope.ts';
 import { fillSchedule } from '../../services/schedule.ts';
 import { loadStudio } from '../../services/studio.ts';
-import { adminOnly as adminGuard } from './index.ts';
+import { platformAudit, requirePlatform } from './guard.ts';
 
 export function studioRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
-  const adminOnly = adminGuard(db);
+  const anyRole = requirePlatform(db);
+  const adminOnly = requirePlatform(db, 'admin');
+  const adminOrSupport = requirePlatform(db, 'admin', 'support');
 
-  app.get('/api/platform/studios', adminOnly, async () =>
+  app.get('/api/platform/studios', anyRole, async () =>
     (
       db
         .prepare(
@@ -45,20 +47,30 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
     const b = req.body ?? {};
     if (b.planId && !PLANS.some((p) => p.id === b.planId)) throw badRequest('Nieznany plan.');
     if (b.status && !['trial', 'active', 'suspended'].includes(b.status)) throw badRequest('Nieznany status.');
-    const r = db.prepare('UPDATE studios SET plan_id = COALESCE(?, plan_id), status = COALESCE(?, status), trial_ends_at = COALESCE(?, trial_ends_at) WHERE id = ?').run(b.planId ?? null, b.status ?? null, b.trialEndsAt ?? null, req.params.id);
-    if (!r.changes) throw notFound();
+    const was = db.prepare('SELECT plan_id, status, trial_ends_at FROM studios WHERE id = ?').get(req.params.id) as { plan_id: string | null; status: string; trial_ends_at: string | null } | undefined;
+    if (!was) throw notFound();
+    tx(db, () => {
+      db.prepare('UPDATE studios SET plan_id = COALESCE(?, plan_id), status = COALESCE(?, status), trial_ends_at = COALESCE(?, trial_ends_at) WHERE id = ?').run(b.planId ?? null, b.status ?? null, b.trialEndsAt ?? null, req.params.id);
+      if (b.planId && b.planId !== was.plan_id) platformAudit(db, req.user!.id, 'studio.plan', req.params.id, { from: was.plan_id, to: b.planId });
+      if (b.status && b.status !== was.status) platformAudit(db, req.user!.id, 'studio.status', req.params.id, { from: was.status, to: b.status });
+      if (b.trialEndsAt && b.trialEndsAt !== was.trial_ends_at) platformAudit(db, req.user!.id, 'studio.trial', req.params.id, { from: was.trial_ends_at, to: b.trialEndsAt });
+    });
     return { ok: true };
   });
 
   // Feature flagi per studio (T11): funkcje w becie tylko dla wybranych studiów. null = jak w planie.
   app.put<{ Params: { id: string }; Body: { flag: Feature; enabled: boolean | null } }>('/api/platform/studios/:id/flags', adminOnly, async (req) => {
     if (!(req.body?.flag in FEATURE_LABEL)) throw badRequest('Nieznana funkcja.');
-    if (req.body.enabled === null) db.prepare('DELETE FROM studio_features WHERE studio_id = ? AND flag = ?').run(req.params.id, req.body.flag);
-    else db.prepare('INSERT OR REPLACE INTO studio_features (studio_id, flag, enabled) VALUES (?, ?, ?)').run(req.params.id, req.body.flag, Number(req.body.enabled));
+    if (!db.prepare('SELECT 1 FROM studios WHERE id = ?').get(req.params.id)) throw notFound();
+    tx(db, () => {
+      if (req.body.enabled === null) db.prepare('DELETE FROM studio_features WHERE studio_id = ? AND flag = ?').run(req.params.id, req.body.flag);
+      else db.prepare('INSERT OR REPLACE INTO studio_features (studio_id, flag, enabled) VALUES (?, ?, ?)').run(req.params.id, req.body.flag, Number(req.body.enabled));
+      platformAudit(db, req.user!.id, 'studio.flag', req.params.id, { flag: req.body.flag, enabled: req.body.enabled });
+    });
     return { ok: true };
   });
 
-  app.post<{ Body: { studioId: string; reason: string } }>('/api/platform/access', adminOnly, async (req) => {
+  app.post<{ Body: { studioId: string; reason: string } }>('/api/platform/access', adminOrSupport, async (req) => {
     const { studioId, reason } = req.body ?? ({} as { studioId: string; reason: string });
     if (!reason || reason.trim().length < 10) throw badRequest('Podaj uzasadnienie dostępu (zgłoszenie studia, min. 10 znaków).');
     if (!db.prepare('SELECT 1 FROM studios WHERE id = ?').get(studioId)) throw notFound();
@@ -66,7 +78,7 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
     return { ok: true, logged: true };
   });
 
-  app.get('/api/platform/access-log', adminOnly, async () =>
+  app.get('/api/platform/access-log', adminOrSupport, async () =>
     db.prepare('SELECT l.created_at, l.reason, s.name AS studio, u.phone AS admin FROM platform_access_log l JOIN studios s ON s.id = l.studio_id JOIN users u ON u.id = l.admin_user_id ORDER BY l.created_at DESC LIMIT 100').all(),
   );
 

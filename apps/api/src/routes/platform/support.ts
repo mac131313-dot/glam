@@ -4,18 +4,18 @@ import type { FastifyInstance } from 'fastify';
 import { ctx, requireStudio, type Deps } from '../../context.ts';
 import { id, nowIso, tx } from '../../db.ts';
 import { badRequest, notFound } from '../../errors.ts';
-import { adminOnly as adminGuard } from './index.ts';
+import { requirePlatform } from './guard.ts';
 
 /** SLA odpowiedzi help desku wg priorytetu (1.2.11). */
 export const SLA_HOURS: Record<string, number> = { urgent: 2, high: 8, normal: 24, low: 72 };
 
 export function supportRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
-  const adminOnly = adminGuard(db);
+  const desk = requirePlatform(db, 'admin', 'support');
 
   // ——— Help desk platformy dla właścicielek (1.2.11) z SLA ———
 
-  app.get('/api/platform/tickets', adminOnly, async () =>
+  app.get('/api/platform/tickets', desk, async () =>
     db
       .prepare(
         `SELECT t.*, s.name AS studio, u.name AS author, (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id = t.id) AS messages,
@@ -25,12 +25,12 @@ export function supportRoutes(app: FastifyInstance, deps: Deps) {
       .all(nowIso()),
   );
 
-  app.get<{ Params: { id: string } }>('/api/platform/tickets/:id', adminOnly, async (req) => ({
+  app.get<{ Params: { id: string } }>('/api/platform/tickets/:id', desk, async (req) => ({
     ticket: db.prepare('SELECT * FROM support_tickets WHERE id = ?').get(req.params.id),
     messages: db.prepare('SELECT m.body, m.from_platform, m.created_at, u.name FROM ticket_messages m JOIN users u ON u.id = m.author_id WHERE m.ticket_id = ? ORDER BY m.created_at').all(req.params.id),
   }));
 
-  app.post<{ Params: { id: string }; Body: { body: string; close?: boolean } }>('/api/platform/tickets/:id', adminOnly, async (req) => {
+  app.post<{ Params: { id: string }; Body: { body: string; close?: boolean } }>('/api/platform/tickets/:id', desk, async (req) => {
     const t = db.prepare('SELECT studio_id, author_id FROM support_tickets WHERE id = ?').get(req.params.id) as { studio_id: string; author_id: string } | undefined;
     if (!t) throw notFound();
     tx(db, () => {
@@ -41,13 +41,13 @@ export function supportRoutes(app: FastifyInstance, deps: Deps) {
   });
 
   // Strona statusu usług (1.2.11).
-  app.post<{ Body: { component: string; status: 'degraded' | 'outage' | 'maintenance'; note: string } }>('/api/platform/incidents', adminOnly, async (req) => {
+  app.post<{ Body: { component: string; status: 'degraded' | 'outage' | 'maintenance'; note: string } }>('/api/platform/incidents', desk, async (req) => {
     if (!['degraded', 'outage', 'maintenance'].includes(req.body?.status) || !req.body.note?.trim()) throw badRequest('Podaj komponent, status i opis.');
     db.prepare('INSERT INTO status_incidents (id, component, status, note, started_at) VALUES (?, ?, ?, ?, ?)').run(id(), req.body.component, req.body.status, req.body.note.trim(), nowIso());
     return { ok: true };
   });
 
-  app.post<{ Params: { id: string } }>('/api/platform/incidents/:id/resolve', adminOnly, async (req) => {
+  app.post<{ Params: { id: string } }>('/api/platform/incidents/:id/resolve', desk, async (req) => {
     db.prepare('UPDATE status_incidents SET resolved_at = ? WHERE id = ?').run(nowIso(), req.params.id);
     return { ok: true };
   });

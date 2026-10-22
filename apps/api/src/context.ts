@@ -3,6 +3,7 @@ import { can, FEATURE_LABEL, type Feature, type Permission, type Role } from '@g
 import { userFromToken, type AuthUser } from './auth.ts';
 import type { Db } from './db.ts';
 import { HttpError, forbidden } from './errors.ts';
+import type { PlatformRole } from './routes/platform/guard.ts';
 import { StudioScope } from './scope.ts';
 import type { EmailSender, PaymentProvider, PushSender, SmsGateway } from './sms.ts';
 import type { DnsResolver } from './services/domain.ts';
@@ -32,6 +33,7 @@ declare module 'fastify' {
     studio?: Studio;
     scope?: StudioScope;
     roles?: Role[];
+    platformRole?: PlatformRole;
   }
 }
 
