@@ -7,6 +7,7 @@ import { id, nowIso, tx } from '../../db.ts';
 import { badRequest, notFound } from '../../errors.ts';
 import { StudioScope } from '../../scope.ts';
 import { fillSchedule } from '../../services/schedule.ts';
+import { studioAttention } from '../../services/attention.ts';
 import { loadBilling, syncAccess } from '../../services/billing.ts';
 import { loadStudio } from '../../services/studio.ts';
 import { studioUsage } from '../../services/usage.ts';
@@ -19,18 +20,7 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
   const adminOrSupport = requirePlatform(db, 'admin', 'support');
 
   const FILTERS = ['trial', 'active', 'past_due', 'suspended'];
-  const DAY_MS = 86_400_000;
   const clearTrialMails = (studioId: string) => db.prepare('DELETE FROM platform_settings WHERE key IN (?, ?)').run(`trial-mail:${studioId}:5`, `trial-mail:${studioId}:1`);
-
-  // Sygnały do przeglądu: kto wymaga uwagi (trial na finiszu, zaległa płatność, przekroczony limit planu).
-  const signals = (studioId: string, planId: string | null, status: string, trialEndsAt: string | null, billingState: string): string[] => {
-    const out: string[] = [];
-    const left = trialEndsAt ? Date.parse(trialEndsAt) - Date.now() : null;
-    if (status === 'trial' && left !== null && left > 0 && left <= 7 * DAY_MS) out.push('trial_ending');
-    if (billingState === 'past_due') out.push('past_due');
-    if (planUsage(studioUsage(new StudioScope(db, studioId)), planById(planId)).some((u) => u.state === 'over')) out.push('over_limit');
-    return out;
-  };
 
   app.get<{ Querystring: { filter?: string } }>('/api/platform/studios', anyRole, async (req) => {
     const filter = req.query.filter;
@@ -39,7 +29,7 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
       db
         .prepare(
           `SELECT s.id, s.name, s.city, s.status, s.plan_id, s.trial_ends_at, s.created_at, s.catalog_visible,
-                  COALESCE(b.state, 'none') AS billing_state,
+                  COALESCE(b.state, 'none') AS billing_state, b.past_due_since,
                   (SELECT COUNT(*) FROM memberships m WHERE m.studio_id = s.id AND m.role = 'client') AS clients,
                   (SELECT COUNT(*) FROM class_sessions c WHERE c.studio_id = s.id) AS sessions,
                   (SELECT COALESCE(SUM(units), 0) FROM usage_log u WHERE u.studio_id = s.id AND u.kind = 'sms' AND u.created_at >= date('now', 'start of month')) AS sms,
@@ -51,11 +41,11 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
            FROM studios s LEFT JOIN studio_billing b ON b.studio_id = s.id
            WHERE ${filter === 'past_due' ? "COALESCE(b.state, 'none') = 'past_due'" : filter ? 's.status = @filter' : '1 = 1'} ORDER BY s.name`,
         )
-        .all(filter && filter !== 'past_due' ? { filter } : {}) as { id: string; plan_id: string | null; status: string; trial_ends_at: string | null; billing_state: string; costs: number; storage: number }[]
-    ).map(({ billing_state, ...s }) => ({
+        .all(filter && filter !== 'past_due' ? { filter } : {}) as { id: string; plan_id: string | null; status: string; trial_ends_at: string | null; billing_state: string; past_due_since: string | null; costs: number; storage: number }[]
+    ).map(({ billing_state, past_due_since, ...s }) => ({
       ...s,
       billingState: billing_state,
-      signals: signals(s.id, s.plan_id, s.status, s.trial_ends_at, billing_state),
+      signals: studioAttention(db, { ...s, billing_state, past_due_since }).map((a) => a.signal),
       plan: planById(s.plan_id).name,
       costs: formatPLN(s.costs),
       storageMb: Math.round(s.storage / 100_000) / 10,

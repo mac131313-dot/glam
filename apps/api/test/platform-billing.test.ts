@@ -2,6 +2,7 @@
 // zawieszenie ręczne i karta studia bez danych klientek.
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { localParts } from '@glam/core';
 import { buildApp } from '../src/app.ts';
 import { openDb } from '../src/db.ts';
 import { DEMO, seed } from '../src/seed.ts';
@@ -650,4 +651,166 @@ test('anulowana subskrypcja działa do końca okresu, potem zawieszenie', async 
   const mails = billingMails('ewa.anulowane@example.com').slice(before);
   assert.equal(mails.length, 1);
   assert.match(mails[0]!.subject, /zawieszone/);
+});
+
+// ——— Pieniądze: lista do zafakturowania, CSV dla księgowej i przegląd „Dziś” ———
+
+type PaymentRow = { id: string; studio: string; studioId: string; companyName: string | null; nip: string | null; amount: string; amountGrosze: number; periodStart: string; periodEnd: string; paidAt: string; invoicedAt: string | null; invoiceNumber: string | null };
+
+/** Studio na planie Studio z opłaconą fakturą 399 zł i danymi firmy; zwraca id studia i płatności. */
+async function paidStudio(phone: string, ownerEmail: string, sub: string, company: string): Promise<{ studioId: string; paymentId: string }> {
+  const studioId = await subscribed(phone, ownerEmail, sub);
+  db.prepare('UPDATE studio_billing SET company_name = ?, nip = ? WHERE studio_id = ?').run(company, '1234563218', studioId);
+  const res = await platformWebhook(stripeEvent('invoice.paid', invoice(studioId, { id: `in_${sub}`, amount: 39900, sub, start: epoch(Date.now()), end: epoch(Date.now() + 30 * DAY) })));
+  assert.equal(res.statusCode, 200, res.body);
+  const { id } = db.prepare('SELECT id FROM platform_payments WHERE stripe_invoice_id = ?').get(`in_${sub}`) as { id: string };
+  return { studioId, paymentId: id };
+}
+
+test('płatności: finanse oznaczają fakturę, wsparcie nie ma wstępu', async () => {
+  const { studioId, paymentId } = await paidStudio('+48600100401', 'ewa.fv@example.com', 'sub_fv', 'Ruch sp. z o.o.');
+  const finance = await login(DEMO.platformFinance);
+  const support = await login(DEMO.platformSupport);
+  const outsider = await login(DEMO.magda);
+  const list = async (query = '') => (await call(finance, 'GET', `/api/platform/payments${query}`)).json() as PaymentRow[];
+
+  assert.equal((await call(support, 'GET', '/api/platform/payments')).statusCode, 403);
+  assert.equal((await call(outsider, 'GET', '/api/platform/payments')).statusCode, 403);
+  assert.equal((await call(finance, 'GET', '/api/platform/payments?status=bzdura')).statusCode, 400);
+
+  const row = (await list()).find((p) => p.id === paymentId);
+  assert.ok(row, 'płatność na liście domyślnej (do zafakturowania)');
+  assert.equal(row.studioId, studioId);
+  assert.equal(row.studio, 'Studio Testowe');
+  assert.equal(row.companyName, 'Ruch sp. z o.o.');
+  assert.equal(row.nip, '1234563218');
+  assert.equal(row.amount, '399 zł');
+  assert.equal(row.amountGrosze, 39900);
+  assert.equal(row.invoicedAt, null);
+  assert.equal(row.invoiceNumber, null);
+  assert.ok(row.periodStart < row.periodEnd && row.paidAt);
+
+  const paidAts = (await list()).map((p) => p.paidAt);
+  assert.deepEqual(paidAts, [...paidAts].sort().reverse(), 'od najnowszej');
+
+  const mark = (id: string, payload?: object, token = finance) => call(token, 'POST', `/api/platform/payments/${id}/invoice`, payload);
+  assert.equal((await mark(paymentId, { number: 'FV/2026/11/001' }, support)).statusCode, 403);
+  assert.equal((await mark(paymentId, {})).statusCode, 400);
+  assert.equal((await mark(paymentId, { number: '   ' })).statusCode, 400);
+  assert.equal((await mark(paymentId, { number: 'F'.repeat(41) })).statusCode, 400);
+  assert.equal((await mark('nie-ma', { number: 'FV/1' })).statusCode, 404);
+  assert.equal((await list('?status=uninvoiced')).find((p) => p.id === paymentId)?.invoicedAt, null);
+
+  const ok = await mark(paymentId, { number: '  FV/2026/11/001 ' });
+  assert.equal(ok.statusCode, 200, ok.body);
+  assert.equal((await list()).find((p) => p.id === paymentId), undefined, 'znika z do zafakturowania');
+  const done = (await list('?status=all')).find((p) => p.id === paymentId)!;
+  assert.equal(done.invoiceNumber, 'FV/2026/11/001');
+  assert.ok(done.invoicedAt);
+  const stored = db.prepare('SELECT invoiced_by FROM platform_payments WHERE id = ?').get(paymentId) as { invoiced_by: string };
+  assert.equal(stored.invoiced_by, (db.prepare('SELECT id FROM users WHERE phone = ?').get(DEMO.platformFinance) as { id: string }).id);
+  assert.deepEqual(audits(studioId, 'payment.invoiced').map((a) => JSON.parse(a.details_json!)), [{ paymentId, number: 'FV/2026/11/001' }]);
+
+  const again = await mark(paymentId, { number: 'FV/2026/11/002' });
+  assert.equal(again.statusCode, 409);
+  assert.equal((await list('?status=all')).find((p) => p.id === paymentId)!.invoiceNumber, 'FV/2026/11/001');
+  assert.equal(audits(studioId, 'payment.invoiced').length, 1);
+});
+
+test('CSV płatności dla księgowej', async () => {
+  const { paymentId } = await paidStudio('+48600100402', 'ewa.csv@example.com', 'sub_csv', 'Firma "Ruch"; sp. z o.o.');
+  await paidStudio('+48600100403', 'ewa.formula@example.com', 'sub_formula', '=HYPERLINK("http://zlosliwy.test")');
+  const finance = await login(DEMO.platformFinance);
+  const support = await login(DEMO.platformSupport);
+  assert.equal((await call(finance, 'POST', `/api/platform/payments/${paymentId}/invoice`, { number: 'FV/2026/11/001' })).statusCode, 200);
+
+  assert.equal((await call(support, 'GET', '/api/platform/payments.csv')).statusCode, 403);
+  assert.equal((await call(finance, 'GET', '/api/platform/payments.csv?from=wczoraj')).statusCode, 400);
+  assert.equal((await call(finance, 'GET', '/api/platform/payments.csv?to=2026-02-30')).statusCode, 400);
+
+  const paidAt = (db.prepare('SELECT paid_at FROM platform_payments WHERE id = ?').get(paymentId) as { paid_at: string }).paid_at;
+  const day = localParts(new Date(paidAt)).date;
+  const res = await call(finance, 'GET', `/api/platform/payments.csv?from=${day}&to=${day}`);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(res.headers['content-type'], 'text/csv; charset=utf-8');
+  assert.equal(res.headers['content-disposition'], `attachment; filename="glam-platnosci-${day}-${day}.csv"`);
+  assert.ok(res.body.startsWith('﻿Data płatności;Studio;Firma;NIP;Okres od;Okres do;Kwota brutto;Nr faktury\r\n'), res.body);
+  assert.ok(res.body.endsWith('\r\n'));
+  assert.ok(!/[^\r]\n/.test(res.body), 'tylko \\r\\n');
+  const lines = res.body.split('\r\n');
+  const period = db.prepare('SELECT period_start, period_end FROM platform_payments WHERE id = ?').get(paymentId) as { period_start: string; period_end: string };
+  assert.ok(
+    lines.includes(`${day};Studio Testowe;"Firma ""Ruch""; sp. z o.o.";1234563218;${localParts(new Date(period.period_start)).date};${localParts(new Date(period.period_end)).date};399,00;FV/2026/11/001`),
+    res.body,
+  );
+  const formula = lines.find((l) => l.includes('HYPERLINK'))!;
+  assert.ok(formula.includes(`;"'=HYPERLINK(""http://zlosliwy.test"")";`), formula);
+  assert.ok(formula.endsWith(';399,00;'), 'niezafakturowana: pusty numer');
+
+  // Zakres dat odcina inne dni; brak granic oddaje wszystko, także zafakturowane.
+  const before = await call(finance, 'GET', '/api/platform/payments.csv?to=2000-01-01');
+  assert.equal(before.body, '﻿Data płatności;Studio;Firma;NIP;Okres od;Okres do;Kwota brutto;Nr faktury\r\n');
+  assert.equal(before.headers['content-disposition'], 'attachment; filename="glam-platnosci-do-2000-01-01.csv"');
+  const all = await call(finance, 'GET', '/api/platform/payments.csv');
+  assert.equal(all.headers['content-disposition'], 'attachment; filename="glam-platnosci.csv"');
+  assert.ok(all.body.includes('FV/2026/11/001'));
+  assert.equal((await call(await login(DEMO.platformAdmin), 'GET', '/api/platform/payments.csv')).statusCode, 200);
+});
+
+type Row = { id: string; name: string; hint: string };
+type Overview = { mrr: string; mrrGrosze: number; paying: number; byPlan: { plan: string; studios: number; mrr: string }[]; trialsEnding: Row[]; pastDue: Row[]; overLimit: Row[]; overdueTickets: number; openIncidents: number };
+
+test('przegląd „Dziś”: MRR z planów, sygnały i liczniki', async () => {
+  const admin = await login(DEMO.platformAdmin);
+  const overview = async () => (await call(admin, 'GET', '/api/platform/overview')).json() as Overview;
+  for (const phone of [DEMO.platformSupport, DEMO.platformFinance]) assert.equal((await call(await login(phone), 'GET', '/api/platform/overview')).statusCode, 200);
+  assert.equal((await call(await login(DEMO.magda), 'GET', '/api/platform/overview')).statusCode, 403);
+
+  const was = await overview();
+  const price: Record<string, number> = { start: 19900, studio: 39900, siec: 89900 };
+  const active = db.prepare("SELECT s.plan_id FROM studios s JOIN studio_billing b ON b.studio_id = s.id WHERE b.state = 'active'").all() as { plan_id: string | null }[];
+  assert.equal(was.mrrGrosze, active.reduce((sum, s) => sum + price[s.plan_id ?? 'studio']!, 0), 'MRR z cen planów');
+  assert.equal(was.paying, active.length);
+
+  const studioId = await signup('+48600100404', 'ewa.dzis@example.com');
+  db.prepare("UPDATE studios SET plan_id = 'studio' WHERE id = ?").run(studioId);
+  db.prepare("UPDATE studio_billing SET state = 'active' WHERE studio_id = ?").run(studioId);
+  let now = await overview();
+  assert.equal(now.paying, was.paying + 1);
+  assert.equal(now.mrrGrosze, was.mrrGrosze + 39900);
+  assert.equal(now.mrr, `${now.mrrGrosze / 100} zł`);
+  assert.deepEqual(now.byPlan.map((p) => p.plan), ['Start', 'Studio', 'Sieć']);
+  assert.equal(now.byPlan[1]!.studios, was.byPlan[1]!.studios + 1);
+  assert.equal(now.byPlan.reduce((n, p) => n + p.studios, 0), now.paying);
+  assert.equal(now.byPlan[1]!.mrr, `${now.byPlan[1]!.studios * 399} zł`);
+
+  // MRR to plany, nie faktury: zmiana kwoty płatności go nie rusza.
+  db.prepare('UPDATE platform_payments SET amount_grosze = 1').run();
+  assert.equal((await overview()).mrrGrosze, now.mrrGrosze);
+
+  // Sygnały z krótkim kontekstem; zaległa płatność nie liczy się do płacących.
+  const trialEnd = new Date(Date.now() + 3 * DAY);
+  db.prepare("UPDATE studios SET trial_ends_at = ?, status = 'trial' WHERE id = ?").run(trialEnd.toISOString(), studioId);
+  db.prepare("UPDATE studio_billing SET state = 'past_due', past_due_since = ? WHERE studio_id = ?").run('2026-10-21T10:00:00.000Z', studioId);
+  for (let i = 0; i < 3; i++) db.prepare('INSERT INTO facilities (id, studio_id, name) VALUES (?, ?, ?)').run(`fac_dzis_${i}`, studioId, `Sala ${i}`);
+  now = await overview();
+  const [, month, day] = localParts(trialEnd).date.split('-');
+  assert.deepEqual(now.trialsEnding.find((r) => r.id === studioId), { id: studioId, name: 'Studio Testowe', hint: `trial do ${day}.${month}` });
+  assert.deepEqual(now.pastDue.find((r) => r.id === studioId), { id: studioId, name: 'Studio Testowe', hint: 'zaległość od 21.10' });
+  assert.deepEqual(now.overLimit.find((r) => r.id === studioId), { id: studioId, name: 'Studio Testowe', hint: 'limit: Obiekty' });
+  assert.equal(now.paying, was.paying);
+
+  // Zgłoszenia po terminie SLA i otwarte incydenty.
+  const author = (db.prepare('SELECT id FROM users WHERE phone = ?').get(DEMO.owner) as { id: string }).id;
+  const ticket = db.prepare("INSERT INTO support_tickets (id, studio_id, author_id, subject, priority, status, sla_due_at, created_at, updated_at) VALUES (?, ?, ?, 'Pytanie', 'normal', ?, ?, ?, ?)");
+  const stamp = new Date().toISOString();
+  ticket.run('tk_late', studioId, author, 'open', new Date(Date.now() - 3_600_000).toISOString(), stamp, stamp);
+  ticket.run('tk_ontime', studioId, author, 'open', new Date(Date.now() + 3_600_000).toISOString(), stamp, stamp);
+  ticket.run('tk_closed', studioId, author, 'closed', new Date(Date.now() - 3_600_000).toISOString(), stamp, stamp);
+  const incident = db.prepare('INSERT INTO status_incidents (id, component, status, note, started_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?)');
+  incident.run('inc_open', 'api', 'degraded', 'Wolniej', stamp, null);
+  incident.run('inc_done', 'api', 'outage', 'Było', stamp, stamp);
+  const after = await overview();
+  assert.equal(after.overdueTickets, now.overdueTickets + 1);
+  assert.equal(after.openIncidents, now.openIncidents + 1);
 });
