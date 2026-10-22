@@ -176,6 +176,34 @@ test('zmiana planu i flagi trafia do dziennika razem z wejściami z powodem', as
   assert.ok(audit.length <= 200);
 });
 
+test('zgłoszenia, incydenty i uzupełnienie grafiku zostawiają ślad w dzienniku', async () => {
+  const admin = await login(DEMO.platformAdmin);
+  const now = new Date().toISOString();
+  db.prepare("INSERT INTO support_tickets (id, studio_id, author_id, subject, priority, status, sla_due_at, created_at, updated_at) VALUES ('tk_audit', ?, 'u_001', 'Pytanie', 'normal', 'open', ?, ?, ?)").run(R, now, now, now);
+
+  assert.equal(await status(admin, 'POST', '/api/platform/tickets/tk_audit', { body: 'Już to sprawdzamy.', close: true }), 200);
+  assert.equal(await status(admin, 'POST', '/api/platform/tickets/nie-ma', { body: 'x' }), 404);
+  assert.equal(await status(admin, 'POST', '/api/platform/incidents', { component: 'SMS', status: 'degraded', note: 'Opóźnione kody' }), 200);
+  const incident = db.prepare("SELECT id FROM status_incidents WHERE note = 'Opóźnione kody'").get() as { id: string };
+  assert.equal(await status(admin, 'POST', `/api/platform/incidents/${incident.id}/resolve`), 200);
+  assert.equal(await status(admin, 'POST', '/api/platform/incidents/nie-ma/resolve'), 404, 'nieznany incydent');
+  assert.equal(await status(admin, 'POST', `/api/platform/studios/${R}/fill`), 200);
+
+  const audit = (await call(admin, 'GET', '/api/platform/audit')).json() as AuditRow[];
+  const find = (action: string) => audit.find((a) => a.action === action);
+  assert.deepEqual(find('ticket.reply')?.details, { ticketId: 'tk_audit', closed: true });
+  assert.equal(find('ticket.reply')?.studio_id, R);
+  assert.deepEqual(find('incident.open')?.details, { component: 'SMS', status: 'degraded' });
+  assert.deepEqual(find('incident.resolve')?.details, { incidentId: incident.id });
+  assert.equal(find('studio.fill')?.studio_id, R);
+  assert.equal(audit.filter((a) => a.action === 'incident.resolve').length, 1, 'nieudane odwołanie nie zostawia wpisu');
+
+  // Samo zamknięcie bez treści też jest zapisane.
+  assert.equal(await status(admin, 'POST', '/api/platform/tickets/tk_audit', { close: true }), 200);
+  const replies = ((await call(admin, 'GET', '/api/platform/audit')).json() as AuditRow[]).filter((a) => a.action === 'ticket.reply');
+  assert.equal(replies.length, 2);
+});
+
 test('start: numery z GLAM_PLATFORM_ADMINS dostają rolę admina tylko raz', () => {
   const d = openDb(':memory:');
   d.prepare("INSERT INTO users (id, phone, name, created_at) VALUES ('u_a', '+48600000001', 'A', ?)").run(new Date().toISOString());

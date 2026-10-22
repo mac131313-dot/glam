@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { ctx, requireStudio, type Deps } from '../../context.ts';
 import { id, nowIso, tx } from '../../db.ts';
 import { badRequest, notFound } from '../../errors.ts';
-import { requirePlatform } from './guard.ts';
+import { platformAudit, requirePlatform } from './guard.ts';
 
 /** SLA odpowiedzi help desku wg priorytetu (1.2.11). */
 export const SLA_HOURS: Record<string, number> = { urgent: 2, high: 8, normal: 24, low: 72 };
@@ -36,6 +36,7 @@ export function supportRoutes(app: FastifyInstance, deps: Deps) {
     tx(db, () => {
       if (req.body?.body?.trim()) db.prepare('INSERT INTO ticket_messages (id, ticket_id, author_id, from_platform, body, created_at) VALUES (?, ?, ?, 1, ?, ?)').run(id(), req.params.id, req.user!.id, req.body.body.trim(), nowIso());
       db.prepare('UPDATE support_tickets SET status = ?, updated_at = ? WHERE id = ?').run(req.body?.close ? 'closed' : 'answered', nowIso(), req.params.id);
+      platformAudit(db, req.user!.id, 'ticket.reply', t.studio_id, { ticketId: req.params.id, closed: !!req.body?.close });
     });
     return { ok: true };
   });
@@ -43,12 +44,19 @@ export function supportRoutes(app: FastifyInstance, deps: Deps) {
   // Strona statusu usług (1.2.11).
   app.post<{ Body: { component: string; status: 'degraded' | 'outage' | 'maintenance'; note: string } }>('/api/platform/incidents', desk, async (req) => {
     if (!['degraded', 'outage', 'maintenance'].includes(req.body?.status) || !req.body.note?.trim()) throw badRequest('Podaj komponent, status i opis.');
-    db.prepare('INSERT INTO status_incidents (id, component, status, note, started_at) VALUES (?, ?, ?, ?, ?)').run(id(), req.body.component, req.body.status, req.body.note.trim(), nowIso());
+    const incidentId = id();
+    tx(db, () => {
+      db.prepare('INSERT INTO status_incidents (id, component, status, note, started_at) VALUES (?, ?, ?, ?, ?)').run(incidentId, req.body.component, req.body.status, req.body.note.trim(), nowIso());
+      platformAudit(db, req.user!.id, 'incident.open', null, { component: req.body.component, status: req.body.status });
+    });
     return { ok: true };
   });
 
   app.post<{ Params: { id: string } }>('/api/platform/incidents/:id/resolve', desk, async (req) => {
-    db.prepare('UPDATE status_incidents SET resolved_at = ? WHERE id = ?').run(nowIso(), req.params.id);
+    tx(db, () => {
+      if (!db.prepare('UPDATE status_incidents SET resolved_at = ? WHERE id = ?').run(nowIso(), req.params.id).changes) throw notFound();
+      platformAudit(db, req.user!.id, 'incident.resolve', null, { incidentId: req.params.id });
+    });
     return { ok: true };
   });
 

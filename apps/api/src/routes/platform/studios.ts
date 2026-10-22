@@ -83,5 +83,11 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
   );
 
   // Uzupełnienie grafiku ręcznie z platformy (np. po migracji studia).
-  app.post<{ Params: { id: string } }>('/api/platform/studios/:id/fill', adminOnly, async (req) => fillSchedule(new StudioScope(db, req.params.id), loadStudio(db, req.params.id)));
+  app.post<{ Params: { id: string } }>('/api/platform/studios/:id/fill', adminOnly, async (req) => {
+    return tx(db, () => {
+      const result = fillSchedule(new StudioScope(db, req.params.id), loadStudio(db, req.params.id));
+      platformAudit(db, req.user!.id, 'studio.fill', req.params.id, result);
+      return result;
+    });
+  });
 }
