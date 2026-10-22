@@ -64,6 +64,27 @@ test('wyczerpana pula SMS: zaproszenie znajomej odpada z 429, nic nie wychodzi i
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM session_invites').get() as { n: number }).n, 0);
 });
 
+test('wyczerpana pula: ta sama odmowa dla numeru klientki studia i obcego, bez zaproszeń i SMS-ów', async () => {
+  const ania = await login(DEMO.ania);
+  useSms(300);
+  const sid = upcomingSession();
+  const stranger = await call(ania, 'POST', `/api/sessions/${sid}/invite`, { phone: '600 800 111' });
+  const member = await call(ania, 'POST', `/api/sessions/${sid}/invite`, { phone: DEMO.magda });
+  assert.equal(stranger.statusCode, 429, stranger.body);
+  assert.equal(member.statusCode, 429, member.body);
+  assert.equal(member.body, stranger.body);
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM session_invites').get() as { n: number }).n, 0);
+  // Polecenie SMS-em: też identycznie dla obu numerów, bez rekordu.
+  const refs = (db.prepare('SELECT COUNT(*) AS n FROM referrals').get() as { n: number }).n;
+  const refStranger = await call(ania, 'POST', '/api/referrals', { phone: '600 800 112', channel: 'sms' });
+  const refMember = await call(ania, 'POST', '/api/referrals', { phone: DEMO.zuza, channel: 'sms' });
+  assert.equal(refStranger.statusCode, 429, refStranger.body);
+  assert.equal(refMember.body, refStranger.body);
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM referrals').get() as { n: number }).n, refs);
+  assert.deepEqual(sms.sent, []);
+  assert.equal(smsRows(), 1);
+});
+
 test('299 z 300 SMS-ów: ostatnie zaproszenie wychodzi i trafia do rozliczeń po cenie z cennika', async () => {
   const ania = await login(DEMO.ania);
   useSms(299);

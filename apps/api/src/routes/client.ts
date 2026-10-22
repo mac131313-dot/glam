@@ -42,7 +42,7 @@ import { bookSession, cancelBooking, confirmAttendance, rateSession } from '../s
 import { clientThreads } from './threads.ts';
 import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
 import { checkinSeed, shortCheckinCode } from '../services/checkin.ts';
-import { sendStudioSms } from '../services/studio-sms.ts';
+import { sendStudioSms, studioSmsAvailable } from '../services/studio-sms.ts';
 import { attendedCount, awardPoints, badgeList, pointsOf, rewardProgress } from '../services/motivation.ts';
 import { notify } from '../services/notify.ts';
 import { issuePass, loadPasses, passRows } from '../services/passes.ts';
@@ -398,10 +398,12 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     if (!s) throw notFound('Nie znaleziono zajęć.');
     if (phone === user.phone) throw badRequest('Podaj numer koleżanki.');
     claimClientSms(scope, user.id, 'session_invite', phone);
+    // Pula SMS sprawdzana przed ustaleniem, czy numer należy do studia – odmowa jest taka sama dla każdego numeru.
+    if (!studioSmsAvailable(deps, studio)) throw smsPoolSpent(studio.invite_code);
     const friend = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
     const isMember = friend && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: friend.id });
     const time = localParts(new Date(s.starts_at), studio.timezone);
-    // Znajoma spoza studia dostaje SMS; przy wyczerpanej puli studia zaproszenie nie powstaje (odpowiedź nie zdradza, czy numer jest w studiu).
+    // Znajoma spoza studia dostaje SMS (przed zapisem zaproszenia, żeby nieudana wysyłka nie zostawiła rekordu).
     if (!isMember && !(await sendStudioSms(deps, studio, phone, `${user.name ?? 'Znajoma'} zaprasza Cię na ${s.class_name} w ${studio.name} (${time.date.slice(8)}.${time.date.slice(5, 7)}, ${time.time}). Dołącz w aplikacji GLAM, kod studia: ${studio.invite_code}.`))) throw smsPoolSpent(studio.invite_code);
     const inviteId = id();
     scope.run("INSERT INTO session_invites (id, studio_id, session_id, from_user, to_user, to_phone, status, created_at) VALUES ($id, $studio, $s, $f, $t, $p, 'sent', $now)", {
@@ -667,6 +669,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     if (phone === user.phone) throw badRequest('Podaj numer znajomej.');
     if (phone) {
       claimClientSms(scope, user.id, 'referral', phone);
+      if (req.body?.channel === 'sms' && !studioSmsAvailable(deps, studio)) throw smsPoolSpent(studio.invite_code);
       const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
       if (existing && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: existing.id })) {
         throw conflict('already_member', 'Ta osoba już jest w naszym studiu. Umów się z nią na wspólne zajęcia w grafiku!');
