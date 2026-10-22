@@ -76,6 +76,69 @@ export function featureEnabled(planId: string | null | undefined, flags: Record<
   return planById(planId).features.includes(f);
 }
 
+// ——— Rozliczenia abonamentu GLAM ———
+
+/** Dni, przez które studio z zaległą płatnością nadal ma dostęp. */
+export const BILLING_GRACE_DAYS = 7;
+
+export type BillingState = 'none' | 'active' | 'past_due' | 'canceled';
+
+export type BillingFacts = {
+  state: BillingState;
+  currentPeriodEnd: string | null;
+  pastDueSince: string | null;
+  /** powód ręcznego zawieszenia przez konsolę; `null`, gdy studio nie jest zawieszone ręcznie */
+  manualSuspension: string | null;
+};
+
+export type AccessStatus = 'trial' | 'active' | 'suspended';
+
+/**
+ * Dostęp studia do GLAM wynikający z triala i rozliczeń.
+ * - ręczne zawieszenie wygrywa ze wszystkim,
+ * - trwający trial daje `trial`, także gdy karta została już dodana,
+ * - po trialu: `active` dla aktywnej subskrypcji, dla zaległej płatności przez `BILLING_GRACE_DAYS` dni,
+ *   dla anulowanej do końca opłaconego okresu; w pozostałych przypadkach `suspended`.
+ */
+export function accessFromBilling(trialEndsAt: string | null, billing: BillingFacts, now: Date): AccessStatus {
+  // TODO(Maciek): reguły dostępu – spec §4
+  throw new Error('TODO');
+}
+
+// ——— Zużycie planu ———
+
+export type Usage = { activeClients: number; smsThisMonth: number; storageMb: number; staff: number; facilities: number };
+
+export type LimitKey = keyof PlanLimits;
+
+export type LimitUsage = { key: LimitKey; label: string; used: number; limit: number; state: 'ok' | 'near' | 'over' };
+
+/** Od jakiego udziału limitu pokazujemy „blisko limitu”. */
+const NEAR_LIMIT_RATIO = 0.8;
+
+const LIMIT_ROWS: { key: LimitKey; label: string; used: (u: Usage) => number }[] = [
+  { key: 'activeClients', label: 'Aktywne klientki', used: (u) => u.activeClients },
+  { key: 'smsPerMonth', label: 'SMS w miesiącu', used: (u) => u.smsThisMonth },
+  { key: 'videoMb', label: 'Wideo (MB)', used: (u) => u.storageMb },
+  { key: 'staff', label: 'Zespół', used: (u) => u.staff },
+  { key: 'facilities', label: 'Obiekty', used: (u) => u.facilities },
+];
+
+/** Zużycie każdego limitu planu; dokładne wyczerpanie limitu to „blisko”, dopiero przekroczenie to „over”. */
+export function planUsage(usage: Usage, plan: Plan): LimitUsage[] {
+  return LIMIT_ROWS.map(({ key, label, used }) => {
+    const u = used(usage);
+    const limit = plan.limits[key];
+    const state = u > limit ? 'over' : u >= NEAR_LIMIT_RATIO * limit ? 'near' : 'ok';
+    return { key, label, used: u, limit, state };
+  });
+}
+
+/** Czy da się jeszcze wysłać `units` SMS-ów w tym miesiącu bez przekroczenia limitu planu. */
+export function smsAllowed(usedThisMonth: number, plan: Plan, units = 1): boolean {
+  return usedThisMonth + units <= plan.limits.smsPerMonth;
+}
+
 /** Koszty usługowe przerzucane na studio (1.2.7). */
 export const SERVICE_PRICES = { smsGrosze: 9, voiceCallGrosze: 25, emailGrosze: 0, letterGrosze: 450 };
 
