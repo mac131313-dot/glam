@@ -25,6 +25,11 @@ export type Deps = {
   dns?: DnsResolver;
   /** Wywołania do Stripe (domyślnie globalny fetch; w testach podstawka). */
   http?: typeof fetch;
+  /**
+   * Konto Stripe GLAM do abonamentów studiów (z env, osobno od bramek studiów w `gateway_enc`).
+   * Brak = płatności abonamentu wyłączone: trial działa, „Abonament” pokazuje „Płatności abonamentu wkrótce”.
+   */
+  platformStripe?: { secret: string; webhookSecret: string; prices: Record<'start' | 'studio' | 'siec', string> };
 };
 
 declare module 'fastify' {

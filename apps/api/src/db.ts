@@ -1429,6 +1429,29 @@ CREATE TABLE IF NOT EXISTS studio_billing (
   updated_at TEXT NOT NULL
 );
 
+-- Opłacone faktury abonamentu GLAM (webhook invoice.paid, kwota > 0) – lista „do zafakturowania” w konsoli.
+CREATE TABLE IF NOT EXISTS platform_payments (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  stripe_invoice_id TEXT NOT NULL UNIQUE,
+  amount_grosze INTEGER NOT NULL,
+  plan_id TEXT NOT NULL,
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  paid_at TEXT NOT NULL,
+  invoiced_at TEXT,
+  invoice_number TEXT,
+  invoiced_by TEXT REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_platform_payments_studio ON platform_payments (studio_id, paid_at);
+
+-- Przetworzone zdarzenia Stripe GLAM (idempotencja webhooka: to samo id drugi raz = bez skutków).
+CREATE TABLE IF NOT EXISTS platform_stripe_events (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  received_at TEXT NOT NULL
+);
+
 -- Nieużywana od 17.10.2026 (bez sensorów zdrowia). Zostaje dla starych baz; czyszczona przy usunięciu konta.
 CREATE TABLE IF NOT EXISTS health_sync (
   user_id TEXT NOT NULL REFERENCES users(id),

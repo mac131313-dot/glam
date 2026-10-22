@@ -36,7 +36,8 @@ const toFacts = (row: BillingRow): BillingFacts => ({ state: row.state, currentP
 const ownerEmails = (db: Db, studioId: string) =>
   (db.prepare("SELECT DISTINCT u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.studio_id = ? AND m.role = 'owner' AND u.email IS NOT NULL").all(studioId) as { email: string }[]).map((r) => r.email);
 
-async function mailOwners(deps: Deps, studioId: string, subject: string, body: string) {
+/** E-mail do właścicielek studia; błąd wysyłki tylko w logu (nie przerywa rozliczeń). */
+export async function mailOwners(deps: Deps, studioId: string, subject: string, body: string) {
   for (const to of ownerEmails(deps.db, studioId)) {
     try {
       await deps.email?.send(to, subject, body);

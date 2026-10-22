@@ -3,6 +3,7 @@ import type { Deps } from './context.ts';
 import { openDb } from './db.ts';
 import { backup, dispatch } from './services/dispatch.ts';
 import { runJobs } from './services/jobs.ts';
+import { platformStripeFromEnv } from './services/platform-stripe.ts';
 import { guardStripeStudios } from './services/stripe.ts';
 import { WebPushSender } from './services/webpush.ts';
 import { ConsoleEmailSender, ConsolePushSender, ConsoleSmsGateway, MockPaymentProvider } from './sms.ts';
@@ -14,6 +15,9 @@ const production = process.env.NODE_ENV === 'production';
 const demo = process.env.GLAM_DEMO === '1' || process.env.npm_lifecycle_event === 'dev';
 if (demo && production) throw new Error('Tryb demo (GLAM_DEMO=1 / npm run dev) nie może działać z NODE_ENV=production.');
 if (demo) console.warn('⚠ Tryb demo: kody SMS w odpowiedziach API i logowanie bez SMS są włączone. Nie używaj tego na serwerze z prawdziwymi klientkami.');
+// Abonamenty studiów przez Stripe GLAM: wszystkie pięć zmiennych albo żadna (wtedy trial działa, płatności abonamentu wyłączone).
+const platformStripe = platformStripeFromEnv(process.env);
+if (!platformStripe) console.log('ℹ Płatności abonamentu GLAM wyłączone (brak GLAM_STRIPE_SECRET, GLAM_STRIPE_WEBHOOK_SECRET lub GLAM_STRIPE_PRICE_START|STUDIO|SIEC).');
 const deps: Deps = {
   db,
   sms: new ConsoleSmsGateway(),
@@ -24,6 +28,7 @@ const deps: Deps = {
   push: process.env.GLAM_WEBPUSH === '0' ? new ConsolePushSender() : new WebPushSender(db),
   exposeDevCodes: demo,
   publicUrl: process.env.GLAM_PUBLIC_URL ?? 'http://localhost:5173',
+  platformStripe,
 };
 const app = buildApp(deps, { logger: production });
 
