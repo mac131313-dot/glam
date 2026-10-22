@@ -22,13 +22,13 @@ import { normalizePhone } from '../auth.ts';
 import { ctx, requirePerm, requireStudio, STAFF, type Deps } from '../context.ts';
 import { unseal } from '../crypto.ts';
 import { id, nowIso } from '../db.ts';
-import { badRequest, conflict, forbidden, notFound } from '../errors.ts';
+import { HttpError, badRequest, conflict, forbidden, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
 import { DESK_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
 import { bookSession, cancelBooking, changeTrainer, checkIn, loadSession, markNoShow, walkInOptions } from '../services/booking.ts';
 import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, receptionThreads, type ChatInput } from '../services/chat.ts';
-import { logUsage } from '../services/dispatch.ts';
+import { sendStudioSms } from '../services/studio-sms.ts';
 import { storeMedia } from '../services/media.ts';
 import { notify } from '../services/notify.ts';
 import { consumeEntry, loadPasses, refundEntry } from '../services/passes.ts';
@@ -628,8 +628,9 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       );
       const phone = (db.prepare('SELECT phone FROM users WHERE id = ?').get(req.params.id) as { phone: string }).phone;
       const link = `${deps.publicUrl ?? ''}/zaplac/${token}`;
-      await deps.sms.send(phone, `${studio.name}: link do płatności za ${product.name} (${formatPLN(product.price)}): ${link}`);
-      logUsage(db, studio.id, 'sms', 1, 9);
+      if (!(await sendStudioSms(deps, studio, phone, `${studio.name}: link do płatności za ${product.name} (${formatPLN(product.price)}): ${link}`))) {
+        throw new HttpError(429, 'studio_sms_limit', 'Pula SMS na ten miesiąc się skończyła. Skopiuj link i wyślij go klientce.', { link });
+      }
       audit(scope, { actorId: user.id, action: 'payment_link.sent', entity: 'product', entityId: product.id, subjectUserId: req.params.id });
       return { link, message: 'Link do płatności wysłany SMS-em.' };
     }
