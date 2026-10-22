@@ -20,6 +20,7 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
 
   const FILTERS = ['trial', 'active', 'past_due', 'suspended'];
   const DAY_MS = 86_400_000;
+  const clearTrialMails = (studioId: string) => db.prepare('DELETE FROM platform_settings WHERE key IN (?, ?)').run(`trial-mail:${studioId}:5`, `trial-mail:${studioId}:1`);
 
   // Sygnały do przeglądu: kto wymaga uwagi (trial na finiszu, zaległa płatność, przekroczony limit planu).
   const signals = (studioId: string, planId: string | null, status: string, trialEndsAt: string | null, billingState: string): string[] => {
@@ -143,9 +144,22 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
     const to = new Date(from + days * 86_400_000).toISOString();
     tx(db, () => {
       db.prepare('UPDATE studios SET trial_ends_at = ? WHERE id = ?').run(to, req.params.id);
+      clearTrialMails(req.params.id); // nowy koniec triala = nowe przypomnienia
       platformAudit(db, req.user!.id, 'studio.trial', req.params.id, { from: was.trial_ends_at, to, days });
     });
     return { ok: true, trialEndsAt: to, status: await syncAccess(deps, req.params.id) };
+  });
+
+  // Studio rozliczane poza systemem (faktura, umowa): bez daty końca triala jest 'active', chyba że zawieszone ręcznie.
+  app.post<{ Params: { id: string } }>('/api/platform/studios/:id/offline-billing', adminOnly, async (req) => {
+    const was = db.prepare('SELECT trial_ends_at FROM studios WHERE id = ?').get(req.params.id) as { trial_ends_at: string | null } | undefined;
+    if (!was) throw notFound();
+    tx(db, () => {
+      db.prepare('UPDATE studios SET trial_ends_at = NULL WHERE id = ?').run(req.params.id);
+      clearTrialMails(req.params.id);
+      platformAudit(db, req.user!.id, 'studio.offline_billing', req.params.id, { trialEndsAt: was.trial_ends_at });
+    });
+    return { ok: true, status: await syncAccess(deps, req.params.id) };
   });
 
   // Feature flagi per studio (T11): funkcje w becie tylko dla wybranych studiów. null = jak w planie.

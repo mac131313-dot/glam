@@ -198,3 +198,55 @@ test('demo bez daty końca triala zostaje aktywne po jobach', async () => {
   await runJobs(deps, new Date());
   assert.equal(studioRow(R).status, 'active');
 });
+
+test('przedłużenie triala przywraca przypomnienia', async () => {
+  const studioId = await signup('+48600100206', 'ewa.ponownie@example.com');
+  const support = await login(DEMO.platformSupport);
+  const now = new Date();
+  db.prepare('UPDATE studios SET trial_ends_at = ? WHERE id = ?').run(new Date(now.getTime() + 5 * DAY - 3_600_000).toISOString(), studioId);
+  await runJobs(deps, now);
+  assert.equal(billingMails('ewa.ponownie@example.com').length, 1);
+
+  assert.equal((await call(support, 'POST', `/api/platform/studios/${studioId}/trial`, { days: 7 })).statusCode, 200);
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM platform_settings WHERE key LIKE ?').get(`trial-mail:${studioId}:%`) as { n: number }).n, 0);
+
+  // Za (nowy koniec − 5 dni) przypomnienie wychodzi ponownie.
+  const end = Date.parse(studioRow(studioId).trial_ends_at!);
+  const again = new Date(end - 5 * DAY + 3_600_000);
+  await runJobs(deps, again);
+  await runJobs(deps, again);
+  assert.equal(billingMails('ewa.ponownie@example.com').length, 2);
+});
+
+test('rozliczenie poza systemem zdejmuje zawieszenie po triale', async () => {
+  const studioId = await signup('+48600100207', 'ewa.faktura@example.com');
+  const admin = await login(DEMO.platformAdmin);
+  const support = await login(DEMO.platformSupport);
+  db.prepare('UPDATE studios SET trial_ends_at = ? WHERE id = ?').run(new Date(Date.now() - DAY).toISOString(), studioId);
+  await runJobs(deps, new Date());
+  assert.equal(studioRow(studioId).status, 'suspended');
+
+  assert.equal((await call(support, 'POST', `/api/platform/studios/${studioId}/offline-billing`)).statusCode, 403);
+  assert.equal((await call(admin, 'POST', '/api/platform/studios/nie-ma/offline-billing')).statusCode, 404);
+  const res = await call(admin, 'POST', `/api/platform/studios/${studioId}/offline-billing`);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(res.json().status, 'active');
+  assert.equal(studioRow(studioId).trial_ends_at, null);
+  assert.equal(audits(studioId, 'studio.offline_billing').length, 1);
+  await runJobs(deps, new Date());
+  assert.equal(studioRow(studioId).status, 'active');
+
+  // Ręczne zawieszenie nadal wygrywa.
+  await call(admin, 'POST', `/api/platform/studios/${studioId}/suspend`, { reason: 'Spór o fakturę za kwartał' });
+  assert.equal(studioRow(studioId).status, 'suspended');
+});
+
+test('zawieszenie w trakcie triala i powrót do triala', async () => {
+  const studioId = await signup('+48600100208', 'ewa.trwa@example.com');
+  const admin = await login(DEMO.platformAdmin);
+  assert.equal(studioRow(studioId).status, 'trial');
+  assert.equal((await call(admin, 'POST', `/api/platform/studios/${studioId}/suspend`, { reason: 'Podejrzenie nadużycia' })).statusCode, 200);
+  assert.equal(studioRow(studioId).status, 'suspended');
+  assert.equal((await call(admin, 'POST', `/api/platform/studios/${studioId}/unsuspend`)).statusCode, 200);
+  assert.equal(studioRow(studioId).status, 'trial');
+});
