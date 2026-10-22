@@ -1426,6 +1426,7 @@ CREATE TABLE IF NOT EXISTS studio_billing (
   nip TEXT,
   address TEXT,
   invoice_email TEXT,
+  stripe_event_at TEXT,
   updated_at TEXT NOT NULL
 );
 

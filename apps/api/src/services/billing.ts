@@ -18,6 +18,8 @@ export type BillingRow = {
   nip: string | null;
   address: string | null;
   invoice_email: string | null;
+  /** `created` ostatniego zastosowanego zdarzenia subskrypcji Stripe (starsze, dostarczone później, są pomijane). */
+  stripe_event_at: string | null;
   updated_at: string;
 };
 

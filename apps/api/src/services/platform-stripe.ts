@@ -158,7 +158,8 @@ type Invoice = {
   parent?: { subscription_details?: { subscription?: Ref; metadata?: Meta } | null } | null;
   lines?: { data?: InvoiceLine[] };
 };
-export type PlatformEvent = { id: string; type: string; data: { object: unknown } };
+/** `created` = chwila zdarzenia w Stripe (sekundy epoki); Stripe nie gwarantuje kolejności dostarczenia. */
+export type PlatformEvent = { id: string; type: string; created?: number; data: { object: unknown } };
 
 const refId = (r: Ref) => (typeof r === 'string' ? r : (r?.id ?? null));
 const epochIso = (sec: number | null | undefined) => (typeof sec === 'number' ? new Date(sec * 1000).toISOString() : null);
@@ -194,9 +195,9 @@ export async function handlePlatformEvent(deps: Deps, event: PlatformEvent): Pro
       case 'checkout.session.completed':
         return checkoutCompleted(deps, event.data.object as CheckoutSession);
       case 'customer.subscription.updated':
-        return subscriptionUpdated(deps, event.data.object as Subscription);
+        return subscriptionUpdated(deps, event.data.object as Subscription, epochIso(event.created));
       case 'customer.subscription.deleted':
-        return subscriptionDeleted(deps, event.data.object as Subscription);
+        return subscriptionDeleted(deps, event.data.object as Subscription, epochIso(event.created));
       case 'invoice.paid':
         return invoicePaid(deps, event.data.object as Invoice);
       case 'invoice.payment_failed':
@@ -243,11 +244,14 @@ function checkoutCompleted(deps: Deps, s: CheckoutSession): Outcome {
 /** Zdarzenie starej subskrypcji (inna niż zapisana) nie nadpisuje bieżącej. */
 const otherSubscription = (b: BillingRow, subscriptionId: string) => b.stripe_subscription_id !== null && b.stripe_subscription_id !== subscriptionId;
 
-function subscriptionUpdated(deps: Deps, sub: Subscription): Outcome {
+/** Zdarzenie subskrypcji starsze niż ostatnio zastosowane (dostarczone później) – pomijane; ta sama sekunda się liczy. */
+const staleEvent = (b: BillingRow, eventAt: string | null) => !!eventAt && !!b.stripe_event_at && Date.parse(eventAt) < Date.parse(b.stripe_event_at);
+
+function subscriptionUpdated(deps: Deps, sub: Subscription, eventAt: string | null): Outcome {
   const studioId = findStudio(deps, { studioId: sub.metadata?.studio_id, subscription: sub.id, customer: refId(sub.customer) });
   if (!studioId) return null;
   const b = loadBilling(deps.db, studioId);
-  if (otherSubscription(b, sub.id)) return null;
+  if (otherSubscription(b, sub.id) || staleEvent(b, eventAt)) return null;
   const state = sub.status === 'active' || sub.status === 'trialing' ? 'active' : sub.status === 'past_due' || sub.status === 'unpaid' ? 'past_due' : sub.status === 'canceled' ? 'canceled' : b.state;
   const pastDueSince = state === 'past_due' ? (b.past_due_since ?? nowIso()) : state === 'active' ? null : b.past_due_since;
   const periodEnd = epochIso(sub.current_period_end ?? sub.items?.data?.[0]?.current_period_end);
@@ -261,22 +265,22 @@ function subscriptionUpdated(deps: Deps, sub: Subscription): Outcome {
   deps.db
     .prepare(
       `UPDATE studio_billing SET stripe_subscription_id = ?, stripe_customer_id = COALESCE(stripe_customer_id, ?), state = ?, past_due_since = ?,
-         current_period_end = COALESCE(?, current_period_end), cancel_at_period_end = ?, pending_plan_id = ?, updated_at = ? WHERE studio_id = ?`,
+         current_period_end = ?, cancel_at_period_end = ?, pending_plan_id = ?, stripe_event_at = ?, updated_at = ? WHERE studio_id = ?`,
     )
-    // Zakończona subskrypcja nie zostaje „bieżącą” – inaczej blokowałaby założenie nowej.
-    .run(b.stripe_subscription_id ?? (state === 'canceled' ? null : sub.id), refId(sub.customer), state, pastDueSince, periodEnd, cancel ? 1 : 0, pending, nowIso(), studioId);
+    // Zakończona subskrypcja nie zostaje „bieżącą” – inaczej blokowałaby założenie nowej. Okres przesuwa się tylko do przodu.
+    .run(b.stripe_subscription_id ?? (state === 'canceled' ? null : sub.id), refId(sub.customer), state, pastDueSince, later(b.current_period_end, periodEnd), cancel ? 1 : 0, pending, later(b.stripe_event_at, eventAt), nowIso(), studioId);
   return { studioId };
 }
 
-function subscriptionDeleted(deps: Deps, sub: Subscription): Outcome {
+function subscriptionDeleted(deps: Deps, sub: Subscription, eventAt: string | null): Outcome {
   const studioId = findStudio(deps, { studioId: sub.metadata?.studio_id, subscription: sub.id, customer: refId(sub.customer) });
   if (!studioId) return null;
   const b = loadBilling(deps.db, studioId);
-  if (otherSubscription(b, sub.id)) return null;
+  if (otherSubscription(b, sub.id) || staleEvent(b, eventAt)) return null;
   // Bez subskrypcji właścicielka może dodać kartę od nowa (nowy Checkout).
   deps.db
-    .prepare("UPDATE studio_billing SET state = 'canceled', current_period_end = COALESCE(?, current_period_end), stripe_subscription_id = NULL, cancel_at_period_end = 0, pending_plan_id = NULL, updated_at = ? WHERE studio_id = ?")
-    .run(epochIso(sub.ended_at), nowIso(), studioId);
+    .prepare("UPDATE studio_billing SET state = 'canceled', current_period_end = COALESCE(?, current_period_end), stripe_subscription_id = NULL, cancel_at_period_end = 0, pending_plan_id = NULL, stripe_event_at = ?, updated_at = ? WHERE studio_id = ?")
+    .run(epochIso(sub.ended_at), later(b.stripe_event_at, eventAt), nowIso(), studioId);
   return { studioId };
 }
 
@@ -334,8 +338,12 @@ function invoicePaid(deps: Deps, inv: Invoice): Outcome {
   return { studioId };
 }
 
-/** Nieudana płatność: zaległość od pierwszej porażki (karencja `BILLING_GRACE_DAYS`) i e-mail do właścicielki przy każdej próbie. */
+/**
+ * Nieudana płatność: zaległość od pierwszej porażki (karencja `BILLING_GRACE_DAYS`) i e-mail do właścicielki przy każdej próbie.
+ * Porażka dostarczona po `invoice.paid` tej samej faktury (faktura już opłacona) jest pomijana.
+ */
 function invoiceFailed(deps: Deps, inv: Invoice): Outcome {
+  if (deps.db.prepare('SELECT 1 FROM platform_payments WHERE stripe_invoice_id = ?').get(inv.id)) return null;
   const refs = invoiceRefs(deps, inv);
   if (!refs?.current) return null;
   deps.db.prepare("UPDATE studio_billing SET state = 'past_due', past_due_since = COALESCE(past_due_since, ?), updated_at = ? WHERE studio_id = ?").run(nowIso(), nowIso(), refs.studioId);

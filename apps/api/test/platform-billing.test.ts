@@ -279,7 +279,7 @@ test('zawieszenie w trakcie triala i powrót do triala', async () => {
 const epoch = (ms: number) => Math.floor(ms / 1000);
 const isoOf = (sec: number) => new Date(sec * 1000).toISOString();
 let evt = 0;
-const stripeEvent = (type: string, object: object, id = `evt_glam_${++evt}`) => ({ id, type, data: { object } });
+const stripeEvent = (type: string, object: object, id = `evt_glam_${++evt}`, created = epoch(Date.now())) => ({ id, type, created, data: { object } });
 const platformWebhook = (event: object, secret = 'whsec_glam', target = app) => {
   const raw = JSON.stringify(event);
   return target.inject({ method: 'POST', url: '/api/platform/stripe', payload: raw, headers: { 'content-type': 'application/json', 'stripe-signature': signStripePayload(raw, secret) } });
@@ -602,4 +602,52 @@ test('nieudana płatność → karencja → zawieszenie', async () => {
 
   await runJobs(deps, new Date(Date.now() + 8 * DAY));
   assert.equal(studioRow(studioId).status, 'suspended');
+});
+
+test('kolejność: spóźnione zdarzenia nie cofają stanu', async () => {
+  const studioId = await subscribed('+48600100309', 'ewa.spoznione@example.com', 'sub_late');
+  const now = epoch(Date.now());
+  const periodEnd = now + 30 * 86_400;
+
+  // Porażka płatności dostarczona po opłaceniu tej samej faktury.
+  await platformWebhook(stripeEvent('invoice.paid', invoice(studioId, { id: 'in_late', amount: 39900, sub: 'sub_late', start: now, end: periodEnd })));
+  const mails = billingMails('ewa.spoznione@example.com').length;
+  assert.equal((await platformWebhook(stripeEvent('invoice.payment_failed', invoice(studioId, { id: 'in_late', amount: 0, sub: 'sub_late', start: now, end: periodEnd })))).statusCode, 200);
+  assert.equal(billingRow(studioId).state, 'active');
+  assert.equal(billingRow(studioId).past_due_since, null);
+  assert.equal(billingMails('ewa.spoznione@example.com').length, mails);
+
+  // Starsze zdarzenie subskrypcji (created wcześniej) dostarczone po nowszym – pomijane w całości.
+  const sub = { id: 'sub_late', customer: 'cus_sub_late', status: 'active', current_period_end: periodEnd, cancel_at_period_end: false, metadata: { studio_id: studioId } };
+  await platformWebhook(stripeEvent('customer.subscription.updated', sub, undefined, now));
+  await platformWebhook(stripeEvent('customer.subscription.updated', { ...sub, status: 'past_due', current_period_end: periodEnd + 30 * 86_400 }, undefined, now - 60));
+  await platformWebhook(stripeEvent('customer.subscription.deleted', { ...sub, status: 'canceled', ended_at: now - 60 }, undefined, now - 60));
+  let b = billingRow(studioId);
+  assert.equal(b.state, 'active');
+  assert.equal(b.past_due_since, null);
+  assert.equal(b.stripe_subscription_id, 'sub_late');
+  assert.equal(b.current_period_end, isoOf(periodEnd));
+
+  // Okres nie cofa się, a zdarzenie z tej samej sekundy jest stosowane.
+  await platformWebhook(stripeEvent('customer.subscription.updated', { ...sub, current_period_end: periodEnd - 10 * 86_400, cancel_at_period_end: true }, undefined, now));
+  b = billingRow(studioId);
+  assert.equal(b.current_period_end, isoOf(periodEnd));
+  assert.equal(b.cancel_at_period_end, 1);
+});
+
+test('anulowana subskrypcja działa do końca okresu, potem zawieszenie', async () => {
+  const studioId = await subscribed('+48600100310', 'ewa.anulowane@example.com', 'sub_end');
+  const end = Date.now() + 5 * DAY;
+  const sub = { id: 'sub_end', customer: 'cus_sub_end', status: 'active', current_period_end: epoch(end), cancel_at_period_end: true, metadata: { studio_id: studioId } };
+  await platformWebhook(stripeEvent('customer.subscription.updated', sub));
+  assert.equal((await platformWebhook(stripeEvent('customer.subscription.deleted', { ...sub, status: 'canceled', ended_at: epoch(end) }))).statusCode, 200);
+  assert.equal(billingRow(studioId).state, 'canceled');
+  assert.equal(studioRow(studioId).status, 'active');
+
+  const before = billingMails('ewa.anulowane@example.com').length;
+  await runJobs(deps, new Date(end + DAY));
+  assert.equal(studioRow(studioId).status, 'suspended');
+  const mails = billingMails('ewa.anulowane@example.com').slice(before);
+  assert.equal(mails.length, 1);
+  assert.match(mails[0]!.subject, /zawieszone/);
 });
