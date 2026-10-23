@@ -7,8 +7,12 @@ import { ApiError, api, session, useApi } from '../api.ts';
 import { PERSONAS } from '../demo.ts';
 import { applySystemLook } from '../look.ts';
 import { Icon, type IconName } from '../icons.tsx';
-import { Empty, Pending, Select, Spinner } from '../ui.tsx';
+import { Pending, Select, Spinner } from '../ui.tsx';
+import { Log } from './Log.tsx';
+import { Money } from './Money.tsx';
 import { Studios } from './Studios.tsx';
+import { Support } from './Support.tsx';
+import { Team } from './Team.tsx';
 import { Today } from './Today.tsx';
 
 export type PlatformRole = 'admin' | 'support' | 'finance';
@@ -145,8 +149,10 @@ function Shell({ me, persona }: { me: PlatformMe; persona: string }) {
         <div key={section} className="staff-view">
           {section === 'today' && <Today role={me.role} go={go} />}
           {section === 'studios' && <Studios role={me.role} studioId={param || null} go={go} />}
-          {/* Pieniądze, Wsparcie, Zespół i Dziennik dochodzą w kolejnym zadaniu. */}
-          {['money', 'support', 'team', 'log'].includes(section) && <Empty>{visible.find((s) => s.id === section)?.label} – ta sekcja pojawi się wkrótce.</Empty>}
+          {section === 'money' && <Money go={go} />}
+          {section === 'support' && <Support />}
+          {section === 'team' && <Team meId={me.userId} />}
+          {section === 'log' && <Log go={go} />}
         </div>
       </main>
     </div>

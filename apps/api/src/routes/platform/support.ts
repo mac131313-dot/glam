@@ -65,7 +65,7 @@ export function supportRoutes(app: FastifyInstance, deps: Deps) {
     const open = db.prepare('SELECT * FROM status_incidents WHERE resolved_at IS NULL ORDER BY started_at DESC').all() as { component: string; status: string }[];
     return {
       components: components.map((c) => ({ name: c, status: open.find((i) => i.component === c)?.status ?? 'operational' })),
-      incidents: db.prepare("SELECT component, status, note, started_at, resolved_at FROM status_incidents WHERE started_at >= date('now', '-30 day') ORDER BY started_at DESC").all(),
+      incidents: db.prepare("SELECT id, component, status, note, started_at, resolved_at FROM status_incidents WHERE started_at >= date('now', '-30 day') ORDER BY started_at DESC").all(),
     };
   });
 

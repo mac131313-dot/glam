@@ -370,7 +370,7 @@ test('checkout wymaga danych do faktury', async () => {
   assert.equal(v.plan.id, 'studio');
   assert.deepEqual(v.billing, { state: 'none', currentPeriodEnd: null, cancelAtPeriodEnd: false, pendingPlanId: null, companyName: details.companyName, nip: '1234563218', address: details.address, invoiceEmail: details.invoiceEmail, hasCard: false });
   assert.equal(v.usage.length, 5);
-  assert.deepEqual(v.payments, []);
+  assert.equal(v.payments.length, 1, 'tylko płatność z danych demo (seed)');
   assert.deepEqual(v.plans.map((p: { id: string }) => p.id), ['start', 'studio', 'siec']);
   assert.ok(v.plans[0].featureLabels.length > 0 && v.plans[0].limits.staff === 5 && v.plans[0].price === '199 zł');
 
@@ -380,12 +380,13 @@ test('checkout wymaga danych do faktury', async () => {
 });
 
 test('zły podpis webhooka', async () => {
+  const seeded = paymentsOf(R); // płatność z danych demo (seed)
   const event = stripeEvent('invoice.paid', invoice(R, { id: 'in_zly', amount: 39900, sub: 'sub_zly', start: epoch(Date.now()), end: epoch(Date.now() + 30 * DAY) }));
   assert.equal((await platformWebhook(event, 'whsec_obcy')).statusCode, 403);
   const raw = JSON.stringify(event);
   assert.equal((await app.inject({ method: 'POST', url: '/api/platform/stripe', payload: raw, headers: { 'content-type': 'application/json' } })).statusCode, 403);
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM platform_stripe_events').get() as { n: number }).n, 0);
-  assert.deepEqual(paymentsOf(R), []);
+  assert.deepEqual(paymentsOf(R), seeded);
 });
 
 test('invoice.paid zapisuje płatność i aktywuje', async () => {

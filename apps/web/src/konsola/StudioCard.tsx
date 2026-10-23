@@ -5,6 +5,7 @@ import { useState, type ReactNode } from 'react';
 import { FEATURE_LABEL, formatPLN, PLANS, plural, planById, type Feature, type LimitUsage } from '@glam/core';
 import { api, fmtPhone, fmtTime, useApi } from '../api.ts';
 import { Fold, Pending, Progress, Select, Sheet, Tabs, useAction } from '../ui.tsx';
+import { date, describeAudit } from './audit.ts';
 import type { Go, PlatformRole } from './KonsolaApp.tsx';
 
 type Detail = {
@@ -40,8 +41,6 @@ type Detail = {
   audit: { id: string; created_at: string; action: string; actor: string; details: Record<string, any> | null }[];
 };
 
-const DAY = new Intl.DateTimeFormat('pl-PL', { timeZone: 'Europe/Warsaw', day: 'numeric', month: 'numeric', year: 'numeric' });
-const date = (iso: string) => DAY.format(new Date(iso));
 const daysLeft = (iso: string) => Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 86_400_000));
 
 /** Stan studia po ludzku: zawieszone i trial z `studios.status`, zaległość z rozliczeń. */
@@ -62,33 +61,6 @@ const FLAG_CHOICES: [FlagChoice, string][] = [
 ];
 const FLAG_VALUE: Record<FlagChoice, boolean | null> = { inherit: null, on: true, off: false };
 const TRIAL_CHOICES = [7, 14, 30];
-
-/** Wpis historii: nazwa działania i krótki opis szczegółów. */
-function describeAudit(action: string, d: Record<string, any> | null): { title: string; detail?: string } {
-  const planName = (id: string | null | undefined) => (id ? planById(id).name : 'brak');
-  switch (action) {
-    case 'studio.plan':
-      return { title: 'Zmiana planu', detail: `${planName(d?.from)} → ${planName(d?.to)}` };
-    case 'studio.suspend':
-      return { title: 'Zawieszenie', detail: d?.reason };
-    case 'studio.unsuspend':
-      return { title: 'Zdjęcie zawieszenia' };
-    case 'studio.trial':
-      return { title: 'Przedłużenie triala', detail: d?.days && d.to ? `o ${d.days} dni, do ${date(d.to)}` : undefined };
-    case 'studio.offline_billing':
-      return { title: 'Rozliczane poza systemem' };
-    case 'studio.flag': {
-      const label = FEATURE_LABEL[d?.flag as Feature] ?? d?.flag;
-      return { title: 'Zmiana funkcji', detail: `${label}: ${d?.enabled === null ? 'jak w planie' : d?.enabled ? 'włączona' : 'wyłączona'}` };
-    }
-    case 'studio.fill':
-      return { title: 'Uzupełnienie grafiku' };
-    case 'payment.invoiced':
-      return { title: 'Płatność zafakturowana', detail: d?.number };
-    default:
-      return { title: action };
-  }
-}
 
 function Line({ label, children }: { label: string; children: ReactNode }) {
   return (
