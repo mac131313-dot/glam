@@ -215,9 +215,10 @@ export function billingRoutes(app: FastifyInstance, deps: Deps) {
   });
 
   // Pasek w panelu: jedno zdanie o najpilniejszej sprawie abonamentu albo `null`.
-  // Kolejność: nieudana płatność, trial ≤ 5 dni bez karty, przekroczony limit planu.
+  // Kolejność: zawieszone studio, nieudana płatność, trial ≤ 5 dni bez karty, przekroczony limit planu.
   app.get('/api/owner/billing/banner', owner, async (req): Promise<{ text: string; tone: 'info' | 'warn' } | null> => {
     const { studio, scope } = ctx(req);
+    if (studio.status === 'suspended') return { text: 'Studio jest zawieszone – klientki nie mają teraz dostępu. Zobacz Abonament.', tone: 'warn' };
     const b = loadBilling(db, studio.id);
     const now = Date.now();
     if (b.state === 'past_due') {
@@ -225,7 +226,7 @@ export function billingRoutes(app: FastifyInstance, deps: Deps) {
       return { text: `Płatność za GLAM nie przeszła – zaktualizuj kartę do ${shortDate(graceEnd)}`, tone: 'warn' };
     }
     const left = studio.trial_ends_at ? Date.parse(studio.trial_ends_at) - now : 0;
-    if (left > 0 && left <= TRIAL_BANNER_DAYS * DAY_MS && studio.status !== 'suspended' && !b.stripe_subscription_id) {
+    if (left > 0 && left <= TRIAL_BANNER_DAYS * DAY_MS && !b.stripe_subscription_id) {
       const days = Math.ceil(left / DAY_MS);
       return { text: `Okres próbny kończy się za ${days === 1 ? '1 dzień' : `${days} dni`} – dodaj kartę, żeby studio działało dalej`, tone: 'info' };
     }

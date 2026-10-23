@@ -864,6 +864,19 @@ test('przegląd „Dziś”: MRR z planów, sygnały i liczniki', async () => {
 
 type Banner = { text: string; tone: 'info' | 'warn' } | null;
 
+test('pasek w panelu: zawieszone studio wygrywa z pozostałymi sygnałami', async () => {
+  const phone = '+48600100504';
+  const studioId = await signup(phone, 'ewa.zawieszona@example.com');
+  const owner = await login(phone);
+  // Trial za 2 dni i zaległa płatność – oba ustępują zawieszeniu.
+  db.prepare('UPDATE studios SET trial_ends_at = ? WHERE id = ?').run(new Date(Date.now() + 2 * DAY).toISOString(), studioId);
+  db.prepare("UPDATE studio_billing SET state = 'past_due', past_due_since = ?, manual_suspension = 'Spór o fakturę za kwartał' WHERE studio_id = ?").run(new Date().toISOString(), studioId);
+  assert.equal(await syncAccess(deps, studioId), 'suspended');
+  const res = await call(owner, 'GET', '/api/owner/billing/banner', undefined, studioId);
+  assert.equal(res.statusCode, 200, res.body);
+  assert.deepEqual(res.json(), { text: 'Studio jest zawieszone – klientki nie mają teraz dostępu. Zobacz Abonament.', tone: 'warn' });
+});
+
 test('pasek w panelu: kolejność sygnałów, tylko dla właścicielki', async () => {
   const phone = '+48600100405';
   const studioId = await signup(phone, 'ewa.pasek@example.com');
