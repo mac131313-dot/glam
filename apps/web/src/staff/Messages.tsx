@@ -84,8 +84,17 @@ function GroupMessage({ roles }: { roles: Role[] }) {
   const [target, setTarget] = useState('');
   const [body, setBody] = useState('');
   const { run, busy } = useAction();
+  const options = [
+    ...(can(roles, 'messages.group.all') ? [{ value: 'all', label: 'Wszystkie klientki studia' }] : [{ value: '', label: 'Wybierz zajęcia' }]),
+    ...(day.data?.sessions ?? []).map((s) => ({ value: `session:${s.id}`, label: `Dziś ${fmtTime(s.starts_at)} · ${s.class_name} (${s.participants.length})` })),
+    ...(cfg.data?.classTypes ?? []).map((c) => ({ value: `class_type:${c.id}`, label: `Uczestniczki zajęć: ${c.name}` })),
+    ...(groups.data ?? []).map((g) => ({ value: `group:${g.id}`, label: `Grupa: ${g.name}` })),
+  ];
   const send = () => {
     const payload = target.startsWith('session:') ? { sessionId: target.slice(8), body } : { audience: target || 'all', body };
+    // Powiadomienie idzie od razu na telefony – jedno pytanie, do kogo, zanim poleci (zwłaszcza do wszystkich klientek).
+    const to = options.find((o) => o.value === (target || 'all'))?.label ?? 'wybrane klientki';
+    if (!window.confirm(`Wysłać powiadomienie – ${to}?`)) return;
     return run(() => api('/staff/messages', { method: 'POST', body: payload }).then((r) => (setBody(''), history.reload(), r)));
   };
   return (
@@ -95,12 +104,7 @@ function GroupMessage({ roles }: { roles: Role[] }) {
           ariaLabel="Do kogo"
           value={target}
           onChange={setTarget}
-          options={[
-            ...(can(roles, 'messages.group.all') ? [{ value: 'all', label: 'Wszystkie klientki studia' }] : [{ value: '', label: 'Wybierz zajęcia' }]),
-            ...(day.data?.sessions ?? []).map((s) => ({ value: `session:${s.id}`, label: `Dziś ${fmtTime(s.starts_at)} · ${s.class_name} (${s.participants.length})` })),
-            ...(cfg.data?.classTypes ?? []).map((c) => ({ value: `class_type:${c.id}`, label: `Uczestniczki zajęć: ${c.name}` })),
-            ...(groups.data ?? []).map((g) => ({ value: `group:${g.id}`, label: `Grupa: ${g.name}` })),
-          ]}
+          options={options}
         />
         <textarea className="input" placeholder="Np. „Dziś zajęcia w sali 2 – do zobaczenia!”" value={body} onChange={(e) => setBody(e.target.value)} maxLength={500} />
         <button className="btn" disabled={!body.trim() || (!target && !can(roles, 'messages.group.all')) || busy} onClick={send}>
@@ -133,6 +137,7 @@ function ReceptionChatPage({ clientId, name, onBack }: { clientId: string; name:
   return (
     <Page
       onBack={onBack}
+      bodyClass="gchat-body"
       title={
         <span className="gchat-title">
           <span>{name}</span>
@@ -140,7 +145,8 @@ function ReceptionChatPage({ clientId, name, onBack }: { clientId: string; name:
         </span>
       }
     >
-      <div className="stack">
+      {/* Jak w czatach grup: rozmowa przewija się sama, pole odpowiedzi przypięte na dole (także w telefonie recepcji). */}
+      <div className="gchat-scroll">
         {!msgs.data ? (
           <Spinner />
         ) : (
@@ -157,9 +163,9 @@ function ReceptionChatPage({ clientId, name, onBack }: { clientId: string; name:
             <div ref={end} />
           </div>
         )}
-        <div style={{ position: 'sticky', bottom: 0, background: 'var(--bg)', paddingTop: 8 }}>
-          <ChatComposer placeholder="Odpowiedz…" onSend={(msg) => api(`/staff/chats/${clientId}`, { method: 'POST', body: msg }).then(msgs.reload)} />
-        </div>
+      </div>
+      <div className="gchat-composer">
+        <ChatComposer placeholder="Odpowiedz…" onSend={(msg) => api(`/staff/chats/${clientId}`, { method: 'POST', body: msg }).then(msgs.reload)} />
       </div>
     </Page>
   );

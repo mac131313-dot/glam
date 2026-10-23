@@ -9,10 +9,10 @@ import { useToast } from '../ui.tsx';
 const ROLE: Record<string, string> = { client: 'klientka', trainer: 'trenerka', reception: 'recepcja', owner: 'właścicielka' };
 
 export function StudioPicker(props: { me: Me; onPick: (id: string) => void; onJoined: () => Promise<void>; onLogout: () => void; canClose: boolean; onClose: () => void }) {
-  // Link z zaproszenia albo wejściówki: /app?zaproszenie=KOD, /app?wejsciowka=KOD
+  // Link z zaproszenia, wejściówki albo kodu studia (QR w recepcji): /app?zaproszenie=KOD, /app?wejsciowka=KOD, /app?kod=KOD
   const [code, setCode] = useState(() => {
     const q = new URLSearchParams(location.search);
-    return (q.get('zaproszenie') ?? q.get('wejsciowka') ?? '').toUpperCase();
+    return (q.get('zaproszenie') ?? q.get('wejsciowka') ?? q.get('kod') ?? '').toUpperCase();
   });
   const [q, setQ] = useState('');
   const [city, setCity] = useState('');

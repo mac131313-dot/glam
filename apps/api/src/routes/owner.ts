@@ -7,6 +7,7 @@ import {
   addDays,
   arpu,
   avgVisits30,
+  can,
   churnRisk,
   describeRules,
   formatPLN,
@@ -248,12 +249,14 @@ export function ownerRoutes(app: FastifyInstance, deps: Deps) {
 
   // Klientki i segmenty (3, 4.11): aktywne, uśpione 7/14/30, nowe, ambasadorki, ryzyko odejścia.
   app.get<{ Querystring: { segment?: string } }>('/api/owner/clients', requirePerm(db, 'clients.view'), async (req) => {
-    const { scope } = ctx(req);
+    const { scope, roles } = ctx(req);
     const now = new Date();
+    // Przychód z klientki to finanse – recepcja (clients.view bez finance.view) dostaje listę bez tej kolumny.
+    const money = can(roles, 'finance.view');
     return {
       labels: SEGMENT_LABEL,
       clients: clientFacts(scope, now)
-        .map((f) => ({ id: f.userId, name: f.name, phone: f.phone, joinedAt: f.joinedAt, lastVisit: f.lastVisit, visits: f.visits.length, revenue: formatPLN(f.revenueGrosze), hasActivePass: f.hasActivePass, risk: churnRisk(f, now), segments: segmentsOf(f, now), groups: f.groups }))
+        .map((f) => ({ id: f.userId, name: f.name, phone: f.phone, joinedAt: f.joinedAt, lastVisit: f.lastVisit, visits: f.visits.length, revenue: money ? formatPLN(f.revenueGrosze) : undefined, hasActivePass: f.hasActivePass, risk: churnRisk(f, now), segments: segmentsOf(f, now), groups: f.groups }))
         .filter((c) => !req.query.segment || (c.segments as string[]).includes(req.query.segment))
         .sort((a, b) => b.risk - a.risk),
     };

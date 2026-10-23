@@ -14,6 +14,7 @@ export const PERSONAS: Record<'panel' | 'app' | 'konsola', Record<string, { phon
     julia: { phone: '500000212', label: 'Julia · klientka SS&G' },
     magda: { phone: '500000005', label: 'Magda · klientka w 3 studiach (demo)' },
     ania: { phone: '500000006', label: 'Ania · nowa klientka (demo)' },
+    recepcja: { phone: '500000202', label: 'SS&G · recepcja (konto firmowe)' },
   },
   // Zespół GLAM (konsola): role z `platform_staff`, numery z seeda.
   konsola: {

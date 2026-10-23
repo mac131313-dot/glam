@@ -243,6 +243,9 @@ test('grafik slotami: kilka dni naraz, zmiana godziny bez podwójnych sesji, usu
 
   const slots = (await call(owner, R, 'GET', '/api/owner/config')).json().templates.filter((t: { start_time: string }) => t.start_time === '06:30');
   assert.equal(slots.length, 2);
+  // Slot dodany w swój dzień po godzinie zajęć nie dopisuje sesji wstecz (inaczej test zależał od pory uruchomienia).
+  const past = db.prepare('SELECT COUNT(*) AS n FROM class_sessions WHERE template_id IN (?, ?) AND starts_at <= ?').get(slots[0].id, slots[1].id, new Date().toISOString()) as { n: number };
+  assert.equal(past.n, 0);
   const moved = await call(owner, R, 'PUT', `/api/owner/templates/${slots[0].id}`, { startTime: '06:45' });
   assert.equal(moved.statusCode, 200, moved.body);
   const times = db.prepare("SELECT starts_at FROM class_sessions WHERE template_id = ? AND status = 'scheduled'").all(slots[0].id) as { starts_at: string }[];

@@ -890,8 +890,15 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       const m = moderate(body, { maxLength: 1000, allowLinks: true });
       if (!m.ok) throw badRequest(MODERATION_COPY[m.reason]);
     }
+    // Czy rozmowa czekała już na odpowiedź – wtedy recepcja dostała powiadomienie przy pierwszej wiadomości.
+    const waiting = scope.get('SELECT 1 FROM chat_messages WHERE studio_id = $studio AND client_id = $u AND from_staff = 0 AND read_at IS NULL', { u: user.id });
     postChatMessage(scope, studio, { clientId: user.id, authorId: user.id, fromStaff: false, body, input: req.body ?? {} });
-    if (!isOpen(studio, new Date())) {
+    if (isOpen(studio, new Date())) {
+      // Telefon recepcji: jedno powiadomienie na rozmowę, tylko w godzinach recepcji (poza nimi klientka dostaje autoodpowiedź).
+      if (!waiting)
+        for (const r of scope.all<{ user_id: string }>("SELECT DISTINCT user_id FROM memberships WHERE studio_id = $studio AND role = 'reception'"))
+          notify(scope, { userId: r.user_id, category: 'transactional', tz: studio.timezone, title: studio.name, body: `${user.name ?? 'Klientka'} napisała do recepcji 💬`, action: 'messages' });
+    } else {
       const last = scope.get<{ created_at: string }>('SELECT created_at FROM chat_messages WHERE studio_id = $studio AND client_id = $u AND auto = 1 AND from_staff = 1 ORDER BY created_at DESC LIMIT 1', { u: user.id });
       if (!last || Date.now() - Date.parse(last.created_at) > 6 * 3_600_000) {
         scope.run('INSERT INTO chat_messages (id, studio_id, client_id, author_id, from_staff, auto, body, created_at) VALUES ($id, $studio, $u, NULL, 1, 1, $b, $now)', {

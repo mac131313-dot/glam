@@ -138,7 +138,7 @@ function StudioInfo({ cfg, reload }: { cfg: Cfg; reload: () => Promise<void> }) 
         {text('foundedOn', 'Data założenia (urodziny studia)', 'date')}
       </div>
       <div className="small muted">
-        Kod zaproszenia: <b className="code">{cfg.studio.inviteCode}</b> · link: {location.origin}/app?studio={cfg.studio.inviteCode}
+        Kod zaproszenia: <b className="code">{cfg.studio.inviteCode}</b> · link: {location.origin}/app?kod={cfg.studio.inviteCode}
       </div>
       <Toggle label="Studio opublikowane (klientki mogą dołączać)" checked={s.published} onChange={(v) => setS({ ...s, published: v })} />
       <Toggle label="Widoczne w katalogu studiów GLAM" checked={s.catalogVisible} onChange={(v) => setS({ ...s, catalogVisible: v })} />
