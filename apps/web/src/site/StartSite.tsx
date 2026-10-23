@@ -447,7 +447,7 @@ function Signup({ planId, setPlanId, plans }: { planId: string; setPlanId: (id: 
             )}
           </div>
           <p className="start-foot" style={{ margin: 0 }}>
-            {step === 3 ? `${TRIAL_DAYS} dni za darmo, bez karty. Po okresie próbnym sam wybierzesz, czy zostajesz.` : 'Bez karty i bez zobowiązań.'}
+            {step === 3 ? `${TRIAL_DAYS} dni za darmo, bez karty. Po okresie próbnym zdecydujesz, czy zostajesz.` : 'Bez karty i bez zobowiązań.'}
           </p>
         </div>
       </div>
