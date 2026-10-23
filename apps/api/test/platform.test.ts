@@ -3,7 +3,7 @@ import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApp } from '../src/app.ts';
 import { openDb } from '../src/db.ts';
-import { bootstrapPlatformStaff } from '../src/routes/platform/guard.ts';
+import { bootstrapPlatformStaff, platformAdminPhones } from '../src/routes/platform/guard.ts';
 import { DEMO, seed } from '../src/seed.ts';
 import { ConsoleSmsGateway, MockPaymentProvider } from '../src/sms.ts';
 
@@ -212,4 +212,42 @@ test('start: numery z GLAM_PLATFORM_ADMINS dostają rolę admina tylko raz', () 
   d.prepare("UPDATE platform_staff SET role = 'support', disabled_at = ? WHERE user_id = 'u_a'").run(new Date().toISOString());
   bootstrapPlatformStaff(d, ['+48600000001']);
   assert.deepEqual(d.prepare('SELECT role, disabled_at IS NOT NULL AS off FROM platform_staff').all().map((r) => ({ ...r })), [{ role: 'support', off: 1 }]);
+});
+
+test('admini z GLAM_PLATFORM_ADMINS: numer w dowolnym zapisie, domyślny numer tylko w demo', async () => {
+  assert.deepEqual(platformAdminPhones('500 000 009, +48 600-000-001,nie-numer,,', false), ['+48500000009', '+48600000001']);
+  assert.deepEqual(platformAdminPhones(undefined, true), ['+48500000009']);
+  assert.deepEqual(platformAdminPhones(undefined, false), []);
+  assert.deepEqual(platformAdminPhones('', true), []);
+
+  // Świeża baza bez danych demo: konta admina nie ma przy starcie, powstaje przy pierwszym logowaniu.
+  const fresh = (platformAdmins?: string[]) => {
+    const d = openDb(':memory:');
+    return { d, a: buildApp({ db: d, sms, payments: new MockPaymentProvider(), exposeDevCodes: true, publicUrl: 'https://glam.test', platformAdmins }) };
+  };
+  const loginTo = async (target: typeof app, phone: string) => {
+    const remoteAddress = `10.1.1.${++ipCounter}`;
+    const code = (await target.inject({ method: 'POST', url: '/api/auth/request-code', payload: { phone }, remoteAddress })).json().devCode;
+    const res = await target.inject({ method: 'POST', url: '/api/auth/verify', payload: { phone, code }, remoteAddress });
+    assert.equal(res.statusCode, 200, res.body);
+    return res.json().token as string;
+  };
+  const me = (target: typeof app, token: string) => target.inject({ method: 'GET', url: '/api/platform/me', headers: { authorization: `Bearer ${token}` } });
+
+  const { d, a } = fresh(platformAdminPhones('500 000 009, 500 000 008', false));
+  const admin = await me(a, await loginTo(a, '+48500000009'));
+  assert.equal(admin.statusCode, 200, admin.body);
+  assert.equal(admin.json().role, 'admin');
+  assert.equal((await me(a, await loginTo(a, '+48500000007'))).statusCode, 403, 'numer spoza listy');
+
+  // Wyłączona osoba z listy nie wraca do zespołu przy logowaniu.
+  const second = await loginTo(a, '+48500000008');
+  assert.equal((await me(a, second)).statusCode, 200);
+  d.prepare("UPDATE platform_staff SET disabled_at = ? WHERE user_id = (SELECT id FROM users WHERE phone = '+48500000008')").run(new Date().toISOString());
+  assert.equal((await me(a, second)).statusCode, 403);
+
+  // Bez listy (nie demo, brak zmiennej) nikt nie zostaje adminem – także numer z danych demo.
+  const none = fresh();
+  assert.equal((await me(none.a, await loginTo(none.a, '+48500000009'))).statusCode, 403);
+  assert.equal((none.d.prepare('SELECT COUNT(*) AS n FROM platform_staff').get() as { n: number }).n, 0);
 });

@@ -30,6 +30,8 @@ export type Deps = {
    * Brak = płatności abonamentu wyłączone: trial działa, „Abonament” pokazuje „Płatności abonamentu wkrótce”.
    */
   platformStripe?: { secret: string; webhookSecret: string; prices: Record<'start' | 'studio' | 'siec', string> };
+  /** Znormalizowane numery, które dostają rolę admina konsoli, o ile nie mają wpisu w zespole (`platformAdminPhones`). Brak = nikt. */
+  platformAdmins?: string[];
 };
 
 declare module 'fastify' {

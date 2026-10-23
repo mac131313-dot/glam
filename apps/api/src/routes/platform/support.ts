@@ -11,7 +11,7 @@ export const SLA_HOURS: Record<string, number> = { urgent: 2, high: 8, normal: 2
 
 export function supportRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
-  const desk = requirePlatform(db, 'admin', 'support');
+  const desk = requirePlatform(deps, 'admin', 'support');
 
   // ——— Help desk platformy dla właścicielek (1.2.11) z SLA ———
 

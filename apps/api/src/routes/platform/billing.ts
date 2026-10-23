@@ -64,8 +64,8 @@ function queryDay(value: unknown, name: string): string | null {
 
 export function billingRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
-  const anyRole = requirePlatform(db);
-  const money = requirePlatform(db, 'admin', 'finance');
+  const anyRole = requirePlatform(deps);
+  const money = requirePlatform(deps, 'admin', 'finance');
   const owner = { preHandler: requireStudio(db, ['owner']) };
   const panelUrl = () => `${deps.publicUrl ?? ''}/panel`;
   const requireConfigured = () => {

@@ -15,9 +15,9 @@ import { platformAudit, requirePlatform } from './guard.ts';
 
 export function studioRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
-  const anyRole = requirePlatform(db);
-  const adminOnly = requirePlatform(db, 'admin');
-  const adminOrSupport = requirePlatform(db, 'admin', 'support');
+  const anyRole = requirePlatform(deps);
+  const adminOnly = requirePlatform(deps, 'admin');
+  const adminOrSupport = requirePlatform(deps, 'admin', 'support');
 
   const FILTERS = ['trial', 'active', 'past_due', 'suspended'];
   const clearTrialMails = (studioId: string) => db.prepare('DELETE FROM platform_settings WHERE key IN (?, ?)').run(`trial-mail:${studioId}:5`, `trial-mail:${studioId}:1`);

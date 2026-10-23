@@ -1,6 +1,7 @@
 import { buildApp } from './app.ts';
 import type { Deps } from './context.ts';
 import { openDb } from './db.ts';
+import { platformAdminPhones } from './routes/platform/index.ts';
 import { backup, dispatch } from './services/dispatch.ts';
 import { runJobs } from './services/jobs.ts';
 import { platformStripeFromEnv } from './services/platform-stripe.ts';
@@ -29,6 +30,8 @@ const deps: Deps = {
   exposeDevCodes: demo,
   publicUrl: process.env.GLAM_PUBLIC_URL ?? 'http://localhost:5173',
   platformStripe,
+  // Admini konsoli z GLAM_PLATFORM_ADMINS; bez zmiennej – numer z danych demo tylko w trybie demo.
+  platformAdmins: platformAdminPhones(process.env.GLAM_PLATFORM_ADMINS, demo),
 };
 const app = buildApp(deps, { logger: production });
 

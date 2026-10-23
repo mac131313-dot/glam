@@ -10,9 +10,9 @@ type StaffRow = { user_id: string; role: PlatformRole; disabled_at: string | nul
 
 export function teamRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
-  const anyRole = requirePlatform(db);
-  const adminOnly = requirePlatform(db, 'admin');
-  const adminOrSupport = requirePlatform(db, 'admin', 'support');
+  const anyRole = requirePlatform(deps);
+  const adminOnly = requirePlatform(deps, 'admin');
+  const adminOrSupport = requirePlatform(deps, 'admin', 'support');
   const isRole = (r: unknown): r is PlatformRole => PLATFORM_ROLES.includes(r as PlatformRole);
   const activeAdmins = () => (db.prepare("SELECT COUNT(*) AS n FROM platform_staff WHERE role = 'admin' AND disabled_at IS NULL").get() as { n: number }).n;
 
