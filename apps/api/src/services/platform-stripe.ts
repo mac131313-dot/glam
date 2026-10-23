@@ -12,6 +12,8 @@ const API = 'https://api.stripe.com/v1';
 const DAY_MS = 86_400_000;
 /** Stripe Checkout przyjmuje `trial_end` co najmniej 48 h w przód; bliżej końca triala abonament startuje od razu. */
 const MIN_TRIAL_END_MS = 2 * DAY_MS + 3_600_000;
+/** Okno klucza idempotencji Checkout: powtórzone „Dodaj kartę” w tym oknie dostaje tę samą sesję. */
+const CHECKOUT_DEDUP_MS = 10 * 60_000;
 
 export type PlatformStripe = NonNullable<Deps['platformStripe']>;
 type PlanKey = keyof PlatformStripe['prices'];
@@ -52,8 +54,11 @@ export function planForPrice(deps: Deps, priceId: string): string | null {
 
 const stripeError = () => new HttpError(502, 'stripe_error', 'Płatności chwilowo nie odpowiadają – spróbuj za chwilę.');
 
-/** Wywołanie API Stripe GLAM. Odpowiedź Stripe przy błędzie trafia tylko do logu serwera, nigdy do klienta. */
-async function call<T>(deps: Deps, path: string, params: Record<string, unknown> = {}, method: 'POST' | 'GET' = 'POST'): Promise<T> {
+/**
+ * Wywołanie API Stripe GLAM. Odpowiedź Stripe przy błędzie trafia tylko do logu serwera, nigdy do klienta.
+ * `idempotencyKey`: powtórzone żądanie z tym samym kluczem Stripe zwraca pierwszą odpowiedź zamiast tworzyć obiekt drugi raz.
+ */
+async function call<T>(deps: Deps, path: string, params: Record<string, unknown> = {}, method: 'POST' | 'GET' = 'POST', idempotencyKey?: string): Promise<T> {
   const { secret } = config(deps);
   const body = formEncode(params);
   let res: Response;
@@ -61,7 +66,7 @@ async function call<T>(deps: Deps, path: string, params: Record<string, unknown>
   try {
     res = await (deps.http ?? fetch)(method === 'GET' && body ? `${API}${path}?${body}` : `${API}${path}`, {
       method,
-      headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/x-www-form-urlencoded' },
+      headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/x-www-form-urlencoded', ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}) },
       body: method === 'POST' ? body : undefined,
     });
     data = (await res.json().catch(() => ({}))) as typeof data;
@@ -91,6 +96,8 @@ export async function subscriptionCheckout(deps: Deps, studio: { id: string; tri
     customer = loadBilling(deps.db, studio.id).stripe_customer_id ?? created.id;
   }
   const trialEnd = studio.trialEndsAt ? Date.parse(studio.trialEndsAt) : NaN;
+  // Podwójne kliknięcie (ten sam plan w tym samym 10-minutowym oknie) dostaje tę samą sesję – nie dwie subskrypcje.
+  const idempotencyKey = `glam-checkout-${studio.id}-${planId}-${Math.floor(Date.now() / CHECKOUT_DEDUP_MS)}`;
   const session = await call<{ url: string }>(deps, '/checkout/sessions', {
     mode: 'subscription',
     customer,
@@ -101,7 +108,7 @@ export async function subscriptionCheckout(deps: Deps, studio: { id: string; tri
     cancel_url: `${returnUrl}#settings`,
     metadata: { studio_id: studio.id, plan_id: planId },
     subscription_data: { metadata: { studio_id: studio.id }, trial_end: trialEnd - Date.now() >= MIN_TRIAL_END_MS ? Math.floor(trialEnd / 1000) : undefined },
-  });
+  }, 'POST', idempotencyKey);
   return { url: session.url };
 }
 
@@ -230,6 +237,11 @@ function checkoutCompleted(deps: Deps, s: CheckoutSession): Outcome {
   const studioId = findStudio(deps, { studioId: s.client_reference_id ?? s.metadata?.studio_id, subscription, customer });
   if (!studioId || !subscription) return null;
   const b = loadBilling(deps.db, studioId);
+  // Druga subskrypcja obok trwającej (np. dwie sesje Checkout opłacone osobno) nie zastępuje bieżącej – do wyjaśnienia ręcznie w Stripe.
+  if (b.stripe_subscription_id && b.stripe_subscription_id !== subscription && b.state !== 'canceled') {
+    console.error(`Stripe GLAM: studio ${studioId} ma już subskrypcję ${b.stripe_subscription_id}, Checkout założył drugą ${subscription} – sprawdź i anuluj zbędną`);
+    return null;
+  }
   // Nowa subskrypcja (pierwsza albo po zakończonej) zaczyna od czystego stanu; ta sama – już opisana przez subscription.updated.
   const isNew = b.stripe_subscription_id !== subscription;
   const state = isNew || b.state === 'none' ? 'active' : b.state;

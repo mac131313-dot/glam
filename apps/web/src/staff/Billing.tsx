@@ -1,7 +1,7 @@
 // Abonament GLAM w panelu studia (właścicielka): plan i stan, liczniki limitów, dane do faktury, karta (Stripe Checkout
 // i Billing Portal), zmiana planu, rezygnacja i lista opłaconych okresów. Bez Stripe GLAM (`configured: false`)
 // zamiast przycisków płatności jest jedno zdanie, a dane do faktury i liczniki działają dalej.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BILLING_GRACE_DAYS, validEmail, validNip, type LimitUsage } from '@glam/core';
 import { api, useApi } from '../api.ts';
 import { Field, ListRow, Pending, Progress, Sheet, useAction, useToast } from '../ui.tsx';
@@ -59,7 +59,16 @@ function stateLine(d: BillingData): string {
 export function Billing({ onChanged }: { onChanged: () => unknown }) {
   const { data, error, reload } = useApi<BillingData>('/owner/billing');
   const [sheet, setSheet] = useState<'plan' | 'cancel' | null>(null);
-  const { run, busy } = useAction();
+  const { run, busy: acting } = useAction();
+  // Po udanym przekierowaniu do Stripe przyciski zostają nieaktywne aż do opuszczenia strony – drugie kliknięcie nie otworzy drugiej sesji.
+  const [leaving, setLeaving] = useState(false);
+  // Powrót przyciskiem „wstecz” z Stripe (strona z pamięci przeglądarki) odblokowuje przyciski.
+  useEffect(() => {
+    const back = (e: PageTransitionEvent) => e.persisted && setLeaving(false);
+    addEventListener('pageshow', back);
+    return () => removeEventListener('pageshow', back);
+  }, []);
+  const busy = acting || leaving;
   const toast = useToast();
   if (!data) return <Pending error={error} reload={reload} />;
   const { billing: b } = data;
@@ -72,6 +81,7 @@ export function Billing({ onChanged }: { onChanged: () => unknown }) {
   const redirect = (path: string, body?: object) =>
     run(async () => {
       const r = await api<{ url: string }>(path, { method: 'POST', body });
+      setLeaving(true);
       location.href = r.url;
     });
   const resume = () => run(() => api('/owner/billing/resume', { method: 'POST' }).then(refresh), 'Abonament wznowiony');

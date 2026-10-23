@@ -26,13 +26,14 @@ const email = {
 const billingMails = (to: string) => email.sent.filter((m) => m.to === to && !m.subject.startsWith('Potwierdź'));
 
 // Podstawka Stripe GLAM: zapamiętuje wywołania i odpowiada jak API (klient, Checkout, portal, subskrypcja).
-type StripeCall = { path: string; method: string; body: URLSearchParams; auth: string | null };
+type StripeCall = { path: string; method: string; body: URLSearchParams; auth: string | null; idempotencyKey: string | null };
 const stripeCalls: StripeCall[] = [];
 let stripeDown = false;
 const http = (async (url: string | URL | Request, init?: RequestInit) => {
   const method = init?.method ?? 'GET';
   const path = String(url).replace('https://api.stripe.com/v1', '');
-  stripeCalls.push({ path, method, body: new URLSearchParams(String(init?.body ?? '')), auth: new Headers(init?.headers).get('authorization') });
+  const headers = new Headers(init?.headers);
+  stripeCalls.push({ path, method, body: new URLSearchParams(String(init?.body ?? '')), auth: headers.get('authorization'), idempotencyKey: headers.get('idempotency-key') });
   const json = (data: object, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
   if (stripeDown) return json({ error: { message: 'No such customer: cus_tajne' } }, 400);
   if (path === '/customers' && method === 'POST') return json({ id: `cus_glam_${stripeCalls.length}` });
@@ -928,5 +929,44 @@ test('konsola nie zmienia planu, triala ani rozliczeń studia z subskrypcją Str
   // Po zakończeniu subskrypcji plan znów ustawia konsola.
   assert.equal((await platformWebhook(stripeEvent('customer.subscription.deleted', { id: 'sub_konsola', customer: 'cus_sub_konsola', status: 'canceled', metadata: { studio_id: studioId } }))).statusCode, 200);
   assert.equal((await call(admin, 'PUT', `/api/platform/studios/${studioId}`, { planId: 'siec' })).statusCode, 200);
+  assert.equal(planOf(studioId), 'siec');
+});
+
+test('dwa kliknięcia „Dodaj kartę” z rzędu: ten sam klucz idempotencji Checkout', async () => {
+  const phone = '+48600100502';
+  const studioId = await signup(phone, 'ewa.dwaklik@example.com');
+  const owner = await login(phone);
+  assert.equal((await call(owner, 'PUT', '/api/owner/billing/details', { companyName: 'Studio Dwa Kliki', nip: '1234563218' }, studioId)).statusCode, 200);
+  const before = callsTo('/checkout/sessions').length;
+  for (let i = 0; i < 2; i++) assert.equal((await call(owner, 'POST', '/api/owner/billing/checkout', { planId: 'studio' }, studioId)).statusCode, 200);
+  const [first, second] = callsTo('/checkout/sessions').slice(before).map((c) => c.idempotencyKey);
+  assert.match(first ?? '', new RegExp(`^glam-checkout-${studioId}-studio-\\d+$`));
+  assert.equal(second, first, 'Stripe zwróci tę samą sesję zamiast drugiej subskrypcji');
+
+  // Inny plan to inna sesja.
+  assert.equal((await call(owner, 'POST', '/api/owner/billing/checkout', { planId: 'siec' }, studioId)).statusCode, 200);
+  assert.notEqual(callsTo('/checkout/sessions').at(-1)!.idempotencyKey, first);
+});
+
+test('druga zakończona sesja Checkout z inną subskrypcją nie nadpisuje bieżącej', async () => {
+  const studioId = await subscribed('+48600100503', 'ewa.druga@example.com', 'sub_pierwsza');
+  const errors: string[] = [];
+  const error = console.error;
+  console.error = (...args: unknown[]) => errors.push(args.join(' '));
+  try {
+    const res = await platformWebhook(stripeEvent('checkout.session.completed', { id: 'cs_druga', mode: 'subscription', client_reference_id: studioId, customer: 'cus_sub_pierwsza', subscription: 'sub_druga', metadata: { studio_id: studioId, plan_id: 'siec' } }));
+    assert.equal(res.statusCode, 200, res.body);
+  } finally {
+    console.error = error;
+  }
+  assert.equal(billingRow(studioId).stripe_subscription_id, 'sub_pierwsza');
+  assert.equal(planOf(studioId), 'studio');
+  assert.ok(errors.some((e) => e.includes('sub_pierwsza') && e.includes('sub_druga')), 'oba identyfikatory w logu do ręcznego wyjaśnienia');
+
+  // Po anulowaniu poprzedniej nowa subskrypcja z Checkout zostaje bieżącą.
+  db.prepare("UPDATE studio_billing SET state = 'canceled' WHERE studio_id = ?").run(studioId);
+  assert.equal((await platformWebhook(stripeEvent('checkout.session.completed', { id: 'cs_trzecia', mode: 'subscription', client_reference_id: studioId, customer: 'cus_sub_pierwsza', subscription: 'sub_trzecia', metadata: { studio_id: studioId, plan_id: 'siec' } }))).statusCode, 200);
+  assert.equal(billingRow(studioId).stripe_subscription_id, 'sub_trzecia');
+  assert.equal(billingRow(studioId).state, 'active');
   assert.equal(planOf(studioId), 'siec');
 });
