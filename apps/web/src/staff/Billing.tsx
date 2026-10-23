@@ -136,10 +136,10 @@ export function Billing({ onChanged }: { onChanged: () => unknown }) {
 
       {data.configured ? (
         <div className="list-rows">
-          <ListRow title="Zmień plan" hint={`Teraz: ${data.plan.name}`} onClick={() => setSheet('plan')} />
-          {b.hasCard && <ListRow title="Karta i płatności" hint="Zmiana karty, historia płatności w Stripe" onClick={() => redirect('/owner/billing/portal')} />}
-          {b.hasCard && !b.cancelAtPeriodEnd && <ListRow title="Zrezygnuj" hint="Abonament nie odnowi się po opłaconym okresie" onClick={() => setSheet('cancel')} />}
-          {b.hasCard && b.cancelAtPeriodEnd && <ListRow title="Wznów" hint="Abonament znów będzie się odnawiał" onClick={resume} />}
+          <ListRow title="Zmień plan" hint={`Teraz: ${data.plan.name}`} onClick={() => setSheet('plan')} disabled={busy} />
+          {b.hasCard && <ListRow title="Karta i płatności" hint="Zmiana karty, historia płatności w Stripe" onClick={() => redirect('/owner/billing/portal')} disabled={busy} />}
+          {b.hasCard && !b.cancelAtPeriodEnd && <ListRow title="Zrezygnuj" hint="Abonament nie odnowi się po opłaconym okresie" onClick={() => setSheet('cancel')} disabled={busy} />}
+          {b.hasCard && b.cancelAtPeriodEnd && <ListRow title="Wznów" hint="Abonament znów będzie się odnawiał" onClick={resume} disabled={busy} />}
         </div>
       ) : (
         <p className="muted" style={{ margin: 0 }}>

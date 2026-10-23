@@ -657,6 +657,7 @@ label.btn { cursor: pointer; }
 @media (max-width: 820px) { .staff .page { left: 0; } }
 .list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); width: 100%; background: none; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding: 16px 2px; cursor: pointer; color: inherit; font: inherit; text-align: left; }
 .list-row:last-child { border-bottom: 0; }
+.list-row:disabled { opacity: 0.55; cursor: default; }
 .list-row-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; flex: none; }
 .field-label { font-family: var(--font-head); font-size: var(--text-xs); letter-spacing: 0.04em; color: var(--muted); }
 .qr { border-radius: 14px; display: block; margin: 0 auto; background: #fff; }

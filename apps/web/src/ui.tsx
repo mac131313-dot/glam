@@ -293,9 +293,9 @@ export function Page({ title, onBack, children, actions, bodyClass, className, s
 }
 
 /** Wiersz menu (Profil, ustawienia): tytuł, podpowiedź, znacznik, strzałka. */
-export function ListRow({ title, hint, badge, onClick, icon }: { title: ReactNode; hint?: ReactNode; badge?: ReactNode; onClick: () => void; icon?: ReactNode }) {
+export function ListRow({ title, hint, badge, onClick, icon, disabled }: { title: ReactNode; hint?: ReactNode; badge?: ReactNode; onClick: () => void; icon?: ReactNode; disabled?: boolean }) {
   return (
-    <button className="list-row" onClick={onClick}>
+    <button className="list-row" onClick={onClick} disabled={disabled}>
       {icon && <span className="list-row-icon">{icon}</span>}
       <span className="grow" style={{ textAlign: 'left' }}>
         <span className="card-title" style={{ display: 'block', fontSize: '1rem' }}>{title}</span>
