@@ -1490,3 +1490,8 @@ button.fit-icon:hover { background: var(--soft); color: var(--ink); }
 .feel-x { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--soft); color: var(--muted); cursor: pointer; }
 .feel .level-ends { display: none; }
 .feel-open { display: block; margin: 0 auto; padding: 14px 26px; border: 0; border-radius: 999px; background: #1b1715; color: #fff; font: inherit; font-family: var(--font-label); font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; }
+
+/* Konsola GLAM: wiersz „etykieta – wartość” na karcie studia. */
+.konsola-line { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 11px 2px; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+.konsola-line:last-child { border-bottom: 0; }
+.konsola-line > span:last-child { text-align: right; min-width: 0; overflow-wrap: anywhere; }

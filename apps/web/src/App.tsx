@@ -19,6 +19,7 @@ const SiteEditor = lazyRetry(() => import('./staff/site-editor/SiteEditor.tsx').
 const CourseSite = lazyRetry(() => import('./site/CourseSite.tsx').then((m) => ({ default: m.CourseSite })));
 const ShopSite = lazyRetry(() => import('./site/ShopSite.tsx').then((m) => ({ default: m.ShopSite })));
 const StudioSite = lazyRetry(() => import('./site/StudioSite.tsx').then((m) => ({ default: m.StudioSite })));
+const KonsolaApp = lazyRetry(() => import('./konsola/KonsolaApp.tsx').then((m) => ({ default: m.KonsolaApp })));
 
 export type MeStudio = { id: string; name: string; city: string; logo: string; logoUrl: string | null; logoWide: boolean; accent: string; tagline: string; roles: string[]; look: Look; panelTint?: string };
 export type UserPrefs = {
@@ -68,6 +69,7 @@ export function App() {
   if (shopPage) return <Lazy><ShopSite slug={decodeURIComponent(shopPage[1])} productId={shopPage[2] ? decodeURIComponent(shopPage[2]) : null} /></Lazy>;
   const site = location.pathname.match(/^\/s\/([^/]+)/);
   if (site) return <Lazy><StudioSite slug={decodeURIComponent(site[1])} /></Lazy>;
+  if (SURFACE === 'konsola') return <Lazy><KonsolaApp /></Lazy>;
   if (SURFACE === 'home') return <HomeOrDomain />;
   return SURFACE === 'app' ? (
     <DeviceFrame>

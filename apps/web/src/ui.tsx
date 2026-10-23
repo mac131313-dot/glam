@@ -120,7 +120,7 @@ export function Sheet({ onClose, children, label, className }: { onClose: () => 
   const [closing, setClosing] = useState(false);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  const close = SURFACE === 'panel' && !reducedMotion() ? () => setClosing(true) : onClose;
+  const close = (SURFACE === 'panel' || SURFACE === 'konsola') && !reducedMotion() ? () => setClosing(true) : onClose;
   useEffect(() => {
     if (!closing) return;
     const t = window.setTimeout(() => closeRef.current(), SHEET_EXIT_MS);
@@ -490,7 +490,7 @@ export function Select({
       </button>
       {open &&
         createPortal(
-        <ul ref={listRef} className={SURFACE === 'panel' ? 'select-list from-trigger' : 'select-list'} role="listbox" aria-label={ariaLabel} style={pos}>
+        <ul ref={listRef} className={SURFACE === 'panel' || SURFACE === 'konsola' ? 'select-list from-trigger' : 'select-list'} role="listbox" aria-label={ariaLabel} style={pos}>
           {options.map((o, i) => [
             o.group && o.group !== options[i - 1]?.group && (
               <li key={`g:${o.group}`} role="presentation" className="select-group">

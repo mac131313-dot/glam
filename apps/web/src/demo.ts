@@ -1,6 +1,6 @@
 // Konta demo dostępne bez logowania (tryb demo). Ten sam seed co w apps/api/src/seed.ts.
 // Pierwsza persona na liście jest domyślna.
-export const PERSONAS: Record<'panel' | 'app', Record<string, { phone: string; label: string }>> = {
+export const PERSONAS: Record<'panel' | 'app' | 'konsola', Record<string, { phone: string; label: string }>> = {
   panel: {
     ssg: { phone: '500000201', label: 'SS&G · właścicielka' },
     recepcja: { phone: '500000202', label: 'SS&G · recepcja' },
@@ -14,5 +14,11 @@ export const PERSONAS: Record<'panel' | 'app', Record<string, { phone: string; l
     julia: { phone: '500000212', label: 'Julia · klientka SS&G' },
     magda: { phone: '500000005', label: 'Magda · klientka w 3 studiach (demo)' },
     ania: { phone: '500000006', label: 'Ania · nowa klientka (demo)' },
+  },
+  // Zespół GLAM (konsola): role z `platform_staff`, numery z seeda.
+  konsola: {
+    admin: { phone: '500000009', label: 'Zespół GLAM · admin' },
+    wsparcie: { phone: '500000011', label: 'Ola · wsparcie GLAM' },
+    finanse: { phone: '500000012', label: 'Ewa · finanse GLAM' },
   },
 };
