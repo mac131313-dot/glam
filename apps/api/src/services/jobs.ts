@@ -23,8 +23,9 @@ import {
   type ProductRules,
 } from '@glam/core';
 import type { Deps } from '../context.ts';
-import { id, type Db } from '../db.ts';
+import { id } from '../db.ts';
 import { StudioScope } from '../scope.ts';
+import { billingJobs } from './billing.ts';
 import { bookSession } from './booking.ts';
 import { awardPoints, grantBadge, onAttended } from './motivation.ts';
 import { notify } from './notify.ts';
@@ -69,7 +70,7 @@ export async function runJobs(deps: Deps, now = new Date()) {
       console.error(`renewals (${studioId})`, err);
     }
   }
-  platformJobs(deps.db, now);
+  await billingJobs(deps, now);
 }
 
 // ——— Grafik ———
@@ -524,11 +525,4 @@ export const registerCampaignSender = (fn: typeof sendCampaignHook) => {
 };
 
 const JOBS = [autofill, closeSessions, classReminders, recurring, passExpiry, freezes, wellbeing, challengesStart, occasions, dormant, firstMonth, courses, welcomes, shopAndPasses, privateEvents, campaigns];
-
-// ——— Platforma: okres próbny, kopie zapasowe ———
-
-function platformJobs(db: Db, now: Date) {
-  // Koniec okresu próbnego bez opłaconego abonamentu → studio zawieszone (personel nadal wchodzi do panelu).
-  db.prepare("UPDATE studios SET status = 'suspended' WHERE status = 'trial' AND trial_ends_at < ?").run(now.toISOString());
-}
 

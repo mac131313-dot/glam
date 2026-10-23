@@ -6,6 +6,7 @@ import {
   addDays,
   can,
   checkAccess,
+  checkinStep,
   describePass,
   formatPLN,
   localParts,
@@ -21,13 +22,13 @@ import { normalizePhone } from '../auth.ts';
 import { ctx, requirePerm, requireStudio, STAFF, type Deps } from '../context.ts';
 import { unseal } from '../crypto.ts';
 import { id, nowIso } from '../db.ts';
-import { badRequest, conflict, forbidden, notFound } from '../errors.ts';
+import { HttpError, badRequest, conflict, forbidden, notFound } from '../errors.ts';
 import type { StudioScope } from '../scope.ts';
 import { DESK_METHODS, type PaymentMethod } from '../sms.ts';
 import { audit } from '../services/audit.ts';
 import { bookSession, cancelBooking, changeTrainer, checkIn, loadSession, markNoShow, walkInOptions } from '../services/booking.ts';
 import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, receptionThreads, type ChatInput } from '../services/chat.ts';
-import { logUsage } from '../services/dispatch.ts';
+import { sendStudioSms } from '../services/studio-sms.ts';
 import { storeMedia } from '../services/media.ts';
 import { notify } from '../services/notify.ts';
 import { consumeEntry, loadPasses, refundEntry } from '../services/passes.ts';
@@ -36,7 +37,7 @@ import { clientFacts } from '../services/segments.ts';
 import type { Studio } from '../services/studio.ts';
 import { activateGuestPass } from './account.ts';
 import { createGuestPass, deliverGuestPass, guestCode, passesView, PHOTO_URL } from './client.ts';
-import { checkinCodeOtherDay, findByShortCode, isShortCheckinCode, parseCheckinCode } from '../services/checkin.ts';
+import { checkinCodeProblem, findByShortCode, isShortCheckinCode, parseCheckinCode } from '../services/checkin.ts';
 
 export const WELCOME_MAX = 400;
 
@@ -47,7 +48,7 @@ export const WELCOME_TEMPLATES = [
   { id: 'humor', label: 'Z humorem', body: 'Hej! Jestem {trenerka} i obiecuję, że nie będę się śmiać, jeśli za pierwszym razem coś Ci nie wyjdzie. Każda z nas kiedyś zaczynała od drżących kolan 😄' },
 ];
 
-/** Kod wejściówki od znajomej: sam kod (8 znaków) albo link z QR (…/app?wejsciowka=KOD). Kod klientki (GLAM1.…) to nie wejściówka. */
+/** Kod wejściówki od znajomej: sam kod (8 znaków) albo link z QR (…/app?wejsciowka=KOD). Kod klientki (GLAM2.…) to nie wejściówka. */
 export function guestPassCodeOf(raw: string): string | null {
   const fromUrl = /[?&]wejsciowka=([A-Za-z0-9]+)/.exec(raw)?.[1];
   if (fromUrl) return fromUrl.toUpperCase();
@@ -261,13 +262,16 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
           activated = variant;
         }
       } else if (shortMatch) clientId = shortMatch;
-      else if (raw) clientId = parseCheckinCode(studio.id, raw, today);
+      else if (raw) clientId = parseCheckinCode(studio.id, raw, today, checkinStep(now.getTime()));
       else if (body.phone) clientId = (db.prepare('SELECT id FROM users WHERE phone = ?').get(normalizePhone(body.phone)) as { id: string } | undefined)?.id ?? null;
 
       if (!clientId || !scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: clientId })) {
-        const otherDay = raw ? checkinCodeOtherDay(studio.id, raw, today) : null;
-        if (otherDay) {
-          throw conflict('code_other_day', `Ten kod jest na ${otherDay.split('-').reverse().join('.')}, a działa tylko w swoim dniu. Poproś o otwarcie „Mój kod wejścia” w aplikacji albo wpisz numer telefonu.`);
+        const problem = raw ? checkinCodeProblem(studio.id, raw, today) : null;
+        if (problem?.kind === 'other_day') {
+          throw conflict('code_other_day', `Ten kod jest na ${problem.date.split('-').reverse().join('.')}, a działa tylko w swoim dniu. Poproś o otwarcie „Mój kod wejścia” w aplikacji albo wpisz numer telefonu.`);
+        }
+        if (problem?.kind === 'expired') {
+          throw conflict('code_expired', 'Ten kod wygasł – to pewnie zrzut ekranu. Kod w aplikacji zmienia się co 30 sekund: poproś o otwarcie „Mój kod wejścia” albo wpisz numer telefonu.');
         }
         throw notFound(body.phone ? 'Nie ma klientki z tym numerem w studiu.' : 'Nie rozpoznałyśmy kodu. Poproś o odświeżenie kodu w aplikacji albo wpisz numer telefonu.');
       }
@@ -643,8 +647,9 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       );
       const phone = (db.prepare('SELECT phone FROM users WHERE id = ?').get(req.params.id) as { phone: string }).phone;
       const link = `${deps.publicUrl ?? ''}/zaplac/${token}`;
-      await deps.sms.send(phone, `${studio.name}: link do płatności za ${product.name} (${formatPLN(product.price)}): ${link}`);
-      logUsage(db, studio.id, 'sms', 1, 9);
+      if (!(await sendStudioSms(deps, studio, phone, `${studio.name}: link do płatności za ${product.name} (${formatPLN(product.price)}): ${link}`))) {
+        throw new HttpError(429, 'studio_sms_limit', 'Pula SMS na ten miesiąc się skończyła. Skopiuj link i wyślij go klientce.', { link });
+      }
       audit(scope, { actorId: user.id, action: 'payment_link.sent', entity: 'product', entityId: product.id, subjectUserId: req.params.id });
       return { link, message: 'Link do płatności wysłany SMS-em.' };
     }

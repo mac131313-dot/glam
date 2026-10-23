@@ -1316,6 +1316,25 @@ CREATE TABLE IF NOT EXISTS platform_access_log (
   created_at TEXT NOT NULL
 );
 
+-- Zespół konsoli GLAM: role admin / support / finance; wyłączenie = disabled_at (sesje usuwane osobno).
+CREATE TABLE IF NOT EXISTS platform_staff (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'support', 'finance')),
+  invited_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  disabled_at TEXT
+);
+
+-- Dziennik działań zespołu GLAM w konsoli (kto, co, w którym studiu).
+CREATE TABLE IF NOT EXISTS platform_audit (
+  id TEXT PRIMARY KEY,
+  actor_id TEXT NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL,
+  studio_id TEXT REFERENCES studios(id),
+  details_json TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS support_tickets (
   id TEXT PRIMARY KEY,
   studio_id TEXT NOT NULL REFERENCES studios(id),
@@ -1390,6 +1409,48 @@ CREATE TABLE IF NOT EXISTS studio_reviews (
 CREATE TABLE IF NOT EXISTS platform_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+
+-- Rozliczenia abonamentu GLAM: stan subskrypcji Stripe, ręczne zawieszenie i dane do faktury. Dostęp studia liczy z tego syncAccess (services/billing.ts).
+CREATE TABLE IF NOT EXISTS studio_billing (
+  studio_id TEXT PRIMARY KEY REFERENCES studios(id),
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  state TEXT NOT NULL DEFAULT 'none' CHECK (state IN ('none', 'active', 'past_due', 'canceled')),
+  current_period_end TEXT,
+  past_due_since TEXT,
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  pending_plan_id TEXT,
+  manual_suspension TEXT,
+  company_name TEXT,
+  nip TEXT,
+  address TEXT,
+  invoice_email TEXT,
+  stripe_event_at TEXT,
+  updated_at TEXT NOT NULL
+);
+
+-- Opłacone faktury abonamentu GLAM (webhook invoice.paid, kwota > 0) – lista „do zafakturowania” w konsoli.
+CREATE TABLE IF NOT EXISTS platform_payments (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  stripe_invoice_id TEXT NOT NULL UNIQUE,
+  amount_grosze INTEGER NOT NULL,
+  plan_id TEXT NOT NULL,
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  paid_at TEXT NOT NULL,
+  invoiced_at TEXT,
+  invoice_number TEXT,
+  invoiced_by TEXT REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_platform_payments_studio ON platform_payments (studio_id, paid_at);
+
+-- Przetworzone zdarzenia Stripe GLAM (idempotencja webhooka: to samo id drugi raz = bez skutków).
+CREATE TABLE IF NOT EXISTS platform_stripe_events (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  received_at TEXT NOT NULL
 );
 
 -- Wydarzenia w studiu ogłaszane przez właścicielkę (panel → Treści → Wydarzenia), np. spotkanie z trenerką:
@@ -1517,6 +1578,7 @@ function migrate(db: Db) {
     db.exec(`INSERT INTO group_chat (id, studio_id, group_id, author_id, body, media_id, hidden, created_at)
              SELECT id, studio_id, group_id, author_id, body, media_id, hidden, created_at FROM posts WHERE group_id IS NOT NULL`);
   }
+  if (!existing.has('studio_billing')) backfillLegacyAccess(db);
   const broken = db.prepare('PRAGMA foreign_key_check').all();
   if (broken.length) console.warn(`⚠️  Po migracji ${broken.length} rekordów narusza klucze obce`);
 
@@ -1526,6 +1588,21 @@ function migrate(db: Db) {
 
   // Powód zawieszenia „ciąża” to dana o zdrowiu (RODO art. 9) – trzymamy tylko ogólne „zdrowie”.
   db.exec("UPDATE pass_freezes SET reason = 'illness' WHERE reason = 'pregnancy'");
+}
+
+/**
+ * Jednorazowo przy wprowadzeniu rozliczeń (bazy bez `studio_billing`): status ustawiany dotąd ręcznie staje się faktem,
+ * z którego `syncAccess` go wylicza – inaczej pierwszy job zawiesiłby aktywne studia po dacie triala, a odwiesił zawieszone.
+ * Aktywne po dacie triala są odtąd rozliczane poza systemem; zawieszone w trakcie triala (albo bez niego) – zawieszone ręcznie.
+ */
+export function backfillLegacyAccess(db: Db, now = new Date()) {
+  const at = now.toISOString();
+  // Stara konsola ustawiała status bez czyszczenia daty triala – „aktywne” znaczyło rozliczane poza systemem, także przed tą datą.
+  db.prepare("UPDATE studios SET trial_ends_at = NULL WHERE status = 'active' AND trial_ends_at IS NOT NULL").run();
+  db.prepare(
+    `INSERT OR IGNORE INTO studio_billing (studio_id, state, manual_suspension, updated_at)
+     SELECT id, 'none', 'Zawieszone przed wprowadzeniem rozliczeń', ? FROM studios WHERE status = 'suspended' AND (trial_ends_at IS NULL OR trial_ends_at >= ?)`,
+  ).run(at, at);
 }
 
 export function tx<T>(db: Db, fn: () => T): T {

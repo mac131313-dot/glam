@@ -41,8 +41,8 @@ import { PAYMENT_METHODS, type PaymentMethod } from '../sms.ts';
 import { bookSession, cancelBooking, confirmAttendance, rateSession } from '../services/booking.ts';
 import { clientThreads } from './threads.ts';
 import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, type ChatInput } from '../services/chat.ts';
-import { checkinCode, shortCheckinCode } from '../services/checkin.ts';
-import { logUsage } from '../services/dispatch.ts';
+import { checkinSeed, shortCheckinCode } from '../services/checkin.ts';
+import { sendStudioSms, studioSmsAvailable } from '../services/studio-sms.ts';
 import { attendedCount, awardPoints, badgeList, pointsOf, rewardProgress } from '../services/motivation.ts';
 import { notify } from '../services/notify.ts';
 import { issuePass, loadPasses, passRows } from '../services/passes.ts';
@@ -154,14 +154,22 @@ function fulfillGuestPass(scope: StudioScope, studio: Studio, buyerId: string, g
 registerCheckoutKind<GuestPassPurchase>('guest_pass', {
   fulfill(deps, scope, studio, userId, g, providerRef) {
     const gp = fulfillGuestPass(scope, studio, userId!, g, providerRef);
+    // SMS idzie dopiero po transakcji (`after`), więc pulę sprawdzamy już teraz, żeby komunikat nie obiecywał wiadomości.
+    const handOver = 'Przekaż go znajomej (znajdziesz go w Zaproś znajomą).';
+    const delivery = !g.recipient ? handOver : studioSmsAvailable(deps, studio) ? 'Wysłaliśmy go znajomej SMS-em.' : `Studio wykorzystało w tym miesiącu pulę SMS, więc znajomej nie wysłaliśmy wiadomości. ${handOver}`;
     return {
       ref: gp.id,
-      message: `Prezent gotowy – kod ${gp.code}. ${g.recipient ? 'Wysłaliśmy go znajomej SMS-em.' : 'Przekaż go znajomej (znajdziesz go w Zaproś znajomą).'}`,
+      message: `Prezent gotowy – kod ${gp.code}. ${delivery}`,
       action: 'invites',
-      after: () => deliverGuestPass(deps, scope, studio, gp.code, g.recipient, g.buyerName, g.message),
+      after: async () => {
+        await deliverGuestPass(deps, scope, studio, gp.code, g.recipient, g.buyerName, g.message);
+      },
     };
   },
 });
+
+/** Pula SMS studia na ten miesiąc wyczerpana – klientka może jeszcze podać znajomej kod studia. */
+const smsPoolSpent = (inviteCode: string) => new HttpError(429, 'studio_sms_limit', `Studio wykorzystało w tym miesiącu pulę SMS. Podaj znajomej kod studia: ${inviteCode}.`);
 
 export function clientRoutes(app: FastifyInstance, deps: Deps) {
   const { db } = deps;
@@ -220,8 +228,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       { user: user.id, now: now.toISOString() },
     ).map((u) => ({
       ...u,
-      // Kod wejścia – ten sam, który recepcja skanuje w /staff/checkin. Wydajemy go dopiero w dniu zajęć, bo wcześniej i tak by nie zadziałał.
-      checkin_code: u.status === 'booked' && localParts(new Date(u.starts_at), studio.timezone).date === lp.date ? checkinCode(studio.id, user.id, lp.date) : null,
+      // Sekret kodu wejścia – telefon liczy z niego QR co 30 s, recepcja skanuje go w /staff/checkin. Wydajemy go dopiero w dniu zajęć, bo wcześniej i tak by nie zadziałał.
+      checkin: u.status === 'booked' && localParts(new Date(u.starts_at), studio.timezone).date === lp.date ? checkinSeed(studio.id, user.id, lp.date) : null,
     }));
     const welcome = scope.get<Record<string, unknown>>(
       `SELECT w.id, w.body, w.kind, w.video_id, u.name AS trainer_name FROM welcome_messages w LEFT JOIN users u ON u.id = w.trainer_id
@@ -393,8 +401,13 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     if (!s) throw notFound('Nie znaleziono zajęć.');
     if (phone === user.phone) throw badRequest('Podaj numer koleżanki.');
     claimClientSms(scope, user.id, 'session_invite', phone);
+    // Pula SMS sprawdzana przed ustaleniem, czy numer należy do studia – odmowa jest taka sama dla każdego numeru.
+    if (!studioSmsAvailable(deps, studio)) throw smsPoolSpent(studio.invite_code);
     const friend = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
     const isMember = friend && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: friend.id });
+    const time = localParts(new Date(s.starts_at), studio.timezone);
+    // Znajoma spoza studia dostaje SMS (przed zapisem zaproszenia, żeby nieudana wysyłka nie zostawiła rekordu).
+    if (!isMember && !(await sendStudioSms(deps, studio, phone, `${user.name ?? 'Znajoma'} zaprasza Cię na ${s.class_name} w ${studio.name} (${time.date.slice(8)}.${time.date.slice(5, 7)}, ${time.time}). Dołącz w aplikacji GLAM, kod studia: ${studio.invite_code}.`))) throw smsPoolSpent(studio.invite_code);
     const inviteId = id();
     scope.run("INSERT INTO session_invites (id, studio_id, session_id, from_user, to_user, to_phone, status, created_at) VALUES ($id, $studio, $s, $f, $t, $p, 'sent', $now)", {
       id: inviteId,
@@ -404,12 +417,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       p: phone,
       now: nowIso(),
     });
-    const time = localParts(new Date(s.starts_at), studio.timezone);
     if (isMember) notify(scope, { userId: friend!.id, category: 'community', tz: studio.timezone, body: `${user.name ?? 'Znajoma'} zaprasza Cię na ${s.class_name} ${time.date.slice(8)}.${time.date.slice(5, 7)} o ${time.time} 💛`, action: 'invites' });
-    else {
-      await deps.sms.send(phone, `${user.name ?? 'Znajoma'} zaprasza Cię na ${s.class_name} w ${studio.name} (${time.date.slice(8)}.${time.date.slice(5, 7)}, ${time.time}). Dołącz w aplikacji GLAM, kod studia: ${studio.invite_code}.`);
-      logUsage(db, studio.id, 'sms', 1, 9);
-    }
     // Ta sama odpowiedź w obu przypadkach – nie zdradzamy, czy numer należy do klientki studia.
     return { message: 'Zaproszenie wysłane.' };
   });
@@ -621,8 +629,9 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const charge = price.final > 0 ? await deps.payments.charge({ amountGrosze: price.final, method: b.method, description: `Wejściówka: ${variant.label}`, studioId: studio.id }) : { status: 'paid' as const, ref: 'free' };
     if (charge.status !== 'paid') throw new HttpError(402, 'payment_failed', 'Płatność się nie powiodła.');
     const gp = scope.tx(() => fulfillGuestPass(scope, studio, user.id, gift, charge.ref));
-    await deliverGuestPass(deps, scope, studio, gp.code, recipient, gift.buyerName, message);
-    return { code: gp.code, message: 'Prezent gotowy. Przekaż kod, link albo QR znajomej.' };
+    // Płatność i wejściówka są już zapisane, więc przy wyczerpanej puli SMS nie odmawiamy – klientka przekazuje kod sama.
+    const sent = await deliverGuestPass(deps, scope, studio, gp.code, recipient, gift.buyerName, message);
+    return { code: gp.code, message: `Prezent gotowy. ${sent ? '' : 'Studio wykorzystało w tym miesiącu pulę SMS, więc znajomej nie wysłaliśmy wiadomości. '}Przekaż kod, link albo QR znajomej.` };
   });
 
   app.get('/api/my/guest-passes', member, async (req) => {
@@ -650,8 +659,8 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     claimClientSms(scope, user.id, 'guest_pass_transfer', phone);
     const code = guestCode();
     scope.run('UPDATE guest_passes SET recipient_phone = $p, code = $c, transferred_from = $old, activation_attempts = 0 WHERE studio_id = $studio AND id = $id', { p: phone, c: code, old: gp.recipient_phone ?? gp.code, id: gp.id });
-    await deliverGuestPass(deps, scope, studio, code, phone, user.name ?? 'Znajoma', gp.message ?? '');
-    return { code, message: 'Wejściówka przepisana – nowa osoba dostała SMS z kodem.' };
+    const sent = await deliverGuestPass(deps, scope, studio, code, phone, user.name ?? 'Znajoma', gp.message ?? '');
+    return { code, message: sent ? 'Wejściówka przepisana – nowa osoba dostała SMS z kodem.' : `Wejściówka przepisana, ale studio wykorzystało w tym miesiącu pulę SMS. Przekaż nowej osobie kod: ${code}.` };
   });
 
   // ——— Polecenia (decyzja 8): link zaproszenia, pierwsze zajęcia gratis, bonus dla zapraszającej ———
@@ -663,22 +672,20 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     if (phone === user.phone) throw badRequest('Podaj numer znajomej.');
     if (phone) {
       claimClientSms(scope, user.id, 'referral', phone);
+      if (req.body?.channel === 'sms' && !studioSmsAvailable(deps, studio)) throw smsPoolSpent(studio.invite_code);
       const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone) as { id: string } | undefined;
       if (existing && scope.get("SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { u: existing.id })) {
         throw conflict('already_member', 'Ta osoba już jest w naszym studiu. Umów się z nią na wspólne zajęcia w grafiku!');
       }
     }
     const code = `P${guestCode(7)}`;
+    const text = `${user.name ?? 'Twoja znajoma'} zaprasza Cię do ${studio.name}${studio.settings.referral.friendFirstClassFree ? ' – pierwsze zajęcia gratis' : ''} 💛 Dołącz w aplikacji GLAM kodem ${code}.`;
+    if (phone && req.body?.channel === 'sms' && !(await sendStudioSms(deps, studio, phone, text))) throw smsPoolSpent(studio.invite_code);
     scope.run(
       `INSERT INTO referrals (id, studio_id, inviter_id, code, invitee_phone, channel, status, created_at, updated_at)
        VALUES ($id, $studio, $u, $code, $phone, $ch, 'sent', $now, $now)`,
       { id: id(), u: user.id, code, phone, ch: req.body?.channel ?? 'link', now: nowIso() },
     );
-    const text = `${user.name ?? 'Twoja znajoma'} zaprasza Cię do ${studio.name}${studio.settings.referral.friendFirstClassFree ? ' – pierwsze zajęcia gratis' : ''} 💛 Dołącz w aplikacji GLAM kodem ${code}.`;
-    if (phone && req.body?.channel === 'sms') {
-      await deps.sms.send(phone, text);
-      logUsage(db, studio.id, 'sms', 1, 9);
-    }
     return { code, text, link: `${deps.publicUrl ?? ''}/app?zaproszenie=${code}` };
   });
 
@@ -905,11 +912,11 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     return { ok: true };
   });
 
-  // Kod QR do check-inu w recepcji / na bramce (C3) – zmienia się codziennie.
+  // Kod QR do check-inu w recepcji / na bramce (C3): dzienny sekret, z którego telefon liczy QR co 30 s, i zapasowy kod z liter.
   app.get('/api/my/checkin-code', member, async (req) => {
     const { studio, user } = ctx(req);
     const date = localParts(new Date(), studio.timezone).date;
-    return { code: checkinCode(studio.id, user.id, date), short: shortCheckinCode(studio.id, user.id, date) };
+    return { ...checkinSeed(studio.id, user.id, date), short: shortCheckinCode(studio.id, user.id, date) };
   });
 
   app.get('/api/partners', member, async (req) => {
@@ -951,10 +958,10 @@ export function createGuestPass(
   return gp;
 }
 
-export async function deliverGuestPass(deps: Deps, scope: StudioScope, studio: Studio, code: string, recipient: string | null, fromName: string, message: string) {
-  if (!recipient) return;
-  await deps.sms.send(recipient, `${fromName} zrobiła Ci prezent 💛 Wejściówka do ${studio.name}. Kod: ${code}. Odbierz w aplikacji GLAM.`);
-  logUsage(deps.db, studio.id, 'sms', 1, 9);
+/** Wysyła kod prezentu SMS-em i powiadomieniem w aplikacji; `false`, gdy SMS nie wyszedł, bo pula SMS studia jest wyczerpana (wejściówka już istnieje). */
+export async function deliverGuestPass(deps: Deps, scope: StudioScope, studio: Studio, code: string, recipient: string | null, fromName: string, message: string): Promise<boolean> {
+  if (!recipient) return true;
+  const smsSent = await sendStudioSms(deps, studio, recipient, `${fromName} zrobiła Ci prezent 💛 Wejściówka do ${studio.name}. Kod: ${code}. Odbierz w aplikacji GLAM.`);
   const existing = deps.db.prepare('SELECT id FROM users WHERE phone = ?').get(recipient) as { id: string } | undefined;
   const isMember = existing && scope.get('SELECT 1 FROM memberships WHERE studio_id = $studio AND user_id = $user', { user: existing.id });
   if (existing && isMember) {
@@ -966,4 +973,5 @@ export async function deliverGuestPass(deps: Deps, scope: StudioScope, studio: S
       action: `gift/${code}`,
     });
   }
+  return smsSent;
 }

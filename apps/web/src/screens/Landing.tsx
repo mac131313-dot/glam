@@ -1,12 +1,13 @@
-// Strona startowa demo: dwa wejścia – panel studia i aplikacja mobilna.
+// Strona startowa demo: wejścia – panel studia, aplikacja mobilna i rejestracja nowego studia (/start).
 import type { ReactNode } from 'react';
 import { PERSONAS } from '../demo.ts';
 import { Icon } from '../icons.tsx';
 
 export function Landing() {
-  const tiles = [
+  const tiles: { href: string; eyebrow: string; title: string; serif: string; hint: string; personas?: Record<string, { label: string }>; base?: string }[] = [
     { href: '/panel', eyebrow: 'Dla studia', title: 'Panel', serif: 'zarządzania', hint: 'Pulpit, grafik, karnety, powitania i wygląd studia.', personas: PERSONAS.panel, base: '/panel' },
     { href: '/app', eyebrow: 'Dla klientki', title: 'Aplikacja', serif: 'mobilna', hint: 'Rezerwacje, karnet, prowadzony oddech, wejściówki dla znajomych.', personas: PERSONAS.app, base: '/app' },
+    { href: '/start', eyebrow: 'Dla właścicielki', title: 'Załóż', serif: 'studio', hint: 'Cennik i rejestracja: 21 dni za darmo, bez karty.' },
   ];
   return (
     <main className="login">
@@ -32,16 +33,18 @@ export function Landing() {
               <a className="btn" href={t.href}>
                 Otwórz <Icon name="chevron" size={18} />
               </a>
-              <div className="stack gap-1">
-                <div className="eyebrow" style={{ margin: 0 }}>
-                  Konta demo
+              {t.personas && (
+                <div className="stack gap-1">
+                  <div className="eyebrow" style={{ margin: 0 }}>
+                    Konta demo
+                  </div>
+                  {Object.entries(t.personas).map(([k, p]) => (
+                    <a key={k} className="small" href={`${t.base}?jako=${k}`} style={{ color: 'var(--muted)' }}>
+                      {p.label}
+                    </a>
+                  ))}
                 </div>
-                {Object.entries(t.personas).map(([k, p]) => (
-                  <a key={k} className="small" href={`${t.base}?jako=${k}`} style={{ color: 'var(--muted)' }}>
-                    {p.label}
-                  </a>
-                ))}
-              </div>
+              )}
             </div>
           ))}
         </div>

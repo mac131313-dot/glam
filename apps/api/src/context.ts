@@ -3,6 +3,7 @@ import { can, FEATURE_LABEL, type Feature, type Permission, type Role } from '@g
 import { userFromToken, type AuthUser } from './auth.ts';
 import type { Db } from './db.ts';
 import { HttpError, forbidden } from './errors.ts';
+import type { PlatformRole } from './routes/platform/guard.ts';
 import { StudioScope } from './scope.ts';
 import type { EmailSender, PaymentProvider, PushSender, SmsGateway } from './sms.ts';
 import type { DnsResolver } from './services/domain.ts';
@@ -24,6 +25,13 @@ export type Deps = {
   dns?: DnsResolver;
   /** Wywołania do Stripe (domyślnie globalny fetch; w testach podstawka). */
   http?: typeof fetch;
+  /**
+   * Konto Stripe GLAM do abonamentów studiów (z env, osobno od bramek studiów w `gateway_enc`).
+   * Brak = płatności abonamentu wyłączone: trial działa, „Abonament” pokazuje „Płatności abonamentu wkrótce”.
+   */
+  platformStripe?: { secret: string; webhookSecret: string; prices: Record<'start' | 'studio' | 'siec', string> };
+  /** Znormalizowane numery, które dostają rolę admina konsoli, o ile nie mają wpisu w zespole (`platformAdminPhones`). Brak = nikt. */
+  platformAdmins?: string[];
 };
 
 declare module 'fastify' {
@@ -32,6 +40,7 @@ declare module 'fastify' {
     studio?: Studio;
     scope?: StudioScope;
     roles?: Role[];
+    platformRole?: PlatformRole;
   }
 }
 

@@ -6,8 +6,9 @@ import { useEffect, useState } from 'react';
 import { PANEL_TINTS, ROLE_LABEL, type Role, type StudioSettings } from '@glam/core';
 import type { MeStudio } from '../App.tsx';
 import { api, fmtDay, useApi } from '../api.ts';
-import { Empty, Field, Spinner, Stat, Tabs, Toggle, useAction } from '../ui.tsx';
+import { Empty, Field, Spinner, Tabs, Toggle, useAction } from '../ui.tsx';
 import { applySystemLook } from '../look.ts';
+import { Billing } from './Billing.tsx';
 import { download } from './Clients.tsx';
 
 type Cfg = {
@@ -21,11 +22,19 @@ type Cfg = {
   trainers: { id: string; name: string; classTypeIds: string[] }[];
 };
 
-type Tab = 'studio' | 'rules' | 'modules' | 'team' | 'data' | 'plan';
+export type Tab = 'studio' | 'rules' | 'modules' | 'team' | 'data' | 'plan';
 
-export default function Settings({ onSaved }: { studio: MeStudio; onSaved: () => Promise<void> }) {
+/** `tab` – zakładka do otwarcia (np. z paska abonamentu lub po powrocie ze Stripe); `onTab` mówi rodzicowi, którą zakładkę widać. */
+export default function Settings({ onSaved, tab: wanted, onTab }: { studio: MeStudio; onSaved: () => Promise<void>; tab?: Tab; onTab?: (tab: Tab) => void }) {
   const cfg = useApi<Cfg>('/owner/config');
-  const [tab, setTab] = useState<Tab>('studio');
+  const [tab, setTab] = useState<Tab>(wanted ?? 'studio');
+  useEffect(() => {
+    if (wanted) setTab(wanted);
+  }, [wanted]);
+  const pick = (t: Tab) => {
+    setTab(t);
+    onTab?.(t);
+  };
   if (!cfg.data) return <Spinner />;
   if (!cfg.data.settings) return <Empty>Ustawienia zmienia właścicielka studia.</Empty>;
   const reload = async () => (await cfg.reload(), await onSaved());
@@ -35,14 +44,14 @@ export default function Settings({ onSaved }: { studio: MeStudio; onSaved: () =>
       <Tabs
         label="Ustawienia"
         value={tab}
-        onChange={setTab}
+        onChange={pick}
         options={[
           ['studio', 'Studio'],
           ['rules', 'Zapisy i regulamin'],
           ['modules', 'Moduły'],
           ['team', 'Zespół'],
           ['data', 'Dane i import'],
-          ['plan', 'Plan i wsparcie'],
+          ['plan', 'Abonament i wsparcie'],
         ]}
       />
       {tab === 'studio' && (
@@ -55,7 +64,12 @@ export default function Settings({ onSaved }: { studio: MeStudio; onSaved: () =>
       {tab === 'modules' && <Modules settings={cfg.data.settings} reload={reload} />}
       {tab === 'team' && <Team cfg={cfg.data} reload={reload} />}
       {tab === 'data' && <DataTools cfg={cfg.data} reload={reload} />}
-      {tab === 'plan' && <PlanSupport />}
+      {tab === 'plan' && (
+        <>
+          <Billing onChanged={onSaved} />
+          <Support />
+        </>
+      )}
     </div>
   );
 }
@@ -472,38 +486,14 @@ function DataTools({ cfg, reload }: { cfg: Cfg; reload: () => Promise<void> }) {
   );
 }
 
-function PlanSupport() {
-  const plan = useApi<{ plan: { name: string; price: string; limits: Record<string, number> }; status: string; trialEndsAt: string | null; features: Record<string, boolean>; usage: { activeClients: number; smsThisMonth: number; smsCost: string; storageMb: number; staff: number; facilities: number } }>('/owner/plan');
+/** Zgłoszenia do zespołu GLAM i ich wątki (plan i płatności są w `Billing`). */
+function Support() {
   const tickets = useApi<{ id: string; subject: string; status: string; priority: string; sla_due_at: string; messages: { body: string; from_platform: number; name: string; created_at: string }[] }[]>('/owner/tickets');
   const [t, setT] = useState({ subject: '', body: '', priority: 'normal', grantDataAccess: false });
   const [reply, setReply] = useState<Record<string, string>>({});
   const { run, busy } = useAction();
-  if (!plan.data) return <Spinner />;
-  const u = plan.data.usage;
-  const L = plan.data.plan.limits;
   return (
     <div className="stack-lg">
-      <section className="card stack">
-        <div className="row between">
-          <b>
-            Plan {plan.data.plan.name} · {plan.data.plan.price}/mies.
-          </b>
-          <span className="badge">{plan.data.status === 'trial' ? `okres próbny do ${plan.data.trialEndsAt?.slice(0, 10)}` : plan.data.status}</span>
-        </div>
-        <div className="kpis">
-          <Stat label="Aktywne klientki" value={`${u.activeClients}/${L.activeClients}`} />
-          <Stat label="SMS w tym miesiącu" value={`${u.smsThisMonth}/${L.smsPerMonth}`} hint={u.smsCost} />
-          <Stat label="Wideo" value={`${u.storageMb}/${L.videoMb} MB`} />
-          <Stat label="Zespół" value={`${u.staff}/${L.staff}`} hint={`obiekty ${u.facilities}/${L.facilities}`} />
-        </div>
-        <div className="pill-row">
-          {Object.entries(plan.data.features).map(([f, on]) => (
-            <span key={f} className="chip" aria-pressed={on} style={{ opacity: on ? 1 : 0.45 }}>
-              {f}
-            </span>
-          ))}
-        </div>
-      </section>
       <section className="card stack">
         <div className="eyebrow">Napisz do zespołu GLAM</div>
         <input className="input" placeholder="Temat" value={t.subject} onChange={(e) => setT({ ...t, subject: e.target.value })} />

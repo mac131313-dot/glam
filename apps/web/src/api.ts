@@ -32,9 +32,15 @@ const store = {
 /** Tryb demo: bez ekranu logowania – panel i aplikacja logują się same na konta demo. */
 export const DEMO_MODE = true;
 
-/** Panel studia i aplikacja mobilna działają pod jednym adresem, ale mają osobne sesje. */
-export type Surface = 'panel' | 'app' | 'home';
-export const SURFACE: Surface = location.pathname.startsWith('/panel') ? 'panel' : location.pathname.startsWith('/app') ? 'app' : 'home';
+/** Panel studia, aplikacja mobilna i konsola GLAM działają pod jednym adresem, ale mają osobne sesje. */
+export type Surface = 'panel' | 'app' | 'konsola' | 'home';
+export const SURFACE: Surface = location.pathname.startsWith('/panel')
+  ? 'panel'
+  : location.pathname.startsWith('/app')
+    ? 'app'
+    : location.pathname.startsWith('/konsola')
+      ? 'konsola'
+      : 'home';
 const key = (k: string) => `glam.${SURFACE}.${k}`;
 
 export const session = {
@@ -56,6 +62,17 @@ export const session = {
     store.set(key('persona'), p);
   },
 };
+
+/**
+ * Sesja nowej właścicielki (z /start) trafia do panelu: wpisujemy klucze panelu wprost, bo obiekt `session` jest
+ * związany z bieżącą powierzchnią (na /start to „home”). Persona `signup` mówi panelowi, żeby nie logował konta demo.
+ */
+export function handOffSession(surface: 'panel', token: string, studioId: string): void {
+  clearOfflineData();
+  store.set(`glam.${surface}.token`, token);
+  store.set(`glam.${surface}.studio`, studioId);
+  store.set(`glam.${surface}.persona`, 'signup');
+}
 
 type Opts = { method?: string; body?: unknown; global?: boolean };
 
@@ -79,7 +96,7 @@ export async function api<T = any>(path: string, opts: Opts = {}): Promise<T> {
   return data as T;
 }
 
-export function useApi<T = any>(path: string | null, deps: unknown[] = []) {
+export function useApi<T = any>(path: string | null, deps: unknown[] = [], opts: { global?: boolean } = {}) {
   const [data, setData] = useState<T | undefined>();
   const [error, setError] = useState<ApiError | undefined>();
   const [loading, setLoading] = useState(!!path);
@@ -88,7 +105,7 @@ export function useApi<T = any>(path: string | null, deps: unknown[] = []) {
     if (!path) return;
     setLoading(true);
     try {
-      setData(await api<T>(path));
+      setData(await api<T>(path, { global: opts.global }));
       setError(undefined);
     } catch (e) {
       setError(e as ApiError);

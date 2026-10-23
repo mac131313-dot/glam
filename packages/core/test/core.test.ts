@@ -244,3 +244,20 @@ test('kwadrat oddechu: kropka obiega kwadrat w rytmie box, inny rytm chodzi po p
   const night = patternById('night');
   assert.equal(squarePoint(night, 1, 0.5).y, 0, 'przytrzymanie po wdechu stoi u góry');
 });
+
+test('kod wejścia na żywo: SHA-256/HMAC jak w node:crypto, nowy kod co 30 s', async () => {
+  const { createHash, createHmac } = await import('node:crypto');
+  const { acceptCheckinStep, CHECKIN_STEP_MS, checkinStep, hmacSha256Hex, liveCheckinCode, sha256 } = await import('../src/checkin.ts');
+  for (const n of [0, 55, 56, 64, 65, 200]) {
+    const s = 'ż'.repeat(n);
+    assert.equal(Buffer.from(sha256(new TextEncoder().encode(s))).toString('hex'), createHash('sha256').update(s).digest('hex'));
+    assert.equal(hmacSha256Hex('k'.repeat(n), s), createHmac('sha256', 'k'.repeat(n)).update(s).digest('hex'));
+  }
+  const seed = { user: 'u_1', date: '2026-10-20', seed: 'abc' };
+  const t = Date.parse('2026-10-20T10:00:00Z');
+  assert.equal(checkinStep(t), checkinStep(t + CHECKIN_STEP_MS - 1));
+  assert.notEqual(liveCheckinCode(seed, checkinStep(t)), liveCheckinCode(seed, checkinStep(t + CHECKIN_STEP_MS)));
+  assert.match(liveCheckinCode(seed, 1), /^GLAM2\.u_1\.2026-10-20\.1\.[0-9a-f]{16}$/);
+  assert.equal(acceptCheckinStep(100, 100), true);
+  assert.equal(acceptCheckinStep(96, 100), false, 'kod sprzed 2 minut już nie przechodzi');
+});

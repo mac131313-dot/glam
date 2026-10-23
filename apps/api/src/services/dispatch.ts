@@ -2,18 +2,18 @@
 // e-maile kampanii oraz SMS-y (tylko po zgodzie na SMS marketingowe). Kopie zapasowe bazy raz na dobę.
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { SERVICE_PRICES } from '@glam/core';
 import type { Deps } from '../context.ts';
 import { DATA_DIR, id, nowIso, type Db } from '../db.ts';
+import { sendStudioSms } from './studio-sms.ts';
 
 export async function dispatch(deps: Deps, now = new Date()) {
   const due = deps.db
     .prepare(
-      `SELECT n.id, n.studio_id, n.user_id, n.body, n.title, n.action, n.channel, s.name AS studio_name, u.email, u.phone
+      `SELECT n.id, n.studio_id, n.user_id, n.body, n.title, n.action, n.channel, s.name AS studio_name, s.plan_id, u.email, u.phone
        FROM notifications n JOIN studios s ON s.id = n.studio_id JOIN users u ON u.id = n.user_id
        WHERE n.status IN ('sent', 'deferred') AND n.pushed_at IS NULL AND n.deliver_at <= ? ORDER BY n.deliver_at LIMIT 200`,
     )
-    .all(now.toISOString()) as { id: string; studio_id: string; user_id: string; body: string; title: string | null; action: string | null; channel: string; studio_name: string; email: string | null; phone: string }[];
+    .all(now.toISOString()) as { id: string; studio_id: string; user_id: string; body: string; title: string | null; action: string | null; channel: string; studio_name: string; plan_id: string | null; email: string | null; phone: string }[];
   for (const n of due) {
     deps.db.prepare('UPDATE notifications SET pushed_at = ? WHERE id = ?').run(now.toISOString(), n.id);
     if (n.channel === 'email') {
@@ -21,9 +21,8 @@ export async function dispatch(deps: Deps, now = new Date()) {
       continue;
     }
     if (n.channel === 'sms') {
-      await deps.sms.send(n.phone, `${n.studio_name}: ${n.body}`);
-      logUsage(deps.db, n.studio_id, 'sms', 1, SERVICE_PRICES.smsGrosze);
-      continue;
+      // Pula SMS studia wyczerpana: powiadomienie leci pushem, jak kanał domyślny.
+      if (await sendStudioSms(deps, { id: n.studio_id, plan_id: n.plan_id }, n.phone, `${n.studio_name}: ${n.body}`)) continue;
     }
     if (!deps.push) continue;
     const subs = deps.db.prepare('SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?').all(n.user_id) as { endpoint: string; p256dh: string; auth: string }[];

@@ -33,6 +33,7 @@ import { notify } from '../services/notify.ts';
 import { issueInvoice } from '../services/payments.ts';
 import { refundPayment, refundQuote, swapPass } from '../services/refunds.ts';
 import { clientFacts } from '../services/segments.ts';
+import { studioUsage } from '../services/usage.ts';
 import { nameMaps } from './client.ts';
 
 function productList(scope: StudioScope) {
@@ -539,20 +540,15 @@ ${items.map((i) => `<tr><td>${esc(i.name)}</td><td>${i.qty}</td><td>${i.vatRate}
   app.get('/api/owner/plan', owner, async (req) => {
     const { scope, studio } = ctx(req);
     const plan = planById(studio.plan_id);
-    const month = `${new Date().toISOString().slice(0, 7)}-01`;
-    const facts = clientFacts(scope);
-    const active = facts.filter((f) => f.lastVisit && Date.now() - Date.parse(f.lastVisit) < 30 * 86_400_000).length;
-    const sms = scope.get<{ n: number; cost: number }>("SELECT COALESCE(SUM(units), 0) AS n, COALESCE(SUM(cost_grosze), 0) AS cost FROM usage_log WHERE studio_id = $studio AND kind = 'sms' AND created_at >= $m", { m: month })!;
-    const storage = scope.get<{ b: number }>('SELECT COALESCE(SUM(size), 0) AS b FROM media WHERE studio_id = $studio')!.b;
-    const staffN = scope.get<{ n: number }>("SELECT COUNT(DISTINCT user_id) AS n FROM memberships WHERE studio_id = $studio AND role != 'client'")!.n;
-    const facilities = scope.get<{ n: number }>('SELECT COUNT(*) AS n FROM facilities WHERE studio_id = $studio')!.n;
+    const usage = studioUsage(scope);
+    const smsCost = scope.get<{ cost: number }>("SELECT COALESCE(SUM(cost_grosze), 0) AS cost FROM usage_log WHERE studio_id = $studio AND kind = 'sms' AND created_at >= $m", { m: `${new Date().toISOString().slice(0, 7)}-01` })!.cost;
     return {
       plan: { ...plan, price: formatPLN(plan.priceGrosze) },
       status: studio.status,
       trialEndsAt: studio.trial_ends_at,
       flags: studio.flags,
       features: Object.fromEntries(['courses', 'courses_paid', 'challenges', 'community', 'shop', 'events', 'music', 'campaigns', 'white_label', 'loyalty', 'health', 'cycle', 'catalog', 'network', 'split_payments', 'beta_widgets'].map((f) => [f, studio.has(f as never)])),
-      usage: { activeClients: active, smsThisMonth: sms.n, smsCost: formatPLN(sms.cost), storageMb: Math.round(storage / 100_000) / 10, staff: staffN, facilities },
+      usage: { ...usage, smsCost: formatPLN(smsCost) },
     };
   });
 }

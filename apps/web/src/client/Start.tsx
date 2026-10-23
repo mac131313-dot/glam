@@ -1,12 +1,13 @@
 // Ekran Start (3): powitanie, najbliższe zajęcia, stan karnetu, cel tygodnia.
 import { useEffect, useState } from 'react';
-import { goalCount, goalExtra, plural, rewardCounterCopy } from '@glam/core';
-import { api, fmtDay, fmtTime, useApi } from '../api.ts';
+import { goalCount, goalExtra, plural, rewardCounterCopy, type ClassFit, type LiveCheckin } from '@glam/core';
+import { api, ApiError, fmtDay, fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
-import { Empty, ListRow, Progress, Pending, QrCode, Sheet, rememberOrigin, useAction } from '../ui.tsx';
+import { Empty, ListRow, LiveCheckinQr, Progress, Pending, Sheet, rememberOrigin, useAction, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { PassMeter, type Meter } from './PassMeter.tsx';
+import { focusSession, pickForYou, SessionCard, type Session } from './Schedule.tsx';
 import { InviteCard, type TrainerInvite } from './TrainerInvite.tsx';
 import { WelcomePopup } from './WelcomePopup.tsx';
 
@@ -21,7 +22,7 @@ type Upcoming = {
   zone_name: string;
   photo_url: string | null;
   photo_ratio: number | null;
-  checkin_code: string | null;
+  checkin: LiveCheckin | null;
 };
 
 type Home = {
@@ -152,9 +153,7 @@ export function Start() {
             corner={next.status === 'waitlist' ? <span className="badge warn">lista oczekujących</span> : <span className="badge ok">zapisana</span>}
           />
         ) : (
-          <div className="card stack">
-            <Empty icon="">Nic jeszcze nie zaplanowałaś.</Empty>
-          </div>
+          <ForYouNext />
         )}
         <div className="row between">
           <span className="muted small">{home.upcoming.length > 1 ? `i jeszcze ${home.upcoming.length - 1} w planie` : ''}</span>
@@ -266,6 +265,71 @@ export function Start() {
 }
 
 // Okno po kliknięciu najbliższych zajęć: kod QR do zeskanowania w recepcji i krótki opis spotkania.
+/** Ile podpowiedzi pokazujemy i jak daleko w przód szukamy wolnych miejsc. */
+const SUGGEST_MAX = 4;
+const SUGGEST_DAYS = 14;
+
+/**
+ * Brak zapisów: zamiast pustej karty najbliższe zajęcia z ulubionych i dopasowane z ankiety, na które jest jeszcze miejsce.
+ * Każdy typ zajęć raz (najbliższy termin), w kolejności godzin. Dotknięcie otwiera te zajęcia w Grafiku.
+ */
+function ForYouNext() {
+  const { go } = useClient();
+  const toast = useToast();
+  const { data } = useApi<{ sessions: Session[]; fit: ClassFit | null; favorites: string[] }>(`/schedule?days=${SUGGEST_DAYS}`);
+  /** Serduszka zmieniamy od razu, lista podpowiedzi zostaje na miejscu do następnego wejścia. */
+  const [favs, setFavs] = useState<string[] | null>(null);
+
+  if (!data) return null;
+  const favorites = favs ?? data.favorites;
+  const bookable = data.sessions.filter((s) => !s.my_status && s.taken < s.capacity);
+  // pickForYou daje najlepsze terminy pierwsze – zostawiamy pierwszy termin każdego typu zajęć.
+  const seen = new Set<string>();
+  const picks = pickForYou(bookable, data.favorites, data.fit)
+    .filter(({ s }) => {
+      if (seen.has(s.class_type_id)) return false;
+      seen.add(s.class_type_id);
+      return true;
+    })
+    .sort((a, b) => a.s.starts_at.localeCompare(b.s.starts_at))
+    .slice(0, SUGGEST_MAX);
+
+  if (!picks.length)
+    return (
+      <div className="card stack">
+        <Empty icon="">Nic jeszcze nie zaplanowałaś.</Empty>
+      </div>
+    );
+
+  const toggleFav = async (s: Session) => {
+    const on = !favorites.includes(s.class_type_id);
+    setFavs(on ? [...favorites, s.class_type_id] : favorites.filter((x) => x !== s.class_type_id));
+    try {
+      await api(`/favorites/${s.class_type_id}`, { method: on ? 'PUT' : 'DELETE' });
+    } catch (e) {
+      setFavs(favorites);
+      toast((e as ApiError).message, 'error');
+    }
+  };
+  const book = (s: Session) => {
+    focusSession(s);
+    go('schedule');
+  };
+
+  return (
+    <div className="stack" style={{ gap: 12 }}>
+      <p className="small muted" style={{ margin: 0 }}>
+        Nic jeszcze nie zaplanowałaś – te zajęcia są <span className="serif">dla Ciebie</span> i mają wolne miejsca.
+      </p>
+      <div className="cover-carousel">
+        {picks.map(({ s, reason }) => (
+          <SessionCard key={s.id} s={s} fav={favorites.includes(s.class_type_id)} onFav={() => toggleFav(s)} onOpen={() => book(s)} reason={reason} day />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ClassTicket({ item, onClose }: { item: Upcoming; onClose: () => void }) {
   const minutes = Math.round((Date.parse(item.ends_at) - Date.parse(item.starts_at)) / 60_000);
   return (
@@ -279,10 +343,10 @@ function ClassTicket({ item, onClose }: { item: Upcoming; onClose: () => void })
           prowadzi {item.trainer_name} · {item.zone_name}
         </p>
         {item.description && <p className="small" style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{item.description}</p>}
-        {item.checkin_code ? (
+        {item.checkin ? (
           <>
-            <QrCode text={item.checkin_code} size={220} label={`Kod wejścia na ${item.class_name}`} />
-            <p className="tiny muted" style={{ margin: 0 }}>Pokaż ten kod w recepcji – zeskanujemy go przy wejściu. Działa w dniu zajęć.</p>
+            <LiveCheckinQr checkin={item.checkin} size={220} label={`Kod wejścia na ${item.class_name}`} />
+            <p className="tiny muted" style={{ margin: 0 }}>Pokaż ten kod w recepcji – zeskanujemy go przy wejściu. Zmienia się co 30 sekund, więc zrzut ekranu nie zadziała.</p>
           </>
         ) : item.status === 'waitlist' ? (
           <p className="small muted">Jesteś na liście oczekujących. Kod wejścia pojawi się tutaj, gdy zwolni się miejsce.</p>

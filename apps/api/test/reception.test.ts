@@ -2,7 +2,7 @@
 // wejściówka od znajomej zeskanowana z QR i aktywowana przy ladzie.
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { canWalkIn } from '@glam/core';
+import { canWalkIn, checkinStep, liveCheckinCode } from '@glam/core';
 import { buildApp } from '../src/app.ts';
 import type { Deps } from '../src/context.ts';
 import { openDb } from '../src/db.ts';
@@ -51,7 +51,7 @@ const call = (token: string, method: string, url: string, payload?: object) =>
 test('kod wejściówki rozpoznany z linku i z samego kodu; kod klientki i telefon – nie', () => {
   assert.equal(guestPassCodeOf('https://glam.app/app?wejsciowka=ab23cd45'), 'AB23CD45');
   assert.equal(guestPassCodeOf('AB23CD45'), 'AB23CD45');
-  assert.equal(guestPassCodeOf('GLAM1.u_005.2026-10-15.abc'), null);
+  assert.equal(guestPassCodeOf('GLAM2.u_005.2026-10-15.59000000.abc'), null);
   assert.equal(guestPassCodeOf('500600700'), null);
 });
 
@@ -65,7 +65,8 @@ test('okno wejścia bez rezerwacji: wolne miejsce i zajęcia tuż przed / tuż p
 test('bez rezerwacji: recepcja dostaje propozycję zajęć, dopisuje i wpuszcza; drugi skan to „już odhaczona”', async () => {
   const magda = await login(DEMO.magda);
   const reception = await login(DEMO.reception);
-  const code = (await call(magda, 'GET', '/api/my/checkin-code')).json().code;
+  // Telefon liczy QR z dziennego sekretu – tak samo jak aplikacja.
+  const code = liveCheckinCode((await call(magda, 'GET', '/api/my/checkin-code')).json(), checkinStep());
 
   const first = await call(reception, 'POST', '/api/staff/checkin', { code });
   assert.equal(first.statusCode, 409, first.body);
@@ -88,6 +89,18 @@ test('bez rezerwacji: recepcja dostaje propozycję zajęć, dopisuje i wpuszcza;
   const again = await call(reception, 'POST', '/api/staff/checkin', { code });
   assert.equal(again.statusCode, 200, again.body);
   assert.equal(again.json().kind, 'already');
+});
+
+test('zrzut ekranu sprzed 2 minut nie wpuszcza – recepcja wie dlaczego; podrobiony podpis to obcy kod', async () => {
+  const magda = await login(DEMO.magda);
+  const reception = await login(DEMO.reception);
+  const seed = (await call(magda, 'GET', '/api/my/checkin-code')).json();
+  const screenshot = liveCheckinCode(seed, checkinStep(Date.now() - 2 * 60_000));
+  const old = await call(reception, 'POST', '/api/staff/checkin', { code: screenshot });
+  assert.equal(old.statusCode, 409, old.body);
+  assert.equal(old.json().error, 'code_expired');
+  const forged = await call(reception, 'POST', '/api/staff/checkin', { code: screenshot.slice(0, -2) + 'zz' });
+  assert.equal(forged.statusCode, 404, 'podrobiony podpis to zwykły nierozpoznany kod');
 });
 
 test('wejściówka od znajomej: skan QR z kasy → imię i telefon → aktywna i wpuszczona', async () => {

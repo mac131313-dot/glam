@@ -1,19 +1,19 @@
 // Grafik (4.1): widok dnia / tygodnia / miesiąca, filtry (typ, trenerka, poziom, sala, wolne miejsca), zapis,
 // trening we dwie (#6), rezerwacja „na stałe”, lista oczekujących, odwołanie, „umów się z dziewczynami”,
 // playlista zajęć, synchronizacja z kalendarzem telefonu. Widok dnia: karuzela „Dopasowane do Ciebie” (ankieta
-// + ulubione, core/classfit) i pod nią karuzela pozostałych zajęć tego dnia.
+// + ulubione, core/classfit) i pod nią karuzela pozostałych zajęć tego dnia – duże karty ze zdjęciem, przewijane w bok.
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { dayTimesOf, FIT_THRESHOLD, fitReason, fitScore, type ClassAudience, type ClassFit } from '@glam/core';
 import { Icon } from '../icons.tsx';
 import { ClassFitSheet } from './ClassFitQuestions.tsx';
-import { addDaysStr, api, ApiError, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
+import { addDaysStr, api, ApiError, fmtDay, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
 import { Empty, Field, Fold, reducedMotion, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { ClassHistory } from './ClassHistory.tsx';
 import { useClient } from './ClientApp.tsx';
 
-type Session = {
+export type Session = {
   id: string;
   starts_at: string;
   ends_at: string;
@@ -48,7 +48,26 @@ type Session = {
   local_weekday: number;
 };
 
-type ForYou = { s: Session; fav: boolean; reason: string | null };
+export type ForYou = { s: Session; fav: boolean; reason: string | null };
+
+/**
+ * „Dopasowane do Ciebie” (Grafik i Start): przyszłe zajęcia z ulubionych albo z wynikiem ankiety od progu wzwyż.
+ * Najpierw ulubione, potem lepszy wynik, potem wcześniejsza godzina.
+ */
+export function pickForYou(list: Session[], favorites: string[], fit: ClassFit | null): ForYou[] {
+  return list
+    .filter((s) => s.status !== 'cancelled' && Date.parse(s.starts_at) > Date.now())
+    .map((s) => ({ s, fav: favorites.includes(s.class_type_id), score: fit ? fitScore(s.audience, fit, dayTimesOf(s.local_hour, s.local_weekday)) : 0 }))
+    .filter((x) => x.fav || x.score >= FIT_THRESHOLD)
+    .sort((a, b) => Number(b.fav) - Number(a.fav) || b.score - a.score || a.s.starts_at.localeCompare(b.s.starts_at))
+    .map((x) => ({ s: x.s, fav: x.fav, reason: x.fav ? 'ulubione' : fit && fitReason(x.s.audience, fit) }));
+}
+
+/** Zajęcia do otwarcia przy następnym wejściu do Grafiku (np. z podpowiedzi na Starcie): dzień i arkusz z zapisem. */
+let pendingFocus: { id: string; day: string } | null = null;
+export const focusSession = (s: Pick<Session, 'id' | 'starts_at'>) => {
+  pendingFocus = { id: s.id, day: localDate(new Date(s.starts_at)) };
+};
 
 /** Przelot zdjęcia kafelek → arkusz tylko tam, gdzie przeglądarka je ma i nikt nie wyłączył animacji (system albo ustawienia aplikacji). */
 const canMorph = () => typeof document.startViewTransition === 'function' && !reducedMotion();
@@ -63,7 +82,9 @@ export function Schedule() {
   const { studio, openShop, open } = useClient();
   const today = localDate();
   const [view, setView] = useState<View>('day');
-  const [day, setDay] = useState(today);
+  // Czytamy bez czyszczenia – inicjalizator może się wykonać dwa razy (StrictMode); czyści efekt po otwarciu arkusza.
+  const [focus] = useState(() => pendingFocus);
+  const [day, setDay] = useState(focus?.day ?? today);
   /** Miesiąc: bieżący (0) albo następny (1) – zapisy i tak otwierają się z wyprzedzeniem najwyżej kilku tygodni. */
   const [monthOffset, setMonthOffset] = useState(0);
   const month = monthBounds(today, monthOffset);
@@ -119,6 +140,15 @@ export function Schedule() {
     setGuest('');
     setInvitePhone('');
   };
+  /** Wejście z podpowiedzi na Starcie: po wczytaniu grafiku od razu arkusz tych zajęć (jednorazowo). */
+  const focusDone = useRef(false);
+  useEffect(() => {
+    if (!focus || focusDone.current || !data) return;
+    focusDone.current = true;
+    pendingFocus = null;
+    const s = data.sessions.find((x) => x.id === focus.id);
+    if (s) openDetail(s);
+  }, [data, focus]);
   /** Zdjęcie kafelka, z którego otwarto arkusz – przy zamknięciu zdjęcie wraca na swoje miejsce. */
   const photoRef = useRef<HTMLElement | null>(null);
   const [morph, setMorph] = useState(false);
@@ -186,15 +216,7 @@ export function Schedule() {
 
   // Dzień: najpierw „Dopasowane do Ciebie” (ulubione + wynik z ankiety), potem reszta zajęć tego dnia.
   const fit = data?.fit ?? null;
-  const forYou: ForYou[] = [];
-  if (view === 'day') {
-    const scored = list
-      .filter((s) => s.status !== 'cancelled' && Date.parse(s.starts_at) > Date.now())
-      .map((s) => ({ s, fav: isFav(s), score: fit ? fitScore(s.audience, fit, dayTimesOf(s.local_hour, s.local_weekday)) : 0 }))
-      .filter((x) => x.fav || x.score >= FIT_THRESHOLD)
-      .sort((a, b) => Number(b.fav) - Number(a.fav) || b.score - a.score || a.s.starts_at.localeCompare(b.s.starts_at));
-    for (const x of scored) forYou.push({ s: x.s, fav: x.fav, reason: x.fav ? 'ulubione' : fit && fitReason(x.s.audience, fit) });
-  }
+  const forYou = view === 'day' ? pickForYou(list, favorites, fit) : [];
   const rest = list.filter((s) => !forYou.some((f) => f.s.id === s.id));
 
   const started = (s: Session) => Date.parse(s.starts_at) <= Date.now();
@@ -272,7 +294,7 @@ export function Schedule() {
           <Fold key={`fit-${day}`} title={<>Dopasowane <span className="serif">do Ciebie</span></>} meta={forYou.length ? classCount(forYou.length) : fit ? '' : '3 pytania'} defaultOpen={forYou.length > 0}>
             <div className="stack" style={{ gap: 12 }}>
               {forYou.length > 0 ? (
-                <div className="session-grid">
+                <div className="cover-carousel">
                   {forYou.map(({ s, fav, reason }) => (
                     <SessionCard key={s.id} s={s} fav={fav} onFav={() => toggleFav(s)} onOpen={(el) => openFromTile(s, el)} reason={reason} />
                   ))}
@@ -299,7 +321,7 @@ export function Schedule() {
           </Fold>
           {rest.length > 0 && (
             <Fold key={`rest-${day}`} title={forYou.length ? 'Pozostałe zajęcia' : 'Zajęcia tego dnia'} meta={classCount(rest.length)} defaultOpen>
-              <div className="session-grid">
+              <div className="cover-carousel">
                 {rest.map((s) => (
                   <SessionCard key={s.id} s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={(el) => openFromTile(s, el)} />
                 ))}
@@ -317,7 +339,7 @@ export function Schedule() {
             {list.length > 0 && <span className="fold-meta">{classCount(list.length)}</span>}
           </div>
           {list.length > 0 ? (
-            <div className="session-grid">
+            <div className="cover-carousel">
               {list.map((s) => (
                 <SessionCard key={s.id} s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={(el) => openFromTile(s, el)} />
               ))}
@@ -339,7 +361,7 @@ export function Schedule() {
           <div className="folds">
             {weekDays.map((g, i) => (
               <Fold key={`${day}-${g.date}`} title={fmtLongDay(g.items[0].starts_at)} meta={classCount(g.items.length) + (g.items.some((s) => s.my_status === 'booked' || s.my_status === 'waitlist') ? ' · Twój zapis' : '')} defaultOpen={i === 0}>
-                <div className="session-grid">
+                <div className="cover-carousel">
                   {g.items.map((s) => (
                     <SessionCard key={s.id} s={s} fav={isFav(s)} onFav={() => toggleFav(s)} onOpen={(el) => openFromTile(s, el)} />
                   ))}
@@ -495,19 +517,19 @@ export function Schedule() {
   );
 }
 
-/** Mały kafelek zajęć do siatki w dwóch kolumnach: godzina, nazwa, prowadząca i wolne miejsca – reszta w arkuszu. */
-function SessionCard({ s, fav, onFav, onOpen, reason }: { s: Session; fav: boolean; onFav: () => void; onOpen: (tile: HTMLElement) => void; reason?: string | null }) {
+/** Duża karta zajęć do poziomej karuzeli: godzina, nazwa, prowadząca i sala, wolne miejsca – reszta w arkuszu. `day` – z dniem przed godziną (poza Grafikiem). */
+export function SessionCard({ s, fav, onFav, onOpen, reason, day }: { s: Session; fav: boolean; onFav: () => void; onOpen: (tile: HTMLElement) => void; reason?: string | null; day?: boolean }) {
   const free = s.capacity - s.taken;
   const past = Date.parse(s.starts_at) < Date.now();
   return (
-    <div className="fav-wrap">
+    <div className="fav-wrap cc-item">
       <ClassCover
-        compact
         photoUrl={s.photo_url}
         onClick={(e) => onOpen(e.currentTarget)}
         dimmed={past || s.status === 'cancelled'}
-        eyebrow={`${fmtTime(s.starts_at)} · ${Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000)} min`}
+        eyebrow={`${day ? `${fmtDay(s.starts_at)} · ` : ''}${fmtTime(s.starts_at)} · ${Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000)} min`}
         title={s.class_name}
+        meta={`prowadzi ${s.trainer_name} · ${s.zone_name}`}
         aside={<TrainerFace name={s.trainer_name} url={s.trainer_avatar_url} />}
         corner={
           s.my_status === 'booked' ? (

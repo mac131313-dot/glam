@@ -24,6 +24,8 @@ export const DEMO = {
   krakowOwner: '+48500000007',
   iza: '+48500000008',
   platformAdmin: '+48500000009',
+  platformSupport: '+48500000011',
+  platformFinance: '+48500000012',
   zuza: '+48500000010',
 };
 
@@ -54,7 +56,11 @@ export function seed(db: Db, now = new Date()) {
   const kasia = user(DEMO.reception, 'Kasia');
   const magda = user(DEMO.magda, 'Magda', { birthday: '03-14' });
   const ania = user(DEMO.ania, 'Ania');
-  user(DEMO.platformAdmin, 'Zespół GLAM');
+  // Zespół konsoli GLAM: trzy role (admin, wsparcie, finanse).
+  const staff = db.prepare('INSERT INTO platform_staff (user_id, role, created_at) VALUES (?, ?, ?)');
+  staff.run(user(DEMO.platformAdmin, 'Zespół GLAM'), 'admin', iso(now));
+  staff.run(user(DEMO.platformSupport, 'Ola · wsparcie GLAM'), 'support', iso(now));
+  staff.run(user(DEMO.platformFinance, 'Ewa · finanse GLAM'), 'finance', iso(now));
 
   member(R, owner, 'owner', 400);
   member(R, marzena, 'trainer', 300, { bio: 'Reformer i mat. Spokojnie, technicznie, z uśmiechem 🌿' });
@@ -284,6 +290,10 @@ export function seed(db: Db, now = new Date()) {
     );
 
   seedExtras(db, now);
+  // Konsola → Pieniądze: jedna opłacona, jeszcze niezafakturowana płatność abonamentu Rzeszowa (bez danych do faktury – wpisuje je właścicielka w „Abonament”).
+  db.prepare(
+    "INSERT INTO platform_payments (id, studio_id, stripe_invoice_id, amount_grosze, plan_id, period_start, period_end, paid_at) VALUES ('pp_rzeszow_demo', ?, 'in_demo_rzeszow', 39900, 'studio', ?, ?, ?)",
+  ).run(R, iso(new Date(now.getTime() - 30 * DAY)), iso(now), iso(new Date(now.getTime() - 30 * DAY)));
   seedSsg(db, now, { user, member, product, buy });
   // Magda chodzi też do SS&G – po przełączeniu studia widać jego logo i zdjęcia zajęć.
   member(SSG_STUDIO, magda, 'client', 12, { goal: 'Stretching i mocniejsze plecy' });
