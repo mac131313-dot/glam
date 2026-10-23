@@ -63,6 +63,17 @@ export const session = {
   },
 };
 
+/**
+ * Sesja nowej właścicielki (z /start) trafia do panelu: wpisujemy klucze panelu wprost, bo obiekt `session` jest
+ * związany z bieżącą powierzchnią (na /start to „home”). Persona `signup` mówi panelowi, żeby nie logował konta demo.
+ */
+export function handOffSession(surface: 'panel', token: string, studioId: string): void {
+  clearOfflineData();
+  store.set(`glam.${surface}.token`, token);
+  store.set(`glam.${surface}.studio`, studioId);
+  store.set(`glam.${surface}.persona`, 'signup');
+}
+
 type Opts = { method?: string; body?: unknown; global?: boolean };
 
 export async function api<T = any>(path: string, opts: Opts = {}): Promise<T> {

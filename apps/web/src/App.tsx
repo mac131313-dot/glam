@@ -20,6 +20,7 @@ const CourseSite = lazyRetry(() => import('./site/CourseSite.tsx').then((m) => (
 const ShopSite = lazyRetry(() => import('./site/ShopSite.tsx').then((m) => ({ default: m.ShopSite })));
 const StudioSite = lazyRetry(() => import('./site/StudioSite.tsx').then((m) => ({ default: m.StudioSite })));
 const KonsolaApp = lazyRetry(() => import('./konsola/KonsolaApp.tsx').then((m) => ({ default: m.KonsolaApp })));
+const StartSite = lazyRetry(() => import('./site/StartSite.tsx').then((m) => ({ default: m.StartSite })));
 
 export type MeStudio = { id: string; name: string; city: string; logo: string; logoUrl: string | null; logoWide: boolean; accent: string; tagline: string; roles: string[]; look: Look; panelTint?: string };
 export type UserPrefs = {
@@ -69,6 +70,8 @@ export function App() {
   if (shopPage) return <Lazy><ShopSite slug={decodeURIComponent(shopPage[1])} productId={shopPage[2] ? decodeURIComponent(shopPage[2]) : null} /></Lazy>;
   const site = location.pathname.match(/^\/s\/([^/]+)/);
   if (site) return <Lazy><StudioSite slug={decodeURIComponent(site[1])} /></Lazy>;
+  // Publiczny cennik i rejestracja studia: /start – przed stroną startową, bez udziału powierzchni (SURFACE zostaje „home”).
+  if (/^\/start(\/|$)/.test(location.pathname)) return <Lazy><StartSite /></Lazy>;
   if (SURFACE === 'konsola') return <Lazy><KonsolaApp /></Lazy>;
   if (SURFACE === 'home') return <HomeOrDomain />;
   return SURFACE === 'app' ? (
@@ -102,15 +105,33 @@ function HomeOrDomain() {
   return state === 'site' ? <App /> : <Landing />;
 }
 
+/** Persona zapisana przez /start: właścicielka nowego studia ma własny token, nie konto demo. */
+const SIGNUP = 'signup';
+const defaultPersona = (surface: 'panel' | 'app') => Object.keys(PERSONAS[surface])[0];
+
 function pickPersona(surface: 'panel' | 'app'): string {
   const asked = new URLSearchParams(location.search).get('jako')?.toLowerCase();
   if (asked && PERSONAS[surface][asked]) return asked;
+  if (surface === 'panel' && session.persona === SIGNUP && session.token) return SIGNUP;
   if (session.persona && PERSONAS[surface][session.persona]) return session.persona;
-  return Object.keys(PERSONAS[surface])[0];
+  return defaultPersona(surface);
+}
+
+/** Wylogowanie właścicielki z /start (konta demo nie mają wylogowania): kasujemy sesję panelu i wracamy na stronę startową. */
+function signOutOwner() {
+  // Zwykły fetch, nie api(): odrzucony token nie ma tu wywołać ponownego logowania na konto demo.
+  fetch('/api/auth/logout', { method: 'POST', headers: { authorization: `Bearer ${session.token}` } })
+    .catch(() => {})
+    .finally(() => {
+      session.setToken(null);
+      session.setPersona(null);
+      session.setStudio(null);
+      location.href = '/start';
+    });
 }
 
 function Surface({ surface }: { surface: 'panel' | 'app' }) {
-  const [persona] = useState(() => pickPersona(surface));
+  const [persona, setPersona] = useState(() => pickPersona(surface));
   const [token, setToken] = useState(session.persona === persona ? session.token : null);
   const [studioId, setStudioId] = useState(session.studioId);
   const [me, setMe] = useState<Me | null>(null);
@@ -119,7 +140,7 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
 
   // Automatyczne logowanie na konto demo (zamiast ekranu z kodem SMS).
   useEffect(() => {
-    if (token) return;
+    if (token || persona === SIGNUP) return;
     api<{ token: string }>('/dev/login', { method: 'POST', body: { phone: PERSONAS[surface][persona].phone }, global: true })
       .then((res) => {
         session.setPersona(persona);
@@ -156,10 +177,12 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
       session.setToken(null);
       setToken(null);
       setMe(null);
+      // Sesja właścicielki z /start wygasła: wracamy do konta demo (jednorazowo – dalej działa zwykłe logowanie demo).
+      setPersona((p) => (p === SIGNUP ? defaultPersona(surface) : p));
     };
     window.addEventListener('glam:logout', relogin);
     return () => window.removeEventListener('glam:logout', relogin);
-  }, []);
+  }, [surface]);
 
   const studio = me?.studios.find((s) => s.id === studioId);
 
@@ -199,11 +222,11 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
         key={studioId}
         me={me}
         studio={studio}
-        persona={PERSONAS.panel[persona].label}
+        persona={persona === SIGNUP ? undefined : PERSONAS.panel[persona].label}
         reloadMe={loadMe}
         onSwitchStudio={() => setPicking(true)}
         onPreviewClient={() => window.open('/app', 'glam-app')}
-        onLogout={() => {}}
+        onLogout={persona === SIGNUP ? signOutOwner : () => {}}
       />
       </Lazy>
     );
