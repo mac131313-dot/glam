@@ -2,6 +2,9 @@
 // zawieszenie ręczne i karta studia bez danych klientek.
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { localParts } from '@glam/core';
 import { buildApp } from '../src/app.ts';
 import { openDb } from '../src/db.ts';
@@ -263,6 +266,48 @@ test('rozliczenie poza systemem zdejmuje zawieszenie po triale', async () => {
   // Ręczne zawieszenie nadal wygrywa.
   await call(admin, 'POST', `/api/platform/studios/${studioId}/suspend`, { reason: 'Spór o fakturę za kwartał' });
   assert.equal(studioRow(studioId).status, 'suspended');
+});
+
+test('baza sprzed rozliczeń: ręcznie ustawiony status przetrwa pierwsze przeliczenie', async () => {
+  // Baza w kształcie sprzed rozliczeń: bez `studio_billing`, status studiów ustawiany ręcznie w konsoli.
+  const dir = mkdtempSync(join(tmpdir(), 'glam-legacy-'));
+  const file = join(dir, 'glam.db');
+  const old = openDb(file);
+  const warn = console.warn;
+  console.warn = () => {};
+  seed(old);
+  console.warn = warn;
+  const past = new Date(Date.now() - 30 * DAY).toISOString();
+  const future = new Date(Date.now() + 10 * DAY).toISOString();
+  old.prepare("UPDATE studios SET status = 'active', trial_ends_at = ? WHERE id = 'st_rzeszow'").run(past);
+  old.prepare("UPDATE studios SET status = 'suspended', trial_ends_at = ? WHERE id = 'st_krakow'").run(future);
+  old.prepare("UPDATE studios SET status = 'suspended', trial_ends_at = NULL WHERE id = 'st_ssg'").run();
+  old.exec('DROP TABLE studio_billing');
+  old.close();
+
+  const migrated = openDb(file);
+  try {
+    const mails: Mail[] = [];
+    const legacyDeps = { db: migrated, sms: new ConsoleSmsGateway(true), payments: new MockPaymentProvider(), exposeDevCodes: true, email: { async send(to: string, subject: string, body: string) { mails.push({ to, subject, body }); } } };
+    const row = (studioId: string) => ({ ...(migrated.prepare('SELECT s.status, s.trial_ends_at, b.manual_suspension FROM studios s LEFT JOIN studio_billing b ON b.studio_id = s.id WHERE s.id = ?').get(studioId) as { status: string; trial_ends_at: string | null; manual_suspension: string | null }) });
+    assert.deepEqual(row('st_rzeszow'), { status: 'active', trial_ends_at: null, manual_suspension: null }, 'aktywne po dacie triala = rozliczane poza systemem');
+    assert.deepEqual(row('st_krakow'), { status: 'suspended', trial_ends_at: future, manual_suspension: 'Zawieszone przed wprowadzeniem rozliczeń' });
+    assert.deepEqual(row('st_ssg'), { status: 'suspended', trial_ends_at: null, manual_suspension: 'Zawieszone przed wprowadzeniem rozliczeń' });
+    await runJobs(legacyDeps, new Date());
+    assert.equal(row('st_rzeszow').status, 'active');
+    assert.equal(row('st_krakow').status, 'suspended');
+    assert.equal(row('st_ssg').status, 'suspended');
+    assert.equal(mails.filter((m) => /zawieszone/.test(m.subject)).length, 0, 'bez e-maili o zawieszeniu');
+
+    // Kolejne uruchomienie (tabela już jest) niczego nie nadpisuje.
+    migrated.prepare("UPDATE studio_billing SET manual_suspension = NULL WHERE studio_id = 'st_krakow'").run();
+    migrated.close();
+    const again = openDb(file);
+    assert.equal((again.prepare("SELECT manual_suspension FROM studio_billing WHERE studio_id = 'st_krakow'").get() as { manual_suspension: string | null }).manual_suspension, null);
+    again.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('zawieszenie w trakcie triala i powrót do triala', async () => {

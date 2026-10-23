@@ -1559,6 +1559,7 @@ function migrate(db: Db) {
     db.exec(`INSERT INTO group_chat (id, studio_id, group_id, author_id, body, media_id, hidden, created_at)
              SELECT id, studio_id, group_id, author_id, body, media_id, hidden, created_at FROM posts WHERE group_id IS NOT NULL`);
   }
+  if (!existing.has('studio_billing')) backfillLegacyAccess(db);
   const broken = db.prepare('PRAGMA foreign_key_check').all();
   if (broken.length) console.warn(`⚠️  Po migracji ${broken.length} rekordów narusza klucze obce`);
 
@@ -1568,6 +1569,20 @@ function migrate(db: Db) {
 
   // Powód zawieszenia „ciąża” to dana o zdrowiu (RODO art. 9) – trzymamy tylko ogólne „zdrowie”.
   db.exec("UPDATE pass_freezes SET reason = 'illness' WHERE reason = 'pregnancy'");
+}
+
+/**
+ * Jednorazowo przy wprowadzeniu rozliczeń (bazy bez `studio_billing`): status ustawiany dotąd ręcznie staje się faktem,
+ * z którego `syncAccess` go wylicza – inaczej pierwszy job zawiesiłby aktywne studia po dacie triala, a odwiesił zawieszone.
+ * Aktywne po dacie triala są odtąd rozliczane poza systemem; zawieszone w trakcie triala (albo bez niego) – zawieszone ręcznie.
+ */
+export function backfillLegacyAccess(db: Db, now = new Date()) {
+  const at = now.toISOString();
+  db.prepare("UPDATE studios SET trial_ends_at = NULL WHERE status = 'active' AND trial_ends_at IS NOT NULL AND trial_ends_at < ?").run(at);
+  db.prepare(
+    `INSERT OR IGNORE INTO studio_billing (studio_id, state, manual_suspension, updated_at)
+     SELECT id, 'none', 'Zawieszone przed wprowadzeniem rozliczeń', ? FROM studios WHERE status = 'suspended' AND (trial_ends_at IS NULL OR trial_ends_at >= ?)`,
+  ).run(at, at);
 }
 
 export function tx<T>(db: Db, fn: () => T): T {
