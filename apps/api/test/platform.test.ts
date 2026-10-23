@@ -204,6 +204,25 @@ test('zgłoszenia, incydenty i uzupełnienie grafiku zostawiają ślad w dzienni
   assert.equal(replies.length, 2);
 });
 
+test('strona statusu: trwający incydent widać bez względu na wiek, zakończony – przez 30 dni', async () => {
+  const old = new Date(Date.now() - 40 * 86_400_000).toISOString();
+  const recent = new Date(Date.now() - 5 * 86_400_000).toISOString();
+  const add = db.prepare('INSERT INTO status_incidents (id, component, status, note, started_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?)');
+  add.run('inc_stary_trwa', 'Płatności', 'degraded', 'Wolne płatności', old, null);
+  add.run('inc_stary_koniec', 'SMS', 'degraded', 'Opóźnione SMS-y', old, recent);
+  add.run('inc_nowy_koniec', 'Aplikacja', 'degraded', 'Wolne ładowanie', recent, recent);
+  try {
+    const res = (await app.inject({ method: 'GET', url: '/api/status' })).json() as { components: { name: string; status: string }[]; incidents: { id: string }[] };
+    const ids = res.incidents.map((i) => i.id);
+    assert.ok(ids.includes('inc_stary_trwa'), 'trwający incydent sprzed 40 dni');
+    assert.ok(ids.includes('inc_nowy_koniec'));
+    assert.ok(!ids.includes('inc_stary_koniec'), 'zakończony incydent sprzed 30 dni znika');
+    assert.equal(res.components.find((c) => c.name === 'Płatności')?.status, 'degraded');
+  } finally {
+    db.prepare("DELETE FROM status_incidents WHERE id IN ('inc_stary_trwa', 'inc_stary_koniec', 'inc_nowy_koniec')").run();
+  }
+});
+
 test('start: numery z GLAM_PLATFORM_ADMINS dostają rolę admina tylko raz', () => {
   const d = openDb(':memory:');
   d.prepare("INSERT INTO users (id, phone, name, created_at) VALUES ('u_a', '+48600000001', 'A', ?)").run(new Date().toISOString());
