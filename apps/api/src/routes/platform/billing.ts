@@ -3,11 +3,11 @@
 // a po stronie konsoli pieniądze (płatności do zafakturowania, CSV dla księgowej) i przegląd „Dziś”.
 // Bez `deps.platformStripe` akcje płatnicze odpowiadają 409 „Płatności abonamentu wkrótce”, a trial działa dalej.
 import type { FastifyInstance } from 'fastify';
-import { addDays, FEATURE_LABEL, formatPLN, localParts, PLANS, planById, planUsage, validEmail, validNip, zonedToUtc } from '@glam/core';
+import { addDays, BILLING_GRACE_DAYS, FEATURE_LABEL, formatPLN, localParts, PLANS, planById, planUsage, validEmail, validNip, zonedToUtc } from '@glam/core';
 import { ctx, requireStudio, type Deps } from '../../context.ts';
 import { nowIso, tx } from '../../db.ts';
 import { badRequest, conflict, forbidden, notFound } from '../../errors.ts';
-import { studioAttention, type Signal } from '../../services/attention.ts';
+import { shortDate, studioAttention, type Signal } from '../../services/attention.ts';
 import { loadBilling } from '../../services/billing.ts';
 import {
   billingNotConfigured,
@@ -39,6 +39,10 @@ type PaymentRow = {
 
 const PAYMENT_SELECT = `SELECT p.id, p.studio_id, s.name AS studio, b.company_name, b.nip, p.amount_grosze, p.period_start, p.period_end, p.paid_at, p.invoiced_at, p.invoice_number
   FROM platform_payments p JOIN studios s ON s.id = p.studio_id LEFT JOIN studio_billing b ON b.studio_id = p.studio_id`;
+
+const DAY_MS = 86_400_000;
+/** Od ilu dni do końca triala (bez karty) pokazujemy pasek w panelu. */
+const TRIAL_BANNER_DAYS = 5;
 
 const CSV_HEADER = ['Data płatności', 'Studio', 'Firma', 'NIP', 'Okres od', 'Okres do', 'Kwota brutto', 'Nr faktury'];
 
@@ -197,6 +201,7 @@ export function billingRoutes(app: FastifyInstance, deps: Deps) {
         currentPeriodEnd: b.current_period_end,
         cancelAtPeriodEnd: !!b.cancel_at_period_end,
         pendingPlanId: b.pending_plan_id,
+        pastDueSince: b.past_due_since,
         companyName: b.company_name,
         nip: b.nip,
         address: b.address,
@@ -207,6 +212,26 @@ export function billingRoutes(app: FastifyInstance, deps: Deps) {
       payments: payments.map((p) => ({ periodStart: p.period_start, periodEnd: p.period_end, amount: formatPLN(p.amount_grosze), paidAt: p.paid_at })),
       plans: PLANS.map((p) => ({ id: p.id, name: p.name, price: formatPLN(p.priceGrosze), limits: p.limits, featureLabels: p.features.map((f) => FEATURE_LABEL[f]) })),
     };
+  });
+
+  // Pasek w panelu: jedno zdanie o najpilniejszej sprawie abonamentu albo `null`.
+  // Kolejność: nieudana płatność, trial ≤ 5 dni bez karty, przekroczony limit planu.
+  app.get('/api/owner/billing/banner', owner, async (req): Promise<{ text: string; tone: 'info' | 'warn' } | null> => {
+    const { studio, scope } = ctx(req);
+    const b = loadBilling(db, studio.id);
+    const now = Date.now();
+    if (b.state === 'past_due') {
+      const graceEnd = new Date((b.past_due_since ? Date.parse(b.past_due_since) : now) + BILLING_GRACE_DAYS * DAY_MS).toISOString();
+      return { text: `Płatność za GLAM nie przeszła – zaktualizuj kartę do ${shortDate(graceEnd)}`, tone: 'warn' };
+    }
+    const left = studio.trial_ends_at ? Date.parse(studio.trial_ends_at) - now : 0;
+    if (left > 0 && left <= TRIAL_BANNER_DAYS * DAY_MS && studio.status !== 'suspended' && !b.stripe_subscription_id) {
+      const days = Math.ceil(left / DAY_MS);
+      return { text: `Okres próbny kończy się za ${days === 1 ? '1 dzień' : `${days} dni`} – dodaj kartę, żeby studio działało dalej`, tone: 'info' };
+    }
+    const over = planUsage(studioUsage(scope), planById(studio.plan_id)).filter((u) => u.state === 'over');
+    if (over.length) return { text: `Studio przekroczyło limit: ${over.map((u) => u.label).join(', ')}. Zobacz plany`, tone: 'warn' };
+    return null;
   });
 
   // Dane do faktury – działają także bez Stripe (GLAM fakturuje sam, ze strony konsoli).

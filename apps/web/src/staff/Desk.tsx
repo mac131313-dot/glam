@@ -51,8 +51,9 @@ function GuestPassSale() {
           ))}
         </div>
         <div className="field">
-          <span className="field-label">Numer obdarowanej (opcjonalnie – wyślemy SMS)</span>
+          <span className="field-label">Numer obdarowanej (opcjonalnie)</span>
           <input className="input" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="500 600 700" />
+          <span className="tiny muted">Kod wyślemy SMS-em, jeśli pula SMS studia na to pozwala.</span>
         </div>
         <div className="chips">
           {(['terminal', 'cash'] as const).map((m) => (

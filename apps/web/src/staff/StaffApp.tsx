@@ -8,7 +8,8 @@ import { can, ROLE_LABEL, type Permission, type Role } from '@glam/core';
 import type { Me, MeStudio } from '../App.tsx';
 import { Icon, type IconName } from '../icons.tsx';
 import { StudioBrand } from '../StudioBrand.tsx';
-import { Select, Spinner, Watermark } from '../ui.tsx';
+import { useApi } from '../api.ts';
+import { Select, Spinner, useToast, Watermark } from '../ui.tsx';
 import { Dashboard } from './Dashboard.tsx';
 import { Desk } from './Desk.tsx';
 import { Entrance, Passes } from './Entrance.tsx';
@@ -16,6 +17,7 @@ import { LookEditor } from './LookEditor.tsx';
 import { Products } from './Products.tsx';
 import { ClassTypesAdmin, ScheduleAdmin } from './ScheduleAdmin.tsx';
 import { Today } from './Today.tsx';
+import type { Tab as SettingsTab } from './Settings.tsx';
 import { Welcomes } from './Welcomes.tsx';
 import { SiteOverview } from './site-editor/SiteOverview.tsx';
 
@@ -165,6 +167,20 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   });
+  // Ustawienia otwierają się na wskazanej zakładce: po powrocie ze Stripe (?billing=ok) albo z paska abonamentu.
+  const toast = useToast();
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>(() => (new URLSearchParams(location.search).get('billing') === 'ok' ? 'plan' : undefined));
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    if (q.get('billing') !== 'ok') return;
+    toast('Karta zapisana');
+    q.delete('billing');
+    history.replaceState(null, '', `${location.pathname}${q.toString() ? `?${q}` : ''}${location.hash}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const isOwner = roles.includes('owner');
+  const banner = useApi<{ text: string; tone: 'info' | 'warn' } | null>(isOwner ? '/owner/billing/banner' : null, [place, props.studio]);
+  const showBanner = !!banner.data && !(section === 'settings' && settingsTab === 'plan');
   const current = visible.find((s) => s.id === section);
   const tabs = current ? tabsOf(current) : [];
   const mainRole = (['owner', 'reception', 'coordinator', 'trainer'] as Role[]).find((r) => roles.includes(r))!;
@@ -240,6 +256,20 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
         </button>
       </nav>
       <main className="main">
+        {showBanner && banner.data && (
+          <div className={`billing-banner ${banner.data.tone}`} role="status">
+            <span>{banner.data.text}</span>
+            <button
+              className="btn quiet sm"
+              onClick={() => {
+                setSettingsTab('plan');
+                setSection('settings');
+              }}
+            >
+              Abonament
+            </button>
+          </div>
+        )}
         {current && tabs.length > 1 && (
           <div style={{ marginBottom: 20 }}>
             <SectionTabs key={current.id} label={current.label} value={tab} onChange={(t) => setSection(`${current.id}/${t}`)} options={tabs.map((t) => [t.id, t.label])} />
@@ -271,7 +301,7 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
             {section === 'shop' && <ShopAdmin />}
             {section === 'products' && <Products />}
             {section === 'finance' && <Finance roles={roles} />}
-            {section === 'settings' && <Settings studio={props.studio} onSaved={props.reloadMe} />}
+            {section === 'settings' && <Settings studio={props.studio} onSaved={props.reloadMe} tab={settingsTab} onTab={setSettingsTab} />}
             {place === 'brand/look' && <LookEditor studio={props.studio} onSaved={props.reloadMe} />}
             {place === 'brand/site' && <SiteOverview />}
           </div>

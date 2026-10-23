@@ -368,7 +368,7 @@ test('checkout wymaga danych do faktury', async () => {
   const v = view.json();
   assert.equal(v.configured, true);
   assert.equal(v.plan.id, 'studio');
-  assert.deepEqual(v.billing, { state: 'none', currentPeriodEnd: null, cancelAtPeriodEnd: false, pendingPlanId: null, companyName: details.companyName, nip: '1234563218', address: details.address, invoiceEmail: details.invoiceEmail, hasCard: false });
+  assert.deepEqual(v.billing, { state: 'none', currentPeriodEnd: null, cancelAtPeriodEnd: false, pendingPlanId: null, pastDueSince: null, companyName: details.companyName, nip: '1234563218', address: details.address, invoiceEmail: details.invoiceEmail, hasCard: false });
   assert.equal(v.usage.length, 5);
   assert.equal(v.payments.length, 1, 'tylko płatność z danych demo (seed)');
   assert.deepEqual(v.plans.map((p: { id: string }) => p.id), ['start', 'studio', 'siec']);
@@ -814,4 +814,52 @@ test('przegląd „Dziś”: MRR z planów, sygnały i liczniki', async () => {
   const after = await overview();
   assert.equal(after.overdueTickets, now.overdueTickets + 1);
   assert.equal(after.openIncidents, now.openIncidents + 1);
+});
+
+type Banner = { text: string; tone: 'info' | 'warn' } | null;
+
+test('pasek w panelu: kolejność sygnałów, tylko dla właścicielki', async () => {
+  const phone = '+48600100405';
+  const studioId = await signup(phone, 'ewa.pasek@example.com');
+  const owner = await login(phone);
+  const banner = async () => {
+    const res = await call(owner, 'GET', '/api/owner/billing/banner', undefined, studioId);
+    assert.equal(res.statusCode, 200, res.body);
+    return res.json() as Banner;
+  };
+  const trialIn = (days: number) => db.prepare('UPDATE studios SET trial_ends_at = ? WHERE id = ?').run(new Date(Date.now() + days * DAY).toISOString(), studioId);
+
+  // Recepcja nie widzi paska.
+  assert.equal((await call(await login(DEMO.magda), 'GET', '/api/owner/billing/banner')).statusCode, 403);
+
+  // Świeży trial i studio w limitach – bez paska; 6 dni to jeszcze za wcześnie.
+  assert.equal(await banner(), null);
+  trialIn(6);
+  assert.equal(await banner(), null);
+
+  // ≤ 5 dni triala bez karty.
+  trialIn(2.5);
+  const trial = (await banner())!;
+  assert.equal(trial.tone, 'info');
+  assert.equal(trial.text, 'Okres próbny kończy się za 3 dni – dodaj kartę, żeby studio działało dalej');
+  trialIn(0.4);
+  assert.match((await banner())!.text, /za 1 dzień /);
+
+  // Karta dodana – trial już nie niepokoi.
+  db.prepare("UPDATE studio_billing SET stripe_subscription_id = 'sub_pasek', state = 'active' WHERE studio_id = ?").run(studioId);
+  assert.equal(await banner(), null);
+
+  // Nieudana płatność: data końca karencji = początek zaległości + 7 dni, i wygrywa z triałem.
+  trialIn(2);
+  const since = new Date(Date.now() - DAY);
+  db.prepare("UPDATE studio_billing SET state = 'past_due', past_due_since = ? WHERE studio_id = ?").run(since.toISOString(), studioId);
+  const [, month, day] = localParts(new Date(since.getTime() + 7 * DAY)).date.split('-');
+  assert.deepEqual(await banner(), { text: `Płatność za GLAM nie przeszła – zaktualizuj kartę do ${day}.${month}`, tone: 'warn' });
+
+  // Przekroczony limit (plan Studio: 2 obiekty).
+  db.prepare("UPDATE studio_billing SET state = 'active', past_due_since = NULL WHERE studio_id = ?").run(studioId);
+  db.prepare("UPDATE studios SET plan_id = 'studio', trial_ends_at = ? WHERE id = ?").run(new Date(Date.now() - DAY).toISOString(), studioId);
+  assert.equal(await banner(), null);
+  for (let i = 0; i < 3; i++) db.prepare('INSERT INTO facilities (id, studio_id, name) VALUES (?, ?, ?)').run(`fac_pasek_${i}`, studioId, `Sala ${i}`);
+  assert.deepEqual(await banner(), { text: 'Studio przekroczyło limit: Obiekty. Zobacz plany', tone: 'warn' });
 });

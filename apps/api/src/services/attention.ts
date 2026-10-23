@@ -12,7 +12,7 @@ export type AttentionInput = { id: string; plan_id: string | null; status: strin
 const DAY_MS = 86_400_000;
 
 /** „30.10” – dzień i miesiąc w czasie lokalnym platformy. */
-const shortDate = (iso: string) => {
+export const shortDate = (iso: string) => {
   const [, month, day] = localParts(new Date(iso)).date.split('-');
   return `${day}.${month}`;
 };
