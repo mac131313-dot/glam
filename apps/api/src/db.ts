@@ -1578,7 +1578,8 @@ function migrate(db: Db) {
  */
 export function backfillLegacyAccess(db: Db, now = new Date()) {
   const at = now.toISOString();
-  db.prepare("UPDATE studios SET trial_ends_at = NULL WHERE status = 'active' AND trial_ends_at IS NOT NULL AND trial_ends_at < ?").run(at);
+  // Stara konsola ustawiała status bez czyszczenia daty triala – „aktywne” znaczyło rozliczane poza systemem, także przed tą datą.
+  db.prepare("UPDATE studios SET trial_ends_at = NULL WHERE status = 'active' AND trial_ends_at IS NOT NULL").run();
   db.prepare(
     `INSERT OR IGNORE INTO studio_billing (studio_id, state, manual_suspension, updated_at)
      SELECT id, 'none', 'Zawieszone przed wprowadzeniem rozliczeń', ? FROM studios WHERE status = 'suspended' AND (trial_ends_at IS NULL OR trial_ends_at >= ?)`,

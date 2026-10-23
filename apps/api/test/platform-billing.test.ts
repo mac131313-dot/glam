@@ -283,6 +283,8 @@ test('baza sprzed rozliczeń: ręcznie ustawiony status przetrwa pierwsze przeli
   old.prepare("UPDATE studios SET status = 'active', trial_ends_at = ? WHERE id = 'st_rzeszow'").run(past);
   old.prepare("UPDATE studios SET status = 'suspended', trial_ends_at = ? WHERE id = 'st_krakow'").run(future);
   old.prepare("UPDATE studios SET status = 'suspended', trial_ends_at = NULL WHERE id = 'st_ssg'").run();
+  // Stara konsola zmieniała tylko status – studio aktywowane w trakcie triala zachowało przyszłą datę.
+  old.prepare("INSERT INTO studios (id, name, slug, invite_code, policy_json, status, trial_ends_at, created_at) VALUES ('st_legacy', 'Studio Legacy', 'studio-legacy', 'LEG001', '{}', 'active', ?, ?)").run(future, past);
   old.exec('DROP TABLE studio_billing');
   old.close();
 
@@ -294,8 +296,12 @@ test('baza sprzed rozliczeń: ręcznie ustawiony status przetrwa pierwsze przeli
     assert.deepEqual(row('st_rzeszow'), { status: 'active', trial_ends_at: null, manual_suspension: null }, 'aktywne po dacie triala = rozliczane poza systemem');
     assert.deepEqual(row('st_krakow'), { status: 'suspended', trial_ends_at: future, manual_suspension: 'Zawieszone przed wprowadzeniem rozliczeń' });
     assert.deepEqual(row('st_ssg'), { status: 'suspended', trial_ends_at: null, manual_suspension: 'Zawieszone przed wprowadzeniem rozliczeń' });
+    assert.deepEqual(row('st_legacy'), { status: 'active', trial_ends_at: null, manual_suspension: null }, 'aktywne przed końcem triala = też rozliczane poza systemem');
     await runJobs(legacyDeps, new Date());
     assert.equal(row('st_rzeszow').status, 'active');
+    assert.equal(row('st_legacy').status, 'active');
+    await runJobs(legacyDeps, new Date(Date.now() + 20 * DAY));
+    assert.equal(row('st_legacy').status, 'active', 'po dawnej dacie triala nadal aktywne');
     assert.equal(row('st_krakow').status, 'suspended');
     assert.equal(row('st_ssg').status, 'suspended');
     assert.equal(mails.filter((m) => /zawieszone/.test(m.subject)).length, 0, 'bez e-maili o zawieszeniu');
