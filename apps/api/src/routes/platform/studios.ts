@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { FEATURE_LABEL, formatPLN, PLANS, planById, planUsage, TRIAL_DAYS, type Feature } from '@glam/core';
 import type { Deps } from '../../context.ts';
 import { id, nowIso, tx } from '../../db.ts';
-import { badRequest, notFound } from '../../errors.ts';
+import { badRequest, conflict, notFound } from '../../errors.ts';
 import { StudioScope } from '../../scope.ts';
 import { fillSchedule } from '../../services/schedule.ts';
 import { studioAttention } from '../../services/attention.ts';
@@ -21,6 +21,13 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
 
   const FILTERS = ['trial', 'active', 'past_due', 'suspended'];
   const clearTrialMails = (studioId: string) => db.prepare('DELETE FROM platform_settings WHERE key IN (?, ?)').run(`trial-mail:${studioId}:5`, `trial-mail:${studioId}:1`);
+  /** Studio z subskrypcją Stripe GLAM: plan, trial i okres rozlicza Stripe – zmiana z konsoli rozjechałaby się z subskrypcją. */
+  const refuseIfSubscribed = (studioId: string, message: string) => {
+    const b = db.prepare('SELECT stripe_subscription_id FROM studio_billing WHERE studio_id = ?').get(studioId) as { stripe_subscription_id: string | null } | undefined;
+    if (b?.stripe_subscription_id) throw conflict('stripe_subscription', message);
+  };
+  const PLAN_BY_OWNER = 'Studio ma aktywną subskrypcję – plan zmienia właścicielka w Abonamencie.';
+  const BILLED_BY_STRIPE = 'Studio ma aktywną subskrypcję – trial i rozliczenia prowadzi Stripe.';
 
   app.get<{ Querystring: { filter?: string } }>('/api/platform/studios', anyRole, async (req) => {
     const filter = req.query.filter;
@@ -94,6 +101,7 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
     if (b.planId && !PLANS.some((p) => p.id === b.planId)) throw badRequest('Nieznany plan.');
     const was = db.prepare('SELECT plan_id FROM studios WHERE id = ?').get(req.params.id) as { plan_id: string | null } | undefined;
     if (!was) throw notFound();
+    if (b.planId) refuseIfSubscribed(req.params.id, PLAN_BY_OWNER);
     tx(db, () => {
       db.prepare('UPDATE studios SET plan_id = COALESCE(?, plan_id) WHERE id = ?').run(b.planId ?? null, req.params.id);
       if (b.planId && b.planId !== was.plan_id) platformAudit(db, req.user!.id, 'studio.plan', req.params.id, { from: was.plan_id, to: b.planId });
@@ -130,6 +138,7 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
     if (!Number.isInteger(days) || days < 1 || days > 60) throw badRequest('Przedłuż trial o 1–60 dni.');
     const was = db.prepare('SELECT trial_ends_at FROM studios WHERE id = ?').get(req.params.id) as { trial_ends_at: string | null } | undefined;
     if (!was) throw notFound();
+    refuseIfSubscribed(req.params.id, BILLED_BY_STRIPE);
     const from = Math.max(Date.now(), was.trial_ends_at ? Date.parse(was.trial_ends_at) : 0);
     const to = new Date(from + days * 86_400_000).toISOString();
     tx(db, () => {
@@ -144,6 +153,7 @@ export function studioRoutes(app: FastifyInstance, deps: Deps) {
   app.post<{ Params: { id: string } }>('/api/platform/studios/:id/offline-billing', adminOnly, async (req) => {
     const was = db.prepare('SELECT trial_ends_at FROM studios WHERE id = ?').get(req.params.id) as { trial_ends_at: string | null } | undefined;
     if (!was) throw notFound();
+    refuseIfSubscribed(req.params.id, BILLED_BY_STRIPE);
     tx(db, () => {
       db.prepare('UPDATE studios SET trial_ends_at = NULL WHERE id = ?').run(req.params.id);
       clearTrialMails(req.params.id);

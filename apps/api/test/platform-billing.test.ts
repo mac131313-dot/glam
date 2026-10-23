@@ -908,3 +908,25 @@ test('pasek w panelu: kolejność sygnałów, tylko dla właścicielki', async (
   for (let i = 0; i < 3; i++) db.prepare('INSERT INTO facilities (id, studio_id, name) VALUES (?, ?, ?)').run(`fac_pasek_${i}`, studioId, `Sala ${i}`);
   assert.deepEqual(await banner(), { text: 'Studio przekroczyło limit: Obiekty. Zobacz plany', tone: 'warn' });
 });
+
+test('konsola nie zmienia planu, triala ani rozliczeń studia z subskrypcją Stripe', async () => {
+  const studioId = await subscribed('+48600100501', 'ewa.stripe@example.com', 'sub_konsola');
+  const admin = await login(DEMO.platformAdmin);
+  const was = { plan: planOf(studioId), trial: studioRow(studioId).trial_ends_at };
+
+  const plan = await call(admin, 'PUT', `/api/platform/studios/${studioId}`, { planId: 'siec' });
+  assert.equal(plan.statusCode, 409, plan.body);
+  assert.equal(plan.json().message, 'Studio ma aktywną subskrypcję – plan zmienia właścicielka w Abonamencie.');
+  for (const [path, body] of [['/trial', { days: 7 }], ['/offline-billing', undefined]] as const) {
+    const res = await call(admin, 'POST', `/api/platform/studios/${studioId}${path}`, body);
+    assert.equal(res.statusCode, 409, `${path}: ${res.body}`);
+    assert.equal(res.json().message, 'Studio ma aktywną subskrypcję – trial i rozliczenia prowadzi Stripe.');
+  }
+  assert.deepEqual({ plan: planOf(studioId), trial: studioRow(studioId).trial_ends_at }, was);
+  for (const action of ['studio.plan', 'studio.trial', 'studio.offline_billing']) assert.equal(audits(studioId, action).length, 0, action);
+
+  // Po zakończeniu subskrypcji plan znów ustawia konsola.
+  assert.equal((await platformWebhook(stripeEvent('customer.subscription.deleted', { id: 'sub_konsola', customer: 'cus_sub_konsola', status: 'canceled', metadata: { studio_id: studioId } }))).statusCode, 200);
+  assert.equal((await call(admin, 'PUT', `/api/platform/studios/${studioId}`, { planId: 'siec' })).statusCode, 200);
+  assert.equal(planOf(studioId), 'siec');
+});

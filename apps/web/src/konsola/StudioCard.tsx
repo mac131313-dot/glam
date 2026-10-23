@@ -25,6 +25,7 @@ type Detail = {
   };
   billing: {
     state: 'none' | 'active' | 'past_due' | 'canceled';
+    stripe_subscription_id: string | null;
     current_period_end: string | null;
     past_due_since: string | null;
     cancel_at_period_end: number;
@@ -82,6 +83,8 @@ export function StudioCard({ studioId, role, go }: { studioId: string; role: Pla
   const { studio, billing, usage, flags, metrics, owner, audit } = data;
   const plan = planById(studio.plan_id);
   const state = studioState(studio.status, billing.state);
+  // Subskrypcja Stripe GLAM: plan zmienia właścicielka w Abonamencie, trial i okres prowadzi Stripe (serwer odmawia zmian z konsoli).
+  const byStripe = !!billing.stripe_subscription_id;
   const base = `/platform/studios/${studioId}`;
   const post = (path: string, body?: unknown, method = 'POST') => api(`${base}${path}`, { method, body, global: true });
   /** Wywołuje akcję, a po sukcesie odświeża kartę. */
@@ -112,7 +115,7 @@ export function StudioCard({ studioId, role, go }: { studioId: string; role: Pla
         </div>
         {canSupport && (
           <div className="row wrap">
-            {studio.trial_ends_at && (
+            {studio.trial_ends_at && !byStripe && (
               <button className="btn quiet sm" onClick={() => setSheet('trial')}>
                 Przedłuż trial
               </button>
@@ -120,7 +123,7 @@ export function StudioCard({ studioId, role, go }: { studioId: string; role: Pla
             <button className="btn quiet sm" onClick={() => setSheet('access')}>
               Wejście w dane studia
             </button>
-            {isAdmin && studio.trial_ends_at && (
+            {isAdmin && studio.trial_ends_at && !byStripe && (
               <button className="btn quiet sm" onClick={() => setSheet('offline')}>
                 Rozliczane poza systemem
               </button>
@@ -143,7 +146,7 @@ export function StudioCard({ studioId, role, go }: { studioId: string; role: Pla
         <h3>Plan i rozliczenia</h3>
         <div>
           <Line label="Plan">
-            {isAdmin ? (
+            {isAdmin && !byStripe ? (
               <Select
                 ariaLabel="Plan studia"
                 value={plan.id}
@@ -172,6 +175,7 @@ export function StudioCard({ studioId, role, go }: { studioId: string; role: Pla
             <Line label={billing.cancel_at_period_end ? 'Kończy się' : 'Opłacone do'}>{date(billing.current_period_end)}</Line>
           )}
         </div>
+        {byStripe && <p className="muted small">Studio ma aktywną subskrypcję – plan zmienia właścicielka w Abonamencie, a trial i rozliczenia prowadzi Stripe.</p>}
       </section>
 
       <section className="stack gap-2">
