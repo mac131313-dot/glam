@@ -238,6 +238,23 @@ test('Stripe Checkout: wejściówka dla znajomej – kod z webhooka, bez dublowa
   assert.match((await call(ania, 'GET', `/api/checkout/${checkoutId}`)).json().message, new RegExp(code));
 });
 
+test('Stripe Checkout: wejściówka przy wyczerpanej puli SMS nie obiecuje SMS-a do znajomej', async () => {
+  const ania = await login(DEMO.ania);
+  db.prepare("INSERT INTO usage_log (id, studio_id, kind, units, cost_grosze, created_at) VALUES ('ul_pula_stripe', ?, 'sms', 100000, 0, ?)").run(R, new Date().toISOString());
+  try {
+    const buy = await call(ania, 'POST', '/api/guest-passes', { variantId: 'single', recipientPhone: '600 300 998', method: 'card' });
+    assert.equal(buy.statusCode, 200, buy.body);
+    const { checkoutId } = buy.json();
+    assert.equal((await webhook(paid(checkoutId))).statusCode, 200);
+    const message = (await call(ania, 'GET', `/api/checkout/${checkoutId}`)).json().message as string;
+    assert.doesNotMatch(message, /Wysłaliśmy go znajomej/);
+    assert.match(message, /Studio wykorzystało w tym miesiącu pulę SMS, więc znajomej nie wysłaliśmy wiadomości\./);
+    assert.ok(!deps.sms.sent.some((m) => m.phone === '+48600300998'), 'SMS nie wyszedł');
+  } finally {
+    db.prepare("DELETE FROM usage_log WHERE id = 'ul_pula_stripe'").run();
+  }
+});
+
 test('Stripe: subskrypcja zapisuje kartę w Checkout, odnowienie idzie PaymentIntent off_session', async () => {
   const magda = await login(DEMO.magda);
   const uid = (db.prepare('SELECT id FROM users WHERE phone = ?').get(DEMO.magda) as { id: string }).id;

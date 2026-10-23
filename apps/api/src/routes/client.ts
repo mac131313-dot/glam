@@ -154,9 +154,12 @@ function fulfillGuestPass(scope: StudioScope, studio: Studio, buyerId: string, g
 registerCheckoutKind<GuestPassPurchase>('guest_pass', {
   fulfill(deps, scope, studio, userId, g, providerRef) {
     const gp = fulfillGuestPass(scope, studio, userId!, g, providerRef);
+    // SMS idzie dopiero po transakcji (`after`), więc pulę sprawdzamy już teraz, żeby komunikat nie obiecywał wiadomości.
+    const handOver = 'Przekaż go znajomej (znajdziesz go w Zaproś znajomą).';
+    const delivery = !g.recipient ? handOver : studioSmsAvailable(deps, studio) ? 'Wysłaliśmy go znajomej SMS-em.' : `Studio wykorzystało w tym miesiącu pulę SMS, więc znajomej nie wysłaliśmy wiadomości. ${handOver}`;
     return {
       ref: gp.id,
-      message: `Prezent gotowy – kod ${gp.code}. ${g.recipient ? 'Wysłaliśmy go znajomej SMS-em.' : 'Przekaż go znajomej (znajdziesz go w Zaproś znajomą).'}`,
+      message: `Prezent gotowy – kod ${gp.code}. ${delivery}`,
       action: 'invites',
       after: async () => {
         await deliverGuestPass(deps, scope, studio, gp.code, g.recipient, g.buyerName, g.message);
