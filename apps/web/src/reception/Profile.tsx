@@ -1,11 +1,13 @@
 // Profil konta firmowego recepcji: kto jest zalogowany, godziny recepcji, kod studia dla nowej klientki,
-// historia płatności, sklep i zamówienia, powiadomienia na tym telefonie i konto. Bez karnetów – to konto studia.
+// historia płatności, sklep i zamówienia, klientki (ostatnie treningi oddechowe), powiadomienia na tym telefonie
+// i konto. Bez karnetów – to konto studia.
 import { useEffect, useState } from 'react';
 import { nextReceptionLabel, receptionOpen, receptionSlots, type SupportHours } from '@glam/core';
 import { DEMO_MODE, fmtPhone, useApi } from '../api.ts';
 import type { Me } from '../App.tsx';
 import { disablePush, enablePush, pushEnabled, pushSupported } from '../push.ts';
 import { Avatar, ListRow, QrCode, Sheet, Toggle, useToast } from '../ui.tsx';
+import { BreathActivityPage } from './BreathActivity.tsx';
 import { PaymentsPage } from './Payments.tsx';
 import { ShopOrdersPage } from './ShopOrders.tsx';
 
@@ -16,7 +18,7 @@ const DAYS = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
 export function ReceptionProfile({ me }: { me: Me }) {
   const { data: studio } = useApi<StudioInfo>('/studio');
   const [invite, setInvite] = useState(false);
-  const [page, setPage] = useState<'payments' | 'shop' | null>(null);
+  const [page, setPage] = useState<'clients' | 'payments' | 'shop' | null>(null);
   const [push, setPush] = useState<boolean | null>(null);
   const toast = useToast();
 
@@ -76,6 +78,7 @@ export function ReceptionProfile({ me }: { me: Me }) {
         <ListRow title="Kod studia" hint="Nowa klientka skanuje i dołącza w aplikacji" onClick={() => setInvite(true)} />
         <ListRow title="Historia płatności" hint="Wpłaty w studiu z ostatnich 30 dni" onClick={() => setPage('payments')} />
         {studio?.features.includes('shop') && <ListRow title="Sklep i zamówienia" hint="Odbiory w recepcji i wysyłki" onClick={() => setPage('shop')} />}
+        <ListRow title="Klientki" hint="Najnowsze treningi oddechowe w aplikacji" onClick={() => setPage('clients')} />
       </section>
 
       {pushSupported() && push !== null && (
@@ -91,6 +94,7 @@ export function ReceptionProfile({ me }: { me: Me }) {
         {DEMO_MODE && <ListRow title="Tryb demo" hint="Zmień konto" onClick={() => (location.href = '/')} />}
       </section>
 
+      {page === 'clients' && <BreathActivityPage onBack={() => setPage(null)} />}
       {page === 'payments' && <PaymentsPage onBack={() => setPage(null)} />}
       {page === 'shop' && <ShopOrdersPage onBack={() => setPage(null)} />}
 

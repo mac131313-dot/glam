@@ -627,6 +627,19 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     return { payments: rows.slice(0, 200), more: rows.length > 200 };
   });
 
+  // Ostatnie sesje oddechu i medytacji klientek (aplikacja recepcji → Profil → Klientki), najnowsze na górze.
+  app.get<{ Querystring: { days?: string } }>('/api/staff/breath-activity', perm('clients.view'), async (req) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 92);
+    const rows = ctx(req).scope.all(
+      `SELECT m.id, m.user_id AS userId, u.name, m.kind, m.ref, m.minutes, m.completed_at AS completedAt
+       FROM mindful_logs m JOIN users u ON u.id = m.user_id
+       WHERE m.studio_id = $studio AND m.kind IN ('breath', 'meditation') AND m.completed_at >= $from
+       ORDER BY m.completed_at DESC LIMIT 201`,
+      { from: new Date(Date.now() - days * 86_400_000).toISOString() },
+    );
+    return { sessions: rows.slice(0, 200), more: rows.length > 200 };
+  });
+
   // ——— Sprzedaż przy kasie (4.11 recepcja): karnet (gotówka / terminal / link do płatności), wejściówki ———
 
   app.post<{ Params: { id: string }; Body: { productId: string; method: PaymentMethod } }>('/api/staff/clients/:id/passes', perm('desk.sell'), async (req) => {

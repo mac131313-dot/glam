@@ -26,6 +26,7 @@ const ScheduleExtras = lazy(() => import('./ScheduleExtras.tsx'));
 const Gifts = lazy(() => import('./Gifts.tsx'));
 const ShopAdmin = lazy(() => import('./ShopAdmin.tsx'));
 const EventsAdmin = lazy(() => import('./EventsAdmin.tsx'));
+const EventPackages = lazy(() => import('./EventsAdmin.tsx').then((m) => ({ default: m.EventPackages })));
 const Announcements = lazy(() => import('./Announcements.tsx'));
 const CreatorStudio = lazy(() => import('./CreatorStudio.tsx'));
 const CommunityAdmin = lazy(() => import('./CommunityAdmin.tsx'));
@@ -83,7 +84,19 @@ const SECTIONS: Section[] = [
   { id: 'welcomes', label: 'Powitania', icon: 'mail', perms: ['welcomes.write', 'welcomes.approve'], group: 'Relacje' },
   { id: 'profile', label: 'Mój profil', icon: 'user', perms: ['day.own'], group: 'Relacje', role: 'trainer' },
   { id: 'gifts', label: 'Kartki i vouchery', icon: 'pen', perms: ['cards.write', 'cards.manage'], group: 'Relacje' },
-  { id: 'events', label: 'Wydarzenia', icon: 'sparkle', perms: ['events.manage', 'day.own'], group: 'Relacje' },
+  {
+    id: 'events',
+    label: 'Wydarzenia',
+    icon: 'sparkle',
+    perms: ['events.manage', 'day.own'],
+    group: 'Relacje',
+    tabs: [
+      { id: 'list', label: 'Wydarzenia', perms: ['events.manage', 'day.own'] },
+      // Ogłoszenia wydarzeń w studiu z powiadomieniem do wszystkich klientek (bez zapisów, sali i miejsc).
+      { id: 'meetings', label: 'Spotkania', perms: ['events.manage'] },
+      { id: 'packages', label: 'Cennik pakietów', perms: ['events.manage'] },
+    ],
+  },
   {
     id: 'marketing',
     label: 'Marketing',
@@ -96,8 +109,6 @@ const SECTIONS: Section[] = [
     ],
   },
   { id: 'courses', label: 'Kursy', icon: 'cap', perms: ['courses.create', 'courses.approve'], group: 'Treści' },
-  // Ogłoszenia wydarzeń w studiu z powiadomieniem do wszystkich klientek (bez zapisów – te są w Relacjach).
-  { id: 'announcements', label: 'Wydarzenia', icon: 'flag', perms: ['config.edit'], group: 'Treści' },
   {
     id: 'community',
     label: 'Społeczność',
@@ -138,6 +149,7 @@ const ALIASES: Record<string, string> = {
   themes: 'brand/look',
   music: 'community/music',
   loyalty: 'marketing/loyalty',
+  announcements: 'events/meetings',
 };
 
 export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; reloadMe: () => Promise<void>; onSwitchStudio: () => void; onPreviewClient: () => void; onLogout: () => void }) {
@@ -260,12 +272,13 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
           {section === 'welcomes' && <Welcomes me={props.me} isOwner={roles.includes('owner')} />}
           {section === 'profile' && <TrainerProfile me={props.me} reloadMe={props.reloadMe} />}
           {section === 'gifts' && <Gifts roles={roles} />}
-          {section === 'events' && <EventsAdmin roles={roles} />}
+          {place === 'events/list' && <EventsAdmin roles={roles} />}
+          {place === 'events/meetings' && <Announcements />}
+          {place === 'events/packages' && <EventPackages />}
           {place === 'schedule/plan' && <ScheduleAdmin />}
           {place === 'schedule/extras' && <ScheduleExtras roles={roles} />}
           {place === 'schedule/types' && <ClassTypesAdmin />}
           {section === 'courses' && <CreatorStudio roles={roles} />}
-          {section === 'announcements' && <Announcements />}
           {place === 'community/moderation' && <CommunityAdmin />}
           {place === 'community/music' && <MusicAdmin />}
           {place === 'marketing/campaigns' && <Marketing />}

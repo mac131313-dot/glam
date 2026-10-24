@@ -1,9 +1,10 @@
 // Wydarzenia w panelu (4.13.4, W1–W6): lista i kalendarz, oferta i cena, zaliczka / płatność na miejscu /
-// ustalenia prywatne, statusy, notatka wewnętrzna (niewidoczna dla klientki), historia ustaleń; cennik pakietów.
+// ustalenia prywatne, statusy, notatka wewnętrzna (niewidoczna dla klientki), historia ustaleń; cennik pakietów
+// (osobna zakładka sekcji, obok Spotkań z Announcements.tsx).
 import { useState } from 'react';
 import { can, EVENT_ACTIVITIES, EVENT_ADDONS, EVENT_KINDS, type Role } from '@glam/core';
 import { api, fmtDay, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Empty, Field, Page, Select, Spinner, Tabs, useAction } from '../ui.tsx';
+import { Empty, Field, Page, Select, Spinner, useAction } from '../ui.tsx';
 
 type Ev = {
   id: string;
@@ -34,7 +35,6 @@ const heading = (e: Ev) => e.title ?? `${e.kindLabel} · ${e.client}`;
 
 export default function EventsAdmin({ roles }: { roles: Role[] }) {
   const manage = can(roles, 'events.manage');
-  const [tab, setTab] = useState<'list' | 'packages'>('list');
   const list = useApi<Ev[]>('/staff/events');
   const [open, setOpen] = useState<Ev | null>(null);
   const [adding, setAdding] = useState(false);
@@ -48,29 +48,26 @@ export default function EventsAdmin({ roles }: { roles: Role[] }) {
           </button>
         )}
       </div>
-      {manage && <Tabs label="Wydarzenia" value={tab} onChange={setTab} options={[['list', 'Wydarzenia'], ['packages', 'Cennik pakietów']]} />}
-      {tab === 'list' &&
-        (!list.data ? (
-          <Spinner />
-        ) : list.data.length === 0 ? (
-          <Empty>Brak wydarzeń.</Empty>
-        ) : (
-          list.data.map((e) => (
-            <button key={e.id} className="card flat row between" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setOpen(e)}>
-              <span>
-                <b>{heading(e)}</b>
-                <span className="small muted" style={{ display: 'block' }}>
-                  {fmtLongDay(e.starts_at)} {fmtTime(e.starts_at)} · {e.guests} os. · {e.activity} · {e.trainer}
-                </span>
+      {!list.data ? (
+        <Spinner />
+      ) : list.data.length === 0 ? (
+        <Empty>Brak wydarzeń.</Empty>
+      ) : (
+        list.data.map((e) => (
+          <button key={e.id} className="card flat row between" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => setOpen(e)}>
+            <span>
+              <b>{heading(e)}</b>
+              <span className="small muted" style={{ display: 'block' }}>
+                {fmtLongDay(e.starts_at)} {fmtTime(e.starts_at)} · {e.guests} os. · {e.activity} · {e.trainer}
               </span>
-              <span className={`badge ${e.status === 'inquiry' ? 'warn' : ''}`}>{e.statusLabel}</span>
-            </button>
-          ))
-        ))}
-      {tab === 'packages' && <Packages />}
+            </span>
+            <span className={`badge ${e.status === 'inquiry' ? 'warn' : ''}`}>{e.statusLabel}</span>
+          </button>
+        ))
+      )}
       {adding && (
         <Page title="Nowe wydarzenie studia" onBack={() => setAdding(false)}>
-          <StudioEventForm onDone={() => (list.reload(), setAdding(false), setTab('list'))} />
+          <StudioEventForm onDone={() => (list.reload(), setAdding(false))} />
         </Page>
       )}
       {open && (
@@ -252,7 +249,8 @@ function StudioEventForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Packages() {
+/** Relacje → Wydarzenia → Cennik pakietów. */
+export function EventPackages() {
   const list = useApi<{ id: string; name: string; kinds: string[]; min_guests: number; max_guests: number; duration_min: number; price_grosze: number | null; deposit_grosze: number | null; active: number }[]>('/staff/event-packages');
   const [f, setF] = useState({ name: '', kinds: ['birthday'], minGuests: 4, maxGuests: 10, durationMin: 90, price: '', deposit: '' });
   const { run, busy } = useAction();

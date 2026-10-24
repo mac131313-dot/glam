@@ -1,8 +1,9 @@
-// Start recepcji: dzień w trzech liczbach, zajęcia teraz / za chwilę i to, co czeka na reakcję.
+// Start recepcji: zapisy na dzisiejsze zajęcia, zajęcia teraz / za chwilę i to, co czeka na reakcję.
 // Pełna lista dnia jest w Grafiku, skanowanie w Wejściu, rozmowy w Wiadomościach.
 import { useEffect, useRef } from 'react';
 import { plural } from '@glam/core';
 import { fmtLongDay, fmtTime, useApi } from '../api.ts';
+import { Icon } from '../icons.tsx';
 import { Empty, ListRow, Pending } from '../ui.tsx';
 
 type Session = { id: string; starts_at: string; ends_at: string; class_name: string; trainer_name: string; zone_name: string; capacity: number; status: string; participants: { status: string }[] };
@@ -10,11 +11,10 @@ type Day = { date: string; sessions: Session[] };
 type Thread = { client_id: string; unread: number };
 export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'messages') => void }) {
   const day = useApi<Day>('/staff/day');
-  const arrivals = useApi<unknown[]>('/staff/arrivals');
   const chats = useApi<Thread[]>('/staff/chats');
 
-  // Telefon leży na ladzie cały dzień: co minutę (i po powrocie do aplikacji) świeże liczby i „Za chwilę”.
-  const refresh = () => (day.reload(), arrivals.reload(), chats.reload());
+  // Telefon leży na ladzie cały dzień: co minutę (i po powrocie do aplikacji) świeże zapisy i „Za chwilę”.
+  const refresh = () => (day.reload(), chats.reload());
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
   useEffect(() => {
@@ -46,11 +46,14 @@ export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'me
         </p>
       </section>
 
-      <section className="row" style={{ gap: 0, background: 'var(--soft)', borderRadius: 999, padding: '18px 8px' }} aria-label="Dzień w liczbach">
-        <DayNumber value={sessions.length} label={plural(sessions.length, 'zajęcia', 'zajęcia', 'zajęć')} />
-        <DayNumber value={sessions.reduce((n, s) => n + booked(s), 0)} label="zapisanych" />
-        <DayNumber value={arrivals.data?.length ?? '–'} label="obecnych" />
-      </section>
+      {sessions.length > 0 && (
+        <section className="stack gap-2" aria-label="Klientki na dzisiejszych zajęciach">
+          <div className="eyebrow" style={{ margin: 0 }}>Dziś na zajęciach</div>
+          {sessions.map((s) => (
+            <ClassStat key={s.id} session={s} booked={booked(s)} done={Date.parse(s.ends_at) <= now} />
+          ))}
+        </section>
+      )}
 
       <section className="stack gap-3">
         <div className="eyebrow" style={{ margin: 0 }}>{live ? 'Teraz' : 'Za chwilę'}</div>
@@ -82,21 +85,46 @@ export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'me
         )}
       </section>
 
-      {(unread > 0 || ahead.length > 1) && (
+      {unread > 0 && (
+        <button className="inbox-nudge" onClick={() => go('messages')}>
+          <span className="inbox-nudge-icon">
+            <Icon name="chat" size={20} />
+          </span>
+          <span className="grow">
+            <span className="card-title" style={{ display: 'block', fontSize: '1rem' }}>
+              {unread} {plural(unread, 'rozmowa', 'rozmowy', 'rozmów')}
+            </span>
+            <span className="small muted">{plural(unread, 'czeka', 'czekają', 'czeka')} na odpowiedź</span>
+          </span>
+          <Icon name="chevron" size={18} />
+        </button>
+      )}
+
+      {ahead.length > 1 && (
         <section className="list-rows">
-          {unread > 0 && <ListRow title={`${unread} ${plural(unread, 'rozmowa czeka', 'rozmowy czekają', 'rozmów czeka')} na odpowiedź`} onClick={() => go('messages')} />}
-          {ahead.length > 1 && <ListRow title="Dalej dziś" hint={ahead.slice(1, 4).map((s) => `${fmtTime(s.starts_at)} ${s.class_name}`).join(' · ')} onClick={() => go('schedule')} />}
+          <ListRow title="Dalej dziś" hint={ahead.slice(1, 4).map((s) => `${fmtTime(s.starts_at)} ${s.class_name}`).join(' · ')} onClick={() => go('schedule')} />
         </section>
       )}
     </div>
   );
 }
 
-function DayNumber({ value, label }: { value: number | string; label: string }) {
+/** Jedne zajęcia dnia: godzina, nazwa, zapisane / miejsca i cienki pasek zapełnienia; zakończone przygaszone. */
+function ClassStat({ session: s, booked, done }: { session: Session; booked: number; done: boolean }) {
+  const full = booked >= s.capacity;
   return (
-    <div className="grow" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 6 }}>
-      <span style={{ fontSize: '1.25rem', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
-      <span className="tiny muted">{label}</span>
+    <div className="stack gap-1" style={{ opacity: done ? 0.6 : 1 }}>
+      <div className="row" style={{ gap: 10, color: 'var(--ink)', fontWeight: 600 }}>
+        <span style={{ fontVariantNumeric: 'tabular-nums', width: 46, flex: 'none' }}>{fmtTime(s.starts_at)}</span>
+        <span className="grow" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.class_name}</span>
+        <span style={{ fontVariantNumeric: 'tabular-nums', flex: 'none' }}>
+          {booked}
+          <span style={{ fontWeight: 400 }}> / {s.capacity}</span>
+        </span>
+      </div>
+      <div style={{ marginLeft: 56, height: 3, borderRadius: 2, background: 'var(--soft)', overflow: 'hidden' }}>
+        <div style={{ width: `${Math.min(100, (booked / Math.max(1, s.capacity)) * 100)}%`, height: '100%', background: full ? 'var(--ink)' : 'var(--brand)' }} />
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-// Wydarzenia w studiu (panel właścicielki → Treści → Wydarzenia): np. „Spotkanie z trenerką Anią” 18:00–19:30.
+// Wydarzenia w studiu (panel właścicielki i recepcji → Relacje → Wydarzenia → Spotkania): np. „Spotkanie z trenerką Anią” 18:00–19:30.
 // Bez zapisów, sali i limitu miejsc – samo ogłoszenie. Przy zapisie (i przy zmianie albo odwołaniu, jeśli
 // właścicielka zaznaczy) każda klientka studia dostaje powiadomienie w aplikacji; zgody i ciszę nocną pilnuje notify().
 import type { FastifyInstance } from 'fastify';
@@ -70,8 +70,8 @@ const view = (r: Row, tz: string) => ({
 });
 
 export function announcementRoutes(app: FastifyInstance, deps: Deps) {
-  // Ogłoszenie trafia do wszystkich klientek – tylko właścicielka (ta sama zgoda co ustawienia studia).
-  const owner = requirePerm(deps.db, 'config.edit');
+  // Ogłoszenie trafia do wszystkich klientek – właścicielka i recepcja (ta sama zgoda co wydarzenia w Relacjach).
+  const owner = requirePerm(deps.db, 'events.manage');
 
   app.get('/api/owner/announcements', owner, async (req) => {
     const { scope, studio } = ctx(req);

@@ -598,6 +598,11 @@ label.btn { cursor: pointer; }
 .list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); width: 100%; background: none; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding: 16px 2px; cursor: pointer; color: inherit; font: inherit; text-align: left; }
 .list-row:last-child { border-bottom: 0; }
 .list-row-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; flex: none; }
+/* Start recepcji: rozmowy czekające na odpowiedź – jedna miękka pigułka z kropką jak przy zakładce Wiadomości. */
+.inbox-nudge { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 10px 18px 10px 10px; border: 0; border-radius: var(--radius-pill); background: var(--soft); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: transform 0.2s var(--ease); }
+.inbox-nudge:active { transform: scale(0.98); }
+.inbox-nudge-icon { position: relative; width: 44px; height: 44px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; flex: none; }
+.inbox-nudge-icon::after { content: ''; position: absolute; top: 9px; right: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 2px var(--surface); }
 .field-label { font-family: var(--font-head); font-size: var(--text-xs); letter-spacing: 0.04em; color: var(--muted); }
 .qr { border-radius: 14px; display: block; margin: 0 auto; background: #fff; }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap-grid); }

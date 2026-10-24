@@ -1,4 +1,4 @@
-// Treści → Wydarzenia (panel właścicielki): ogłoszenia wydarzeń w studiu, np. „Spotkanie z trenerką Anią”
+// Relacje → Wydarzenia → Spotkania (właścicielka i recepcja): ogłoszenia wydarzeń w studiu, np. „Spotkanie z trenerką Anią”
 // 18:00–19:30. Nowe wydarzenie wysyła powiadomienie do wszystkich klientek; przy edycji i odwołaniu
 // powiadomienie jest opcjonalne. Bez zapisów, sali i limitu miejsc – to robią Wydarzenia w Relacjach.
 import { useState } from 'react';
@@ -49,7 +49,7 @@ export default function Announcements() {
     <div className="stack-lg" style={{ maxWidth: 720 }}>
       <div className="row between wrap">
         <div>
-          <h1 style={{ margin: 0 }}>Wydarzenia</h1>
+          <h1 style={{ margin: 0 }}>Spotkania</h1>
           <p className="muted" style={{ margin: 0 }}>Ogłoś wydarzenie w studiu – każda klientka dostanie powiadomienie w aplikacji.</p>
         </div>
         <button className="btn" onClick={() => setEdit('new')}>

@@ -1,12 +1,14 @@
-// Grafik recepcji: ten sam układ co u klientki (pasek dni, kafelki ze zdjęciem, Dzień / Tydzień), ale z oczu
-// studia – wszystkie zajęcia (także niepubliczne), zajętość i lista oczekujących. Kafelek otwiera listę
-// uczestniczek z check-inem (dziś).
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+// Grafik recepcji: ten sam grafik co u klientki (pasek dni, Dzień / Tydzień, kafelki ze zdjęciem,
+// plansza pustego dnia, przelot zdjęcia do arkusza) – wspólne kawałki są w client/ScheduleParts.tsx. Z oczu studia:
+// wszystkie zajęcia (także niepubliczne), zajętość i lista oczekujących, a arkusz to lista uczestniczek z check-inem (dziś).
+// Dzisiejsze zajęcia zostają na kafelkach także po ich rozpoczęciu – recepcja zapisuje wejścia.
+// Miesiąc to lista wszystkich dni z zajęciami jako zwijane sekcje (zamiast kalendarza) – kafelki powstają po rozwinięciu.
+import { useRef, useState, type ReactNode } from 'react';
 import { plural } from '@glam/core';
 import { addDaysStr, api, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
-import { Icon } from '../icons.tsx';
 import { ClassCover } from '../client/ClassCover.tsx';
-import { Avatar, Empty, Fold, reducedMotion, Sheet, Spinner, useAction } from '../ui.tsx';
+import { classCount, DayRest, DayStrip, MonthHead, TrainerFace, useMorphSheet, useScheduleView, ViewSwitch, type DayRestKind } from '../client/ScheduleParts.tsx';
+import { Avatar, Empty, Fold, Sheet, Spinner, useAction } from '../ui.tsx';
 
 type Session = {
   id: string;
@@ -29,30 +31,24 @@ type Session = {
 type Participant = { booking_id: string; status: string; name: string; visits: number; guest_name: string | null; health: { limitations?: string; injuries?: string; pregnancy?: boolean } | null };
 type Day = { sessions: { id: string; participants: Participant[] }[] };
 
-const DOW = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
-const classCount = (n: number) => (n === 1 ? 'jedne zajęcia' : `${n} ${n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'zajęcia' : 'zajęć'}`);
-
 export function ReceptionSchedule() {
-  const today = localDate();
-  const [view, setView] = useState<'day' | 'week'>('day');
-  const [day, setDay] = useState(today);
+  /** Hook grafiku przewija do panelu dnia pod kalendarzem; recepcja ma w miesiącu listę dni, więc ref zostaje pusty. */
+  const monthDayRef = useRef<HTMLElement>(null);
+  const { today, view, day, setDay, month, monthOffset, from, span, changeView, changeMonth } = useScheduleView(monthDayRef);
+  const { data, error, reload } = useApi<Session[]>(`/staff/schedule?from=${from}&days=${span}`);
   const [detail, setDetail] = useState<Session | null>(null);
-  const { data, error, reload } = useApi<Session[]>(`/staff/schedule?from=${today}&days=21`);
-
-  const stripRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const strip = stripRef.current;
-    const chip = strip?.querySelector<HTMLElement>('[aria-pressed="true"]');
-    if (!strip || !chip) return;
-    strip.scrollTo({ left: chip.offsetLeft - strip.offsetLeft - (strip.clientWidth - chip.clientWidth) / 2, behavior: reducedMotion() ? 'auto' : 'smooth' });
-  }, [day, view]);
+  /** Zdjęcie przelatuje z kafelka na górę arkusza, a przy zamknięciu wraca na swoje miejsce. */
+  const { morph, openFromTile, close } = useMorphSheet(setDetail, () => setDetail(null));
 
   const sessions = data ?? [];
   const dateOf = (s: Session) => localDate(new Date(s.starts_at));
-  const list = view === 'week' ? sessions.filter((s) => dateOf(s) >= day && dateOf(s) < addDaysStr(day, 7)) : sessions.filter((s) => dateOf(s) === day);
-  const days = Array.from({ length: 14 }, (_, i) => addDaysStr(today, i));
+  const list = view === 'month' ? sessions : view === 'week' ? sessions.filter((s) => dateOf(s) >= day && dateOf(s) < addDaysStr(day, 7)) : sessions.filter((s) => dateOf(s) === day);
+  /** Pusty dzień – ta sama spokojna plansza co u klientki, z wyjściem do najbliższych zajęć. */
+  const dayRest: DayRestKind | null = view === 'day' && list.length === 0 ? (day === today ? 'today-empty' : 'empty') : null;
+  const nextAfterDay = dayRest ? sessions.find((s) => s.status !== 'cancelled' && Date.parse(s.starts_at) > Date.now() && dateOf(s) > day) ?? null : null;
+  /** Tydzień i miesiąc pogrupowane po dniach – każdy dzień to osobna zwijana sekcja. */
   const weekDays: { date: string; items: Session[] }[] = [];
-  for (const s of view === 'week' ? list : []) {
+  for (const s of view === 'day' ? [] : list) {
     const last = weekDays[weekDays.length - 1];
     if (last?.date === dateOf(s)) last.items.push(s);
     else weekDays.push({ date: dateOf(s), items: [s] });
@@ -60,7 +56,7 @@ export function ReceptionSchedule() {
   const grid = (items: Session[]) => (
     <div className="session-grid">
       {items.map((s) => (
-        <SessionTile key={s.id} s={s} onOpen={() => setDetail(s)} />
+        <SessionTile key={s.id} s={s} onOpen={(el) => openFromTile(s, el)} />
       ))}
     </div>
   );
@@ -69,34 +65,14 @@ export function ReceptionSchedule() {
     <div className="stack">
       <div className="row between">
         <h1 style={{ margin: 0 }}>Grafik</h1>
-        <div className="segmented" role="group" aria-label="Widok grafiku">
-          {(
-            [
-              ['day', 'Dzień'],
-              ['week', 'Tydzień'],
-            ] as const
-          ).map(([v, l]) => (
-            <button key={v} aria-pressed={view === v} onClick={() => setView(v)}>
-              {l}
-            </button>
-          ))}
-        </div>
+        <ViewSwitch view={view} onChange={changeView} />
       </div>
 
-      <div className="chips" role="group" aria-label="Wybierz dzień" ref={stripRef}>
-        {days.map((d) => {
-          const date = new Date(`${d}T12:00:00Z`);
-          return (
-            <button key={d} className="day ring" aria-pressed={d === day} onClick={() => setDay(d)}>
-              <svg viewBox="0 0 56 56" aria-hidden="true">
-                <circle cx="28" cy="28" r="26" pathLength={24} />
-              </svg>
-              {d === today ? 'dziś' : DOW[date.getUTCDay()]}
-              <b>{date.getUTCDate()}</b>
-            </button>
-          );
-        })}
-      </div>
+      {view === 'month' ? (
+        <MonthHead month={month} offset={monthOffset} onMonth={changeMonth} />
+      ) : (
+        <DayStrip today={today} day={day} view={view} onPick={setDay} />
+      )}
 
       {!data && error && (
         <Empty>
@@ -108,64 +84,69 @@ export function ReceptionSchedule() {
       )}
       {!data && !error && <Spinner />}
 
-      {data && list.length === 0 && (
-        <section className="day-rest" aria-live="polite">
-          <span className="day-rest-icon">
-            <Icon name="leaf" size={20} />
-          </span>
-          <h2>
-            {view === 'week' ? 'W tym tygodniu' : 'Tego dnia'} <span className="serif">bez zajęć</span>
-          </h2>
-        </section>
-      )}
-
+      {data && dayRest && <DayRest kind={dayRest} next={nextAfterDay} onNext={setDay} />}
       {data && view === 'day' && list.length > 0 && (
         <div className="folds">
-          <Fold key={day} title={fmtLongDay(`${day}T12:00:00Z`)} meta={classCount(list.length)} defaultOpen>
+          <Fold key={`day-${day}`} title="Zajęcia tego dnia" meta={classCount(list.length)} defaultOpen>
             {grid(list)}
           </Fold>
         </div>
       )}
 
-      {data && view === 'week' && (
-        <div className="folds">
-          {weekDays.map((g, i) => (
-            <Fold key={`${day}-${g.date}`} title={fmtLongDay(g.items[0].starts_at)} meta={classCount(g.items.length)} defaultOpen={i === 0}>
-              {grid(g.items)}
-            </Fold>
-          ))}
-        </div>
+      {/* Tydzień i miesiąc: dni jako zwijane sekcje. W miesiącu wszystkie zwinięte – kafelki powstają dopiero po rozwinięciu dnia. */}
+      {view !== 'day' && data && (
+        <>
+          {list.length === 0 && <Empty>{view === 'week' ? 'W tym tygodniu nie ma zajęć.' : 'W tym miesiącu nie ma już zajęć.'}</Empty>}
+          <div className="folds">
+            {weekDays.map((g, i) => (
+              <Fold
+                key={`${view}-${from}-${g.date}`}
+                lazy
+                title={g.date === today ? `Dziś · ${fmtLongDay(g.items[0].starts_at)}` : fmtLongDay(g.items[0].starts_at)}
+                meta={classCount(g.items.length)}
+                defaultOpen={view === 'week' && i === 0}
+              >
+                {grid(g.items)}
+              </Fold>
+            ))}
+          </div>
+        </>
       )}
 
-      {detail && <SessionSheet s={detail} onClose={() => setDetail(null)} onChanged={reload} />}
+      {detail && <SessionSheet s={detail} morph={morph} onClose={close} onChanged={reload} />}
     </div>
   );
 }
 
-function SessionTile({ s, onOpen }: { s: Session; onOpen: () => void }) {
+/** Kafelek jak u klientki; w stopce zajętość zamiast wolnych miejsc. */
+function SessionTile({ s, onOpen }: { s: Session; onOpen: (tile: HTMLElement) => void }) {
   const past = Date.parse(s.ends_at) < Date.now();
   const full = s.taken >= s.capacity;
   return (
     <ClassCover
       compact
       photoUrl={s.photo_url}
-      onClick={onOpen}
+      onClick={(e) => onOpen(e.currentTarget)}
       dimmed={past || s.status === 'cancelled'}
       eyebrow={`${fmtTime(s.starts_at)} · ${Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000)} min`}
       title={s.class_name}
-      aside={
-        <span className="cover-face" title={`prowadzi ${s.trainer_name}`} aria-label={`prowadzi ${s.trainer_name}`} role="img">
-          {s.trainer_avatar_url ? <img src={s.trainer_avatar_url} alt="" loading="lazy" /> : s.trainer_name.charAt(0)}
-        </span>
+      aside={<TrainerFace name={s.trainer_name} url={s.trainer_avatar_url} />}
+      corner={
+        s.status === 'cancelled' ? (
+          <span className="badge">odwołane</span>
+        ) : !s.public ? (
+          <span className="badge">niepubliczne</span>
+        ) : s.kind === 'themed' || s.kind === 'special' ? (
+          <span className="badge">{s.kind === 'themed' ? 'tematyczne' : 'specjalne'}</span>
+        ) : null
       }
-      corner={s.status === 'cancelled' ? <span className="badge">odwołane</span> : <span className={`badge ${full ? 'warn' : 'ok'}`}>{s.taken} / {s.capacity}</span>}
-      footer={s.status === 'cancelled' ? null : s.waiting > 0 ? `${s.waiting} na liście oczekujących` : full ? 'Komplet' : !s.public ? 'niepubliczne' : null}
+      footer={s.status === 'cancelled' ? null : full ? (s.waiting > 0 ? `Komplet · ${s.waiting} na liście` : 'Komplet') : `${s.taken} z ${s.capacity} zapisanych`}
     />
   );
 }
 
-/** Arkusz zajęć: kto jest zapisany, kto czeka, check-in w dniu zajęć. */
-function SessionSheet({ s, onClose, onChanged }: { s: Session; onClose: () => void; onChanged: () => unknown }) {
+/** Arkusz zajęć: kto jest zapisany, kto czeka, check-in w dniu zajęć. Nagłówek i animacje jak u klientki. */
+function SessionSheet({ s, morph, onClose, onChanged }: { s: Session; morph: boolean; onClose: () => void; onChanged: () => unknown }) {
   const date = localDate(new Date(s.starts_at));
   const { data, reload } = useApi<Day>(`/staff/day?date=${date}`, [date]);
   const { run, busy } = useAction();
@@ -180,12 +161,29 @@ function SessionSheet({ s, onClose, onChanged }: { s: Session; onClose: () => vo
     );
 
   return (
-    <Sheet onClose={onClose} label={s.class_name}>
+    <Sheet onClose={onClose} label={s.class_name} className={morph ? 'class-sheet morph' : 'class-sheet'}>
       <div className="stack">
-        <div className="eyebrow">{fmtLongDay(s.starts_at)}</div>
-        <h2 style={{ fontSize: '1.8rem', margin: 0 }}>
-          {s.class_name} <span className="serif">{fmtTime(s.starts_at)}</span>
-        </h2>
+        {/* Ze zdjęciem: zdjęcie na całą szerokość arkusza, data i nazwa leżą na nim. Bez zdjęcia – zwykły nagłówek. */}
+        {s.photo_url ? (
+          <div className="sheet-hero">
+            <img src={s.photo_url} alt="" />
+            <div className="sheet-hero-text">
+              <div className="eyebrow">{fmtLongDay(s.starts_at)}</div>
+              <h2>
+                {s.class_name} <span className="serif">{fmtTime(s.starts_at)}</span>
+              </h2>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="eyebrow">{fmtLongDay(s.starts_at)}</div>
+            <div className="sheet-title">
+              <h2 style={{ fontSize: '1.8rem' }}>
+                {s.class_name} <span className="serif">{fmtTime(s.starts_at)}</span>
+              </h2>
+            </div>
+          </>
+        )}
         <div className="meta-line">
           {[s.trainer_name, s.zone_name, fmtMinutes(Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60_000)), s.status === 'cancelled' ? 'odwołane' : `${s.taken} / ${s.capacity}`].map((x) => (
             <span key={x}>{x}</span>

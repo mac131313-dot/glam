@@ -74,12 +74,12 @@ test('właścicielka dodaje wydarzenie – powiadomienie do każdej klientki; zm
   assert.equal((await call(owner, 'POST', `/api/owner/announcements/${item.id}`, { title, date: inAWeek(), from: '18:00', to: '19:30' })).statusCode, 400);
 });
 
-test('bez powiadomienia, gdy właścicielka je odznaczy; recepcja i klientka nie mają dostępu', async () => {
+test('bez powiadomienia, gdy właścicielka je odznaczy; recepcja ma dostęp, klientka nie', async () => {
   const owner = await login(DEMO.owner);
   const before = (db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE studio_id = ?').get(R) as { n: number }).n;
   const quiet = await call(owner, 'POST', '/api/owner/announcements', { title: 'Dzień otwarty', date: inAWeek(), from: '10:00', to: '14:00', notify: false });
   assert.equal(quiet.statusCode, 200, quiet.body);
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE studio_id = ?').get(R) as { n: number }).n, before);
-  assert.equal((await call(await login(DEMO.reception), 'GET', '/api/owner/announcements')).statusCode, 403);
+  assert.equal((await call(await login(DEMO.reception), 'GET', '/api/owner/announcements')).statusCode, 200);
   assert.equal((await call(await login(DEMO.magda), 'POST', '/api/owner/announcements', { title: 'Hack', date: inAWeek(), from: '10:00', to: '11:00' })).statusCode, 403);
 });
