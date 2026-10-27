@@ -1,6 +1,6 @@
 // Start recepcji: zapisy na dzisiejsze zajęcia, zajęcia teraz / za chwilę i to, co czeka na reakcję.
 // Pełna lista dnia jest w Grafiku, skanowanie w Wejściu, rozmowy w Wiadomościach.
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { plural } from '@glam/core';
 import { fmtLongDay, fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
@@ -46,14 +46,7 @@ export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'me
         </p>
       </section>
 
-      {sessions.length > 0 && (
-        <section className="stack gap-2" aria-label="Klientki na dzisiejszych zajęciach">
-          <div className="eyebrow" style={{ margin: 0 }}>Dziś na zajęciach</div>
-          {sessions.map((s) => (
-            <ClassStat key={s.id} session={s} booked={booked(s)} done={Date.parse(s.ends_at) <= now} />
-          ))}
-        </section>
-      )}
+      {sessions.length > 0 && <DayList sessions={sessions} ahead={ahead} booked={booked} now={now} />}
 
       <section className="stack gap-3">
         <div className="eyebrow" style={{ margin: 0 }}>{live ? 'Teraz' : 'Za chwilę'}</div>
@@ -109,22 +102,60 @@ export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'me
   );
 }
 
-/** Jedne zajęcia dnia: godzina, nazwa, zapisane / miejsca i cienki pasek zapełnienia; zakończone przygaszone. */
+/**
+ * Dzisiejsze zajęcia: trzy najbliższe zawsze widoczne, reszta (dalsze i zakończone) rozwija się w dół.
+ * Gdy wszystko już się skończyło, widać trzy pierwsze z dnia.
+ */
+function DayList({ sessions, ahead, booked, now }: { sessions: Session[]; ahead: Session[]; booked: (s: Session) => number; now: number }) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const main = ahead.length ? ahead : sessions;
+  const ended = ahead.length ? sessions.filter((s) => Date.parse(s.ends_at) <= now) : [];
+  const later = main.slice(3);
+  const hidden = later.length + ended.length;
+  const row = (s: Session) => <ClassStat key={s.id} session={s} booked={booked(s)} done={Date.parse(s.ends_at) <= now} />;
+  return (
+    <section className="stack gap-2" aria-label="Klientki na dzisiejszych zajęciach">
+      <div className="row between" style={{ alignItems: 'baseline' }}>
+        <div className="eyebrow" style={{ margin: 0 }}>Dziś na zajęciach</div>
+        <span className="small muted" style={{ fontVariantNumeric: 'tabular-nums' }}>
+          {sessions.reduce((n, s) => n + booked(s), 0)} / {sessions.reduce((n, s) => n + s.capacity, 0)}
+        </span>
+      </div>
+      <div className="day-list">
+        {main.slice(0, 3).map(row)}
+        {hidden > 0 && (
+          <div className={open ? 'day-more is-open' : 'day-more'} id={bodyId} inert={!open}>
+            <div className="day-list">
+              {later.map(row)}
+              {ended.length > 0 && <div className="day-list-label">Zakończone</div>}
+              {ended.map(row)}
+            </div>
+          </div>
+        )}
+      </div>
+      {hidden > 0 && (
+        <button type="button" className="day-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
+          {open ? 'Zwiń' : `Pokaż jeszcze ${hidden}`}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+      )}
+    </section>
+  );
+}
+
+/** Jeden wiersz rozwijanej listy dnia: godzina, nazwa, zapisane / miejsca; pełne wyraźne, zakończone przygaszone. */
 function ClassStat({ session: s, booked, done }: { session: Session; booked: number; done: boolean }) {
   const full = booked >= s.capacity;
   return (
-    <div className="stack gap-1" style={{ opacity: done ? 0.6 : 1 }}>
-      <div className="row" style={{ gap: 10, color: 'var(--ink)', fontWeight: 600 }}>
-        <span style={{ fontVariantNumeric: 'tabular-nums', width: 46, flex: 'none' }}>{fmtTime(s.starts_at)}</span>
-        <span className="grow" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.class_name}</span>
-        <span style={{ fontVariantNumeric: 'tabular-nums', flex: 'none' }}>
-          {booked}
-          <span style={{ fontWeight: 400 }}> / {s.capacity}</span>
-        </span>
-      </div>
-      <div style={{ marginLeft: 56, height: 3, borderRadius: 2, background: 'var(--soft)', overflow: 'hidden' }}>
-        <div style={{ width: `${Math.min(100, (booked / Math.max(1, s.capacity)) * 100)}%`, height: '100%', background: full ? 'var(--ink)' : 'var(--brand)' }} />
-      </div>
+    <div className={done ? 'day-row is-done' : 'day-row'}>
+      <span className="day-row-time">{fmtTime(s.starts_at)}</span>
+      <span className="day-row-name">{s.class_name}</span>
+      <span className={full ? 'day-row-count is-full' : 'day-row-count'}>
+        {booked}/{s.capacity}
+      </span>
     </div>
   );
 }

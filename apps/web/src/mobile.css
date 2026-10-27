@@ -27,4 +27,9 @@
 body:has(.overlay, .paywall-overlay) .toast {
   top: calc(16px + env(safe-area-inset-top));
   bottom: auto;
+  animation-name: toast-in-top;
 }
+/* U góry komunikat przychodzi z góry i tam wraca. */
+body:has(.overlay, .paywall-overlay) .toast.is-leaving { animation-name: toast-out-top; }
+@keyframes toast-in-top { from { opacity: 0; transform: translate(-50%, -24px) scale(0.96); } }
+@keyframes toast-out-top { to { opacity: 0; transform: translate(-50%, -16px) scale(0.98); } }
