@@ -14,6 +14,7 @@ import { announcementRoutes } from './routes/announcements.ts';
 import { eventRoutes } from './routes/events.ts';
 import { healthRoutes } from './routes/health.ts';
 import { logoRoutes } from './routes/logo.ts';
+import { mailingRoutes } from './routes/mailing.ts';
 import { marketingRoutes } from './routes/marketing.ts';
 import { musicRoutes } from './routes/music.ts';
 import { photoRoutes } from './routes/photos.ts';
@@ -63,6 +64,7 @@ export function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   ownerRoutes(app, deps);
   configRoutes(app, deps);
   marketingRoutes(app, deps);
+  mailingRoutes(app, deps);
   communityRoutes(app, deps);
   dmRoutes(app, deps);
   threadRoutes(app, deps);

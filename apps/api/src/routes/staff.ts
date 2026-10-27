@@ -14,7 +14,9 @@ import {
   MODERATION_COPY,
   pickPass,
   segmentsOf,
+  oneOffTermin,
   TRIGGERS,
+  validEmail,
   zonedToUtc,
   type AccessGranted,
 } from '@glam/core';
@@ -29,6 +31,7 @@ import { audit } from '../services/audit.ts';
 import { bookSession, cancelBooking, changeTrainer, checkIn, loadSession, markNoShow, walkInOptions } from '../services/booking.ts';
 import { CHAT_BODY_LIMIT, chatMessages, postChatMessage, receptionThreads, type ChatInput } from '../services/chat.ts';
 import { logUsage } from '../services/dispatch.ts';
+import { announceNewClass } from '../services/mailing.ts';
 import { storeMedia } from '../services/media.ts';
 import { notify } from '../services/notify.ts';
 import { consumeEntry, loadPasses, refundEntry } from '../services/passes.ts';
@@ -395,7 +398,8 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
         { id: sid, ct: b.classTypeId, t: b.trainerId, s: start.toISOString(), e: new Date(start.getTime() + b.durationMin * 60_000).toISOString(), cap: b.capacity, kind: b.kind ?? 'special', title: b.title?.trim() || null, pub: Number(b.public ?? true) },
       );
       audit(scope, { actorId: user.id, action: 'session.created', entity: 'session', entityId: sid, details: { title: b.title, kind: b.kind } });
-      return { id: sid };
+      const mailed = b.public === false ? 0 : announceNewClass(scope, studio, { classTypeId: b.classTypeId, trainerId: b.trainerId, termin: oneOffTermin(b.date, b.time), title: b.title, actorId: user.id });
+      return { id: sid, mailed };
     },
   );
 
@@ -476,10 +480,12 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
 
   // Dodanie klientki przez recepcję (np. pierwsza wizyta bez aplikacji) albo trenerkę – numer i imię, opcjonalnie
   // cel i pierwsza notatka (minimalizacja danych). Klientkę dodaną przez trenerkę przypisujemy do niej.
-  app.post<{ Body: { phone: string; name: string; goal?: string; note?: string } }>('/api/staff/clients', perm('clients.create'), async (req) => {
+  app.post<{ Body: { phone: string; name: string; email?: string; goal?: string; note?: string } }>('/api/staff/clients', perm('clients.create'), async (req) => {
     const { scope, user, roles } = ctx(req);
     const phone = normalizePhone(req.body?.phone);
     const name = String(req.body?.name ?? '').trim().slice(0, 80);
+    const email = String(req.body?.email ?? '').trim().toLowerCase().slice(0, 120) || null;
+    if (email && !validEmail(email)) throw badRequest('Sprawdź adres e-mail.');
     const goal = String(req.body?.goal ?? '').trim().slice(0, 200) || null;
     const note = String(req.body?.note ?? '').trim().slice(0, 2000);
     if (name.length < 2) throw badRequest('Podaj imię.');
@@ -490,9 +496,9 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       throw conflict('client_exists', 'Ta klientka jest już w studiu. Poproś recepcję o przypisanie jej do Ciebie.');
     if (!u) {
       const uid = id();
-      db.prepare('INSERT INTO users (id, phone, name, created_at) VALUES (?, ?, ?, ?)').run(uid, phone, name, nowIso());
+      db.prepare('INSERT INTO users (id, phone, name, email, created_at) VALUES (?, ?, ?, ?, ?)').run(uid, phone, name, email, nowIso());
       u = { id: uid };
-    }
+    } else if (email) db.prepare('UPDATE users SET email = COALESCE(email, ?) WHERE id = ?').run(email, u.id); // nie nadpisujemy adresu, który klientka podała sama
     scope.run("INSERT OR IGNORE INTO memberships (studio_id, user_id, role, joined_at) VALUES ($studio, $u, 'client', $now)", { u: u.id, now: nowIso() });
     if (goal) scope.run("UPDATE memberships SET goal = COALESCE(goal, $g) WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { g: goal, u: u.id });
     if (byTrainer) scope.run("UPDATE memberships SET trainer_id = COALESCE(trainer_id, $me) WHERE studio_id = $studio AND user_id = $u AND role = 'client'", { me: user.id, u: u.id });

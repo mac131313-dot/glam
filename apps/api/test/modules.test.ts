@@ -751,3 +751,47 @@ test('kody rabatowe: po serii nietrafionych sprawdzanie się zatrzymuje', async 
   assert.equal(blocked.statusCode, 429);
   assert.equal(blocked.json().error, 'too_many_attempts');
 });
+
+test('mailing: e-mail z rejestracji w recepcji, zgoda na nowości i automat „Nowe zajęcia”', async () => {
+  const reception = await login(DEMO.reception);
+  const phone = '+48500000777';
+  const add = await call(reception, R, 'POST', '/api/staff/clients', { name: 'Ewa Nowak', phone: '500 000 777', email: 'Ewa@Poczta.pl' });
+  assert.equal(add.statusCode, 200, add.body);
+  assert.equal((db.prepare('SELECT email FROM users WHERE phone = ?').get(phone) as { email: string }).email, 'ewa@poczta.pl');
+  assert.equal((await call(reception, R, 'POST', '/api/staff/clients', { name: 'Zła', phone: '500 000 778', email: 'nie-mail' })).statusCode, 400);
+
+  // Klientka potwierdza adres w onboardingu i zapisuje się na nowości.
+  const ewa = await login(phone);
+  const onb = await call(ewa, null, 'POST', '/api/me/onboarding', { name: 'Ewa', email: 'ewa@poczta.pl', consents: { terms: true, marketing: false, marketing_email: true }, studioId: R });
+  assert.equal(onb.statusCode, 200, onb.body);
+  assert.equal(onb.json().user.email, 'ewa@poczta.pl');
+
+  const overview = (await call(reception, R, 'GET', '/api/staff/mailing')).json();
+  assert.ok(overview.counts.subscribed >= 1);
+  assert.match(overview.auto.body, /\{zajęcia\}/);
+
+  // Nowe zajęcia jednorazowe → e-mail z wypełnionym szablonem tylko do osób ze zgodą.
+  const trainer = (db.prepare("SELECT user_id FROM memberships WHERE studio_id = ? AND role = 'trainer' LIMIT 1").get(R) as { user_id: string }).user_id;
+  const date = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+  const s = await call(reception, R, 'POST', '/api/staff/sessions', { classTypeId: 'ct_reformer', trainerId: trainer, date, time: '19:00', durationMin: 60, capacity: 8, title: 'Halloween Flow' });
+  assert.equal(s.statusCode, 200, s.body);
+  assert.ok(s.json().mailed >= 1);
+  const mail = db.prepare("SELECT n.title, n.body, n.channel FROM notifications n JOIN users u ON u.id = n.user_id WHERE u.phone = ? AND n.channel = 'email' ORDER BY n.created_at DESC").get(phone) as { title: string; body: string; channel: string };
+  assert.equal(mail.title, 'Nowe w grafiku: Halloween Flow');
+  assert.match(mail.body, /^Cześć Ewa!/);
+  assert.match(mail.body, /o 19:00/);
+  const noConsent = db.prepare("SELECT COUNT(*) AS n FROM notifications n JOIN campaigns c ON c.id = n.campaign_id WHERE c.name = 'Automat: Halloween Flow' AND n.status = 'sent' AND NOT EXISTS (SELECT 1 FROM consents k WHERE k.user_id = n.user_id AND k.kind = 'marketing_email' AND k.granted = 1)").get() as { n: number };
+  assert.equal(noConsent.n, 0);
+
+  // Szablon bez {zajęcia} odrzucony; wyłączony automat nic nie wysyła.
+  assert.equal((await call(reception, R, 'PUT', '/api/staff/mailing/auto', { body: 'Cześć!' })).statusCode, 400);
+  assert.equal((await call(reception, R, 'PUT', '/api/staff/mailing/auto', { enabled: false })).statusCode, 200);
+  const off = await call(reception, R, 'POST', '/api/staff/sessions', { classTypeId: 'ct_reformer', trainerId: trainer, date, time: '20:30', durationMin: 60, capacity: 8 });
+  assert.equal(off.json().mailed, 0);
+
+  // Ręczna nowość: test na własny adres wymaga e-maila w profilu, wysyłka do zapisanych.
+  const sent = await call(reception, R, 'POST', '/api/staff/mailing/send', { subject: 'Listopad w studiu', body: 'Cześć {imię}! Od listopada zajęcia także w niedziele.' });
+  assert.equal(sent.statusCode, 200, sent.body);
+  assert.ok(sent.json().recipients >= 1);
+  assert.equal((await call(reception, R, 'POST', '/api/staff/mailing/send', { subject: 'Hej', body: 'Musisz przyjść, ostatnia szansa na zapis.' })).statusCode, 400);
+});

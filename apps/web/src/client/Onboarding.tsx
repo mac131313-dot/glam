@@ -16,6 +16,9 @@ const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export function Onboarding({ studio, me, onDone }: { studio: Studio; me: Me; onDone: () => Promise<void> }) {
   const [name, setName] = useState(me.user.name ?? '');
+  // E-mail podany przy zakładaniu konta (recepcja, zakup kursu) od razu w polu – klientka tylko potwierdza.
+  const [email, setEmail] = useState(me.user.email ?? '');
+  const [news, setNews] = useState(false);
   const [fit, setFit] = useState<FitDraft>(EMPTY_FIT);
   const [day, setDay] = useState(0);
   const [month, setMonth] = useState(0);
@@ -32,11 +35,12 @@ export function Onboarding({ studio, me, onDone }: { studio: Studio; me: Me; onD
         global: true,
         body: {
           name: name.trim() || undefined,
+          email: emailOk ? email.trim() : undefined,
           // Cel dla trenerki składamy z ankiety – jedno pytanie mniej.
           goal: fit.level ? fitGoalLabel({ ...fit, level: fit.level }) : undefined,
           classFit: fit.level ? fit : undefined,
           birthday: day && month ? `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}` : null,
-          consents: { terms, marketing },
+          consents: { terms, marketing, ...(emailOk ? { marketing_email: news } : {}) },
           studioId: studio.id,
         },
       });
@@ -44,6 +48,8 @@ export function Onboarding({ studio, me, onDone }: { studio: Studio; me: Me; onD
     });
 
   const named = name.trim().length >= 2;
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const emailBad = email.trim().length > 0 && !emailOk;
   const build = (nav: Parameters<typeof fitQuestion>[3]): Question[] => [
     {
       id: 'name',
@@ -69,6 +75,43 @@ export function Onboarding({ studio, me, onDone }: { studio: Studio; me: Me; onD
           Dalej
         </button>
       ),
+    },
+    {
+      id: 'email',
+      answered: emailOk,
+      optional: true,
+      body: (
+        <>
+          <h2 className="fit-q">
+            Twój <span className="serif">e-mail</span>
+          </h2>
+          <p className="muted small">
+            {me.user.email ? 'Mamy ten adres z recepcji – sprawdź, czy się zgadza.' : 'Wyślemy na niego potwierdzenia zakupów i faktury.'} Zmienisz go w każdej chwili w Profilu.
+          </p>
+          <label className="field">
+            <span className="field-label">Adres e-mail</span>
+            <input
+              className="input"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              enterKeyHint="next"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && emailOk && nav.next()}
+              placeholder="np. magda@poczta.pl"
+              aria-invalid={emailBad || undefined}
+            />
+            {emailBad && <span className="tiny muted">Sprawdź adres – brakuje „@” albo domeny.</span>}
+          </label>
+          {emailOk && <Toggle label="Nowe zajęcia i nowości mailem" hint="Krótko, gdy w grafiku pojawi się coś nowego. Wypiszesz się jednym kliknięciem." checked={news} onChange={setNews} />}
+        </>
+      ),
+      action: emailBad ? (
+        <button className="btn block" disabled>
+          Dalej
+        </button>
+      ) : undefined,
     },
     ...FIT_QUESTIONS.map((id) => fitQuestion(id, fit, setFit, nav)),
     {

@@ -1,5 +1,6 @@
 // Model SaaS (1.2): plany abonamentowe, limity zasobów, feature flagi per studio, okres próbny,
 // szablony branżowe do kreatora obiektu (C6) i ustawienia studia z bezpiecznymi domyślnymi.
+import { NEW_CLASS_MAIL, type NewClassMail } from './mailing.ts';
 import { DEFAULT_TZ, localParts, toMinutes } from './time.ts';
 
 export type Feature =
@@ -142,6 +143,8 @@ export type StudioSettings = {
   commissionPct: number;
   /** kolor przewodni panelu studia (id z PANEL_TINTS) – wspólny dla całego zespołu */
   panelTint: string;
+  /** automatyczny e-mail o nowych zajęciach w grafiku (mailing.ts) */
+  newClassMail: NewClassMail;
 };
 
 export const DEFAULT_SETTINGS: StudioSettings = {
@@ -206,6 +209,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   communityPublicProfiles: false,
   commissionPct: 0,
   panelTint: 'grafit',
+  newClassMail: NEW_CLASS_MAIL,
 };
 
 /** Scala zapisane ustawienia z domyślnymi (głęboko dla obiektów, płytko dla tablic). */

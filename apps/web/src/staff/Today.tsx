@@ -150,6 +150,7 @@ function AddParticipant({ session, onClose, onDone }: { session: Session; onClos
   const [payAtDesk, setPayAtDesk] = useState(false);
   const [guest, setGuest] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const { run, busy } = useAction();
   const addUser = (userId: string) =>
@@ -178,11 +179,12 @@ function AddParticipant({ session, onClose, onDone }: { session: Session; onClos
           <div className="stack" style={{ marginTop: 8 }}>
             <input className="input" placeholder="Imię" value={newName} onChange={(e) => setNewName(e.target.value)} />
             <input className="input" inputMode="tel" placeholder="Telefon" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+            <input className="input" type="email" inputMode="email" autoComplete="off" placeholder="E-mail (opcjonalnie)" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
             <button
               className="btn ghost"
               disabled={!newName || !newPhone || busy}
               onClick={() => run(async () => {
-                const r = await api<{ id: string }>('/staff/clients', { method: 'POST', body: { name: newName, phone: newPhone } });
+                const r = await api<{ id: string }>('/staff/clients', { method: 'POST', body: { name: newName, phone: newPhone, email: newEmail } });
                 await addUser(r.id);
               })}
             >

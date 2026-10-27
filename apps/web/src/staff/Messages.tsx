@@ -2,15 +2,18 @@
 // · Rozmowy – wspólna lista wątków: czat z recepcją (klientki), prywatne wiadomości do trenerki, czaty grup,
 //   każdy z licznikiem nieprzeczytanych; widoczność według uprawnień (GET /api/staff/threads),
 // · Napisz do grupy – szybka wiadomość jako powiadomienie (trenerka – do swoich zajęć, recepcja – do wszystkich, typu zajęć albo grupy),
+// · Mailing – nowości e-mailem i automat „Nowe zajęcia” (staff/Mailing.tsx),
 // · Prośby o kontakt – z ankiety uśpionych (kontakt w 24 h), · Dla mnie – skrzynka personelu.
-import { useEffect, useRef, useState } from 'react';
+import { lazy, useEffect, useRef, useState } from 'react';
 import { can, type Role } from '@glam/core';
 import { api, fmtDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Empty, Page, Select, Spinner, Tabs, useAction } from '../ui.tsx';
+import { Empty, Lazy, Page, Select, Spinner, Tabs, useAction } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 import { DirectChatPage, GroupChatPage, ThreadRow, type ThreadItem } from '../groupChat.tsx';
 
-type Tab = 'threads' | 'group' | 'followups' | 'inbox';
+type Tab = 'threads' | 'group' | 'mailing' | 'followups' | 'inbox';
+
+const Mailing = lazy(() => import('./Mailing.tsx'));
 
 export default function Messages({ roles }: { roles: Role[] }) {
   const hasThreads = can(roles, 'chat.answer') || can(roles, 'messages.group.own') || can(roles, 'community.moderate') || roles.includes('trainer');
@@ -19,6 +22,7 @@ export default function Messages({ roles }: { roles: Role[] }) {
   const options: [Tab, string][] = [
     ...(hasThreads ? ([['threads', unread ? `Rozmowy (${unread})` : 'Rozmowy']] as [Tab, string][]) : []),
     ...(can(roles, 'messages.group.own') || can(roles, 'messages.group.all') ? ([['group', 'Napisz do grupy']] as [Tab, string][]) : []),
+    ...(can(roles, 'campaigns.edit') ? ([['mailing', 'Mailing']] as [Tab, string][]) : []),
     ...(can(roles, 'clients.contact') ? ([['followups', 'Prośby o kontakt']] as [Tab, string][]) : []),
     // Skrzynka „Dla mnie” – dla zespołu (np. zastępstwa trenerek); właścicielka jej nie potrzebuje.
     ...(roles.includes('owner') ? [] : ([['inbox', 'Dla mnie']] as [Tab, string][])),
@@ -30,6 +34,11 @@ export default function Messages({ roles }: { roles: Role[] }) {
       {options.length > 1 && <Tabs label="Wiadomości" value={tab} onChange={setTab} options={options} />}
       {tab === 'threads' && <Threads list={threads} />}
       {tab === 'group' && <GroupMessage roles={roles} />}
+      {tab === 'mailing' && (
+        <Lazy>
+          <Mailing />
+        </Lazy>
+      )}
       {tab === 'followups' && <Followups />}
       {tab === 'inbox' && <StaffInbox />}
     </div>

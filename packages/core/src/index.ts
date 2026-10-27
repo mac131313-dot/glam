@@ -26,3 +26,4 @@ export * from './trainers.ts';
 export * from './classfit.ts';
 export * from './refunds.ts';
 export * from './checkin.ts';
+export * from './mailing.ts';

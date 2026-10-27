@@ -51,8 +51,9 @@ export function notify(scope: StudioScope, input: NotifyInput) {
     prefs: { ...DEFAULT_PUSH_PREFS, needQuiet: !!user.need_quiet, disabled: JSON.parse(user.push_disabled_json), quietFrom: user.quiet_from, quietTo: user.quiet_to },
   });
   if (decision.send && input.occasion && prefs.occasionsOff?.includes(input.occasion)) decision = { send: false, reason: 'disabled' };
-  // Kampanie marketingowe tylko za zgodą (sekcja 11: opt-in).
-  if (decision.send && input.category === 'marketing' && !hasConsent(scope, input.userId, 'marketing')) decision = { send: false, reason: 'disabled' };
+  // Kampanie marketingowe tylko za zgodą (sekcja 11: opt-in) – osobną dla każdego kanału.
+  const consentKind = input.channel === 'email' ? 'marketing_email' : input.channel === 'sms' ? 'marketing_sms' : 'marketing';
+  if (decision.send && input.category === 'marketing' && !hasConsent(scope, input.userId, consentKind)) decision = { send: false, reason: 'disabled' };
 
   const status = decision.send ? 'sent' : decision.reason === 'quiet_hours' ? 'deferred' : 'suppressed';
   const deliverAt = !decision.send && decision.reason === 'quiet_hours' ? decision.deferUntil : now;
