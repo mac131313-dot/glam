@@ -148,6 +148,15 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   const phase = pattern.phases[view.index];
   const prompt = session ? promptAt(session, view.elapsed) : undefined;
 
+  // Po chwili bez dotyku przyciski cichną – zostaje kwiat i słowo. Dotknięcie ekranu albo pauza przywraca je od razu.
+  const [still, setStill] = useState(false);
+  const wake = () => setStill(false);
+  useEffect(() => {
+    if (still || paused) return;
+    const t = window.setTimeout(() => setStill(true), 4000);
+    return () => window.clearTimeout(t);
+  }, [still, paused]);
+
   const word = (
     <div key={paused ? 'p' : view.index} className="breath-word" aria-live="polite">
       {paused ? 'pauza' : PHASE_WORD[phase.kind]}
@@ -155,7 +164,7 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
   );
 
   return (
-    <div className={`player ${visual === 'square' ? 'player-focus' : 'player-photo'}`} role="dialog" aria-modal="true" aria-label={title}>
+    <div className={`player ${visual === 'square' ? 'player-focus' : 'player-photo'}${still && !paused ? ' is-still' : ''}`} onPointerDown={wake} onKeyDown={wake} role="dialog" aria-modal="true" aria-label={title}>
       {/* Wyciszenie: sama piwonia, bez kół – kwiat jest rytmem. Łodyga gaśnie nad napisami (styles.css). */}
       {visual === 'bloom' && <BreathBloom variant="full" level={() => level.current} hold={!paused && phase.kind === 'hold'} className={paused ? 'is-paused' : ''} />}
       <header className="row" style={{ justifyContent: 'flex-end' }}>

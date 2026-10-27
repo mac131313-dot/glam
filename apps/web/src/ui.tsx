@@ -1,6 +1,6 @@
 import { SURFACE, useAuthedUrl } from './api.ts';
 import { useLayer } from './back.ts';
-import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnimationEvent, type CSSProperties, type ReactNode } from 'react';
+import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnimationEvent, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { CHECKIN_STEP_MS, checkinStep, liveCheckinCode, type LiveCheckin } from '@glam/core';
 
@@ -114,16 +114,138 @@ export function Fold({ title, meta, defaultOpen = false, lazy = false, children 
   );
 }
 
-/** Ile trwa wyjście okna w panelu – zgodnie z `sheet-out` / `scrim-out` w styles.css. */
+/** Ile trwa wyjście okna – zgodnie z `sheet-down` / `sheet-out` / `scrim-out` w styles.css. */
 const SHEET_EXIT_MS = 200;
 
+/** Gdzie zatrzymałby się rzut przy danej prędkości (px/s) – to samo wygaszanie co przewijanie w iOS. */
+const project = (velocity: number, rate = 0.998) => ((velocity / 1000) * rate) / (1 - rate);
+
+/** Miękki opór za krawędzią: im dalej, tym mniej okno idzie za palcem. */
+const rubberband = (over: number, size: number, c = 0.55) => (over * size * c) / (size + c * Math.abs(over));
+
+/**
+ * Okno od dołu, które zamyka się gestem: palec ciągnie je 1:1 w dół (tylko gdy treść jest przewinięta na samą
+ * górę), w górę stawia miękki opór. Po puszczeniu liczy się, gdzie okno by dojechało z rozpędu, a nie gdzie
+ * jest teraz – krótki szybki ruch zamyka tak samo jak długi powolny. Złapane w trakcie powrotu rusza z miejsca,
+ * w którym akurat jest. Na szerokim ekranie w panelu okno stoi na środku i gestu nie ma (uchwyt jest ukryty).
+ */
+function useSheetDrag(sheetRef: RefObject<HTMLDivElement | null>, overlayRef: RefObject<HTMLDivElement | null>, onThrow: () => void, onClose: () => void) {
+  const throwRef = useRef(onThrow);
+  const closeRef = useRef(onClose);
+  throwRef.current = onThrow;
+  closeRef.current = onClose;
+  useEffect(() => {
+    const sheet = sheetRef.current;
+    const overlay = overlayRef.current;
+    if (!sheet || !overlay) return;
+    let startY = 0;
+    let base = 0;
+    let dy = 0;
+    let dragging = false;
+    let tracking = false;
+    let justDragged = false;
+    let samples: { y: number; t: number }[] = [];
+
+    const set = (y: number, animate: boolean) => {
+      const ease = animate ? `${reducedMotion() ? 0 : 380}ms var(--ease-spring)` : '0s';
+      sheet.style.transition = `transform ${ease}`;
+      overlay.style.transition = `background-color ${ease}`;
+      sheet.style.transform = y ? `translateY(${y}px)` : '';
+      // Rozjaśnia się tylko tło pod oknem – opacity na nakładce prześwietliłaby też samo okno.
+      const scrim = Math.round(30 * Math.max(0, 1 - y / sheet.offsetHeight));
+      overlay.style.backgroundColor = y > 0 ? `color-mix(in srgb, var(--ink) ${scrim}%, transparent)` : '';
+    };
+    // Wartość „na ekranie”, nie docelowa – żeby złapanie w trakcie powrotu nie dawało skoku.
+    const current = () => new DOMMatrixReadOnly(getComputedStyle(sheet).transform).m42;
+
+    const start = (y: number, target: EventTarget | null) => {
+      if (getComputedStyle(sheet.querySelector('.sheet-handle') ?? sheet).display === 'none') return;
+      if ((target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable], .scroll-row')) return;
+      tracking = true;
+      dragging = false;
+      startY = y;
+      base = current();
+      samples = [{ y, t: performance.now() }];
+    };
+    const move = (y: number, e: Event) => {
+      if (!tracking) return;
+      if (!dragging) {
+        // Próg ~8 px w dół i treść na samej górze – inaczej to zwykłe przewijanie albo stuknięcie.
+        if (Math.abs(y - startY) < 8) return;
+        if (y < startY || sheet.scrollTop > 0) { tracking = false; return; }
+        dragging = true;
+        startY = y;
+        // Złapane w trakcie wjazdu: animacja CSS przykryłaby palec, więc ją zdejmujemy i ruszamy z bieżącej pozycji.
+        base = current();
+        sheet.getAnimations().forEach((a) => a.cancel());
+      }
+      if (e.cancelable) e.preventDefault();
+      const d = y - startY + base;
+      dy = d < 0 ? -rubberband(-d, sheet.offsetHeight) : d;
+      set(dy, false);
+      samples.push({ y, t: performance.now() });
+      if (samples.length > 5) samples.shift();
+    };
+    const end = () => {
+      if (!tracking) return;
+      tracking = false;
+      if (!dragging) return;
+      dragging = false;
+      justDragged = true;
+      window.setTimeout(() => { justDragged = false; }, 0);
+      const first = samples[0];
+      const last = samples[samples.length - 1];
+      const dt = last.t - first.t;
+      const velocity = dt > 0 ? ((last.y - first.y) / dt) * 1000 : 0;
+      const landing = dy + project(velocity);
+      if (velocity > -50 && landing > sheet.offsetHeight * 0.5) {
+        if (reducedMotion()) { closeRef.current(); return; }
+        // Odjazd w dół z prędkością palca: im szybszy rzut, tym krócej (granice, żeby nie mignęło ani nie wlekło).
+        const rest = sheet.offsetHeight - dy;
+        const ms = Math.min(320, Math.max(160, velocity > 0 ? (rest / velocity) * 1000 * 2 : 280));
+        sheet.classList.add('is-thrown');
+        sheet.style.transition = `transform ${ms}ms cubic-bezier(0.2, 0.6, 0.35, 1)`;
+        sheet.style.transform = `translateY(${sheet.offsetHeight}px)`;
+        throwRef.current();
+      } else {
+        set(0, true);
+      }
+    };
+
+    const onTouchStart = (e: TouchEvent) => start(e.touches[0].clientY, e.target);
+    const onTouchMove = (e: TouchEvent) => move(e.touches[0].clientY, e);
+    const onMouseDown = (e: MouseEvent) => { if (e.button === 0) start(e.clientY, e.target); };
+    const onMouseMove = (e: MouseEvent) => move(e.clientY, e);
+    // Kliknięcie kończące przeciąganie myszą nie może zamknąć okna przez tło ani nacisnąć przycisku pod kursorem.
+    const onClickCapture = (e: MouseEvent) => { if (justDragged) e.stopPropagation(); };
+    sheet.addEventListener('touchstart', onTouchStart, { passive: true });
+    sheet.addEventListener('touchmove', onTouchMove, { passive: false });
+    sheet.addEventListener('touchend', end);
+    sheet.addEventListener('touchcancel', end);
+    sheet.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', end);
+    overlay.addEventListener('click', onClickCapture, true);
+    return () => {
+      sheet.removeEventListener('touchstart', onTouchStart);
+      sheet.removeEventListener('touchmove', onTouchMove);
+      sheet.removeEventListener('touchend', end);
+      sheet.removeEventListener('touchcancel', end);
+      sheet.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', end);
+      overlay.removeEventListener('click', onClickCapture, true);
+    };
+  }, [sheetRef, overlayRef]);
+}
+
 export function Sheet({ onClose, children, label, className }: { onClose: () => void; children: ReactNode; label: string; className?: string }) {
-  // Panel: okno odchodzi tą samą drogą, którą przyszło, i dopiero wtedy znika z drzewa. Tło przestaje łapać
-  // kliknięcia od razu, więc nie trzeba czekać na koniec animacji. Aplikacja klientki zamyka jak dotąd.
+  // Okno odchodzi tą samą drogą, którą przyszło, i dopiero wtedy znika z drzewa. Tło przestaje łapać
+  // kliknięcia od razu, więc nie trzeba czekać na koniec animacji.
   const [closing, setClosing] = useState(false);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  const close = SURFACE === 'panel' && !reducedMotion() ? () => setClosing(true) : onClose;
+  const close = reducedMotion() ? onClose : () => setClosing(true);
   useEffect(() => {
     if (!closing) return;
     const t = window.setTimeout(() => closeRef.current(), SHEET_EXIT_MS);
@@ -131,8 +253,10 @@ export function Sheet({ onClose, children, label, className }: { onClose: () => 
   }, [closing]);
   useLayer(close);
   const ref = useDialogFocus();
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useSheetDrag(ref, overlayRef, () => setClosing(true), onClose);
   return (
-    <div className={closing ? 'overlay is-closing' : 'overlay'} onClick={close}>
+    <div ref={overlayRef} className={closing ? 'overlay is-closing' : 'overlay'} onClick={close}>
       <div ref={ref} tabIndex={-1} className={className ? `sheet ${className}` : 'sheet'} role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
         {children}
