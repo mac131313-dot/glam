@@ -49,7 +49,8 @@ export default function ShopPages({ route, arg }: RouteProps) {
   return <Shop />;
 }
 
-function Shop() {
+/** Katalog sklepu. W zakładce Sklep (`embedded`) nagłówek daje sama zakładka. */
+export function Shop({ embedded }: { embedded?: boolean }) {
   const { open } = useClient();
   const shop = useApi<ShopData>('/shop');
   const [q, setQ] = useState('');
@@ -70,10 +71,12 @@ function Shop() {
   const chips = CATS.filter((c) => c.id === 'all' || (c.id === 'featured' ? shop.data!.products.some((p) => p.featured) : present.has(c.id)));
   return (
     <div className="shop-page">
-      <h1 className="shop-hello">
-        Witaj w szafce
-        <span className="serif"> studia.</span>
-      </h1>
+      {!embedded && (
+        <h1 className="shop-hello">
+          Witaj w szafce
+          <span className="serif"> studia.</span>
+        </h1>
+      )}
       <label className="shop-search">
         <span className="sr-only">Szukaj w sklepie</span>
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Szukaj" autoComplete="off" />

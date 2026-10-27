@@ -8,13 +8,14 @@ import { applyLook } from '../look.ts';
 import { StudioBrand } from '../StudioBrand.tsx';
 import { BreathPlayer, type BreathRequest } from './BreathPlayer.tsx';
 import { AfterClassFeelings } from './Feelings.tsx';
-import { Pending, Spinner, useToast } from '../ui.tsx';
+import { Avatar, Pending, Spinner, useToast } from '../ui.tsx';
 import { Community } from './Community.tsx';
 import { ForMe } from './ForMe.tsx';
 import { Profile } from './Profile.tsx';
 import { PurchaseSheet } from './PurchaseSheet.tsx';
 import { Schedule } from './Schedule.tsx';
 import { Start } from './Start.tsx';
+import { Store } from './Store.tsx';
 import { normalizeRoute, RouteView } from './router.tsx';
 import { Onboarding } from './Onboarding.tsx';
 
@@ -53,7 +54,7 @@ export type Studio = {
 /** Czy funkcja jest włączona w planie / flagach studia (1.2.11). */
 export const hasFeature = (s: Pick<Studio, 'features'>, f: string) => s.features?.includes(f);
 
-export type Tab = 'start' | 'schedule' | 'forme' | 'community' | 'profile';
+export type Tab = 'start' | 'schedule' | 'forme' | 'store' | 'community' | 'profile';
 
 type ClientCtx = {
   studio: Studio;
@@ -75,12 +76,13 @@ type ClientCtx = {
 const Ctx = createContext<ClientCtx>(null as unknown as ClientCtx);
 export const useClient = () => useContext(Ctx);
 
-const TABS: { id: Tab; label: string; icon: IconName }[] = [
+// Profil nie ma zakładki – otwiera go zdjęcie w lewym górnym rogu. Czat zawsze na prawym końcu.
+const TABS: { id: Tab; label: string; icon: IconName; show?: (s: Studio) => boolean }[] = [
   { id: 'start', label: 'Start', icon: 'home' },
   { id: 'schedule', label: 'Grafik', icon: 'calendar' },
   { id: 'forme', label: 'Dla mnie', icon: 'leaf' },
-  { id: 'community', label: 'Razem', icon: 'heart' },
-  { id: 'profile', label: 'Profil', icon: 'user' },
+  { id: 'store', label: 'Sklep', icon: 'bag', show: (s) => hasFeature(s, 'shop') || hasFeature(s, 'courses') },
+  { id: 'community', label: 'Czat', icon: 'chat' },
 ];
 
 export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwitchStudio: () => void; onLogout: () => void; onBackToStaff?: () => void }) {
@@ -171,12 +173,17 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
     <Ctx.Provider value={ctx}>
       <div className="phone" data-tab={tab}>
         <header className="topbar">
-          <button className="studio-chip" onClick={props.onSwitchStudio} aria-label={`Studio ${studio.name}. Zmień studio`}>
-            <StudioBrand studio={studio} />
-            <span className="muted" style={{ display: 'grid' }}>
-              <Icon name="down" size={16} />
-            </span>
-          </button>
+          <div className="topbar-start">
+            <button className="topbar-avatar" aria-current={tab === 'profile' ? 'page' : undefined} onClick={() => setTab('profile')} aria-label="Twój profil">
+              <Avatar name={props.me.user.name} url={props.me.user.avatarUrl} size="sm" />
+            </button>
+            <button className="studio-chip" onClick={props.onSwitchStudio} aria-label={`Studio ${studio.name}. Zmień studio`}>
+              <StudioBrand studio={studio} />
+              <span className="muted" style={{ display: 'grid' }}>
+                <Icon name="down" size={16} />
+              </span>
+            </button>
+          </div>
           {props.onBackToStaff && (
             <button className="btn quiet sm" onClick={props.onBackToStaff}>
               <Icon name="back" size={16} /> Panel
@@ -187,11 +194,12 @@ export function ClientApp(props: { me: Me; reloadMe: () => Promise<void>; onSwit
           {tab === 'start' && <Start />}
           {tab === 'schedule' && <Schedule />}
           {tab === 'forme' && <ForMe />}
+          {tab === 'store' && <Store />}
           {tab === 'community' && <Community />}
           {tab === 'profile' && <Profile />}
         </main>
         <nav className="tabbar" aria-label="Główna nawigacja">
-          {TABS.map((t) => (
+          {TABS.filter((t) => !t.show || t.show(studio)).map((t) => (
             <button key={t.id} className="tab" aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
               <Icon name={t.icon} />
               {t.label}

@@ -1050,7 +1050,7 @@ CREATE TABLE IF NOT EXISTS courses (
   title TEXT NOT NULL,
   subtitle TEXT,
   description TEXT,
-  kind TEXT NOT NULL CHECK (kind IN ('video', 'program', 'mindbody', 'live', 'hybrid', 'bundle')),
+  kind TEXT NOT NULL CHECK (kind IN ('workout', 'video', 'program', 'mindbody', 'live', 'hybrid', 'bundle')),
   level TEXT NOT NULL,
   goal TEXT,
   day_part TEXT,

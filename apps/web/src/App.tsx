@@ -33,6 +33,8 @@ export type UserPrefs = {
   quiz?: { answers: Record<string, unknown>; takenAt: string };
   goal?: string;
   timePrefs?: string[];
+  /** preferencje zajęć – surowe z bazy, czytane przez cleanFit z core */
+  classFit?: unknown;
   test?: boolean;
 };
 

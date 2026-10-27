@@ -1,7 +1,8 @@
 // Profil (3: zakładka 5): karnety i menu podstron (wiadomości, płatności, kursy, zdrowie, ustawienia). Historia zajęć – w Grafiku.
 import { useEffect } from 'react';
 import { api, ApiError, DEMO_MODE, fmtPhone, useApi } from '../api.ts';
-import { Avatar, Empty, ListRow, Pending, useToast } from '../ui.tsx';
+import { preparePhoto } from '../staff/logoUpload.ts';
+import { Avatar, Empty, ListRow, Pending, useAction, useToast } from '../ui.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { PassMeter, type Meter } from './PassMeter.tsx';
 
@@ -9,9 +10,20 @@ type Pass = { id: string; productName: string; status: string; summary: string; 
 
 
 export function Profile() {
-  const { me, studio, openShop, onSwitchStudio, onLogout, open } = useClient();
+  const { me, studio, openShop, onSwitchStudio, onLogout, open, reloadMe } = useClient();
+  const { run, busy } = useAction();
   const passes = useApi<Pass[]>('/my/passes');
   const toast = useToast();
+  // Zdjęcie profilowe: to samo kółko widać w lewym górnym rogu aplikacji.
+  const pickPhoto = async (file: File) => {
+    let dataUrl: string;
+    try {
+      dataUrl = await preparePhoto(file, 600);
+    } catch (e) {
+      return toast((e as Error).message);
+    }
+    run(() => api('/me/avatar', { method: 'PUT', body: { dataUrl } }).then(reloadMe), 'Zdjęcie zapisane');
+  };
 
   const reloadPasses = passes.reload;
   useEffect(() => {
@@ -24,10 +36,14 @@ export function Profile() {
   return (
     <div className="stack-lg">
       <section className="row">
-        <Avatar name={me.user.name} />
-        <div>
+        <label style={{ cursor: 'pointer' }} aria-label={me.user.avatarUrl ? 'Zmień zdjęcie profilowe' : 'Dodaj zdjęcie profilowe'} aria-disabled={busy}>
+          <Avatar name={me.user.name} url={me.user.avatarUrl} />
+          <input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={busy} onChange={(e) => (e.target.files?.[0] && pickPhoto(e.target.files[0]), (e.target.value = ''))} />
+        </label>
+        <div className="stack gap-1">
           <h1 className="serif" style={{ margin: 0, fontSize: '2.2rem' }}>{me.user.name ?? 'Twój profil'}</h1>
           <div className="muted small">{fmtPhone(me.user.phone)}</div>
+          {!me.user.avatarUrl && <span className="tiny muted">Dotknij kółka, żeby dodać zdjęcie</span>}
         </div>
       </section>
 

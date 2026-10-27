@@ -165,6 +165,26 @@ test('kurs w karnecie: dostęp przez Reformer 9, drip, postęp, pytania; kurs cz
   assert.equal(bad.statusCode, 400);
 });
 
+test('płatny trening do domu: trenerka dodaje film z ceną, właścicielka akceptuje, klientka widzi go w sklepie', async () => {
+  const ola = await login(DEMO.ola);
+  const created = await call(ola, R, 'POST', '/api/creator/courses', { title: 'Pilates w domu', kind: 'workout', level: 'Każdy poziom', price: 3900 });
+  assert.equal(created.statusCode, 200, created.body);
+  const { id: wid } = created.json();
+  const lesson = await call(ola, R, 'POST', `/api/creator/courses/${wid}/lessons`, { module: 'Trening', title: 'Pilates w domu', kind: 'video', videoUrl: 'https://vimeo.com/123', durationSec: 1800 });
+  assert.equal(lesson.statusCode, 200, lesson.body);
+  assert.equal((await call(ola, R, 'POST', `/api/creator/courses/${wid}/status`, { to: 'pending' })).statusCode, 200);
+  assert.equal((await call(ola, R, 'POST', `/api/creator/courses/${wid}/status`, { to: 'published' })).statusCode, 409, 'trenerka nie publikuje sama');
+  const magda = await login(DEMO.magda);
+  assert.ok(!(await call(magda, R, 'GET', '/api/courses')).json().some((c: { id: string }) => c.id === wid), 'przed akceptacją niewidoczny');
+  const owner = await login(DEMO.owner);
+  assert.equal((await call(owner, R, 'POST', `/api/creator/courses/${wid}/status`, { to: 'published' })).statusCode, 200);
+  const card = (await call(magda, R, 'GET', '/api/courses')).json().find((c: { id: string }) => c.id === wid);
+  assert.equal(card.kind, 'workout');
+  assert.equal(card.kindLabel, 'Trening do domu');
+  assert.equal(card.minutes, 30);
+  assert.equal(card.price.full, '39 zł');
+});
+
 test('strona sprzedażowa kursu: publiczne dane bez sesji, pakiety, prowadzące, kalendarz; szkic – 404', async () => {
   const r = await app.inject({ method: 'GET', url: '/api/public/studios/centrum-ruchu/courses/co4' });
   assert.equal(r.statusCode, 200, r.body);

@@ -2,13 +2,14 @@
 // prywatność i zgody, biometria, zmiana numeru, kalendarz, integracje, dostępność, eksport i usunięcie danych,
 // skrzynka Wiadomości (rozmowy + powiadomienia), czat z recepcją, pomoc (FAQ, regulamin, telefon), kod QR do wejścia.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CLASS_REMINDER_OPTIONS, classReminderOffsets, receptionSlots, WEEKDAY_LONG, type LiveCheckin } from '@glam/core';
+import { CLASS_REMINDER_OPTIONS, classReminderOffsets, cleanFit, receptionSlots, WEEKDAY_LONG, type LiveCheckin } from '@glam/core';
 import { api, fmtDay, fmtTime, session, useApi } from '../api.ts';
 import { getAppearance, setAppearance, type Appearance } from '../look.ts';
 import { disablePush, enablePush, passkeySupported, pushEnabled, pushSupported, registerPasskey } from '../push.ts';
 import { AuthVideo, Empty, Field, ListRow, LiveCheckinQr, Pending, Toggle, useAction, useToast } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
+import { ClassFitSheet, fitShort } from './ClassFitQuestions.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -61,8 +62,10 @@ function useSave() {
 }
 
 function Settings() {
-  const { me, open } = useClient();
+  const { me, open, reloadMe } = useClient();
   const { save } = useSave();
+  const fit = cleanFit(me.user.prefs.classFit);
+  const [fitOpen, setFitOpen] = useState(false);
   const [name, setName] = useState(me.user.name ?? '');
   const [email, setEmail] = useState(me.user.email ?? '');
   const [birthday, setBirthday] = useState(me.user.birthday ?? '');
@@ -160,11 +163,13 @@ function Settings() {
       </section>
 
       <section>
+        <ListRow title="Preferencje zajęć" hint={fit ? fitShort(fit) : 'Poziom, cel, dni i godziny – do podpowiedzi w Grafiku'} onClick={() => setFitOpen(true)} />
         <ListRow title="Powiadomienia" hint="Przypomnienia przed treningiem, ciche godziny" onClick={() => open('notifications')} />
         <ListRow title="Prywatność i zgody" hint="Widoczność profilu, zgody, Twoje dane" onClick={() => open('privacy')} />
         <ListRow title="Logowanie i urządzenia" hint="Face ID, numer telefonu, kalendarz telefonu" onClick={() => open('security')} />
         <ListRow title="Dostępność" hint="Większy tekst, kontrast, mniej ruchu" onClick={() => open('a11y')} />
       </section>
+      {fitOpen && <ClassFitSheet initial={fit} onClose={() => setFitOpen(false)} onSaved={() => void reloadMe()} />}
     </div>
   );
 }

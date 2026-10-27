@@ -286,7 +286,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const rows = scheduleRows(scope, user.id, zonedToUtc(from, '00:00', studio.timezone).toISOString(), zonedToUtc(addDays(from, days), '00:00', studio.timezone).toISOString());
     const sessions = rows.map(({ audience_json, ...r }) => {
       const lp = localParts(new Date(r.starts_at as string), studio.timezone);
-      return { ...r, audience: cleanAudience(audience_json ? JSON.parse(audience_json as string) : null, r.level as string), local_hour: Number(lp.time.slice(0, 2)), local_weekday: new Date(`${lp.date}T12:00:00Z`).getUTCDay() };
+      return { ...r, audience: cleanAudience(audience_json ? JSON.parse(audience_json as string) : null, r.level as string), local_hour: Number(lp.time.slice(0, 2)), local_min: lp.minutes, local_weekday: new Date(`${lp.date}T12:00:00Z`).getUTCDay() };
     });
     // „Dopasowane do Ciebie”: odpowiedzi z ankiety (null = jeszcze nie wypełniła) i ulubione typy zajęć.
     const favorites = scope.all<{ class_type_id: string }>('SELECT class_type_id FROM favorite_class_types WHERE studio_id = $studio AND user_id = $u', { u: user.id }).map((f) => f.class_type_id);

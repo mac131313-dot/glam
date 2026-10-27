@@ -4,9 +4,9 @@
 // + ulubione, core/classfit) i pod nią karuzela pozostałych zajęć tego dnia – duże karty ze zdjęciem, przewijane w bok.
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { dayTimesOf, FIT_THRESHOLD, fitReason, fitScore, type ClassAudience, type ClassFit } from '@glam/core';
+import { FIT_THRESHOLD, fitReason, fitScore, type ClassAudience, type ClassFit } from '@glam/core';
 import { Icon } from '../icons.tsx';
-import { ClassFitSheet } from './ClassFitQuestions.tsx';
+import { ClassFitSheet, fitShort } from './ClassFitQuestions.tsx';
 import { addDaysStr, api, ApiError, fmtDay, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
 import { Empty, Field, Fold, reducedMotion, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
@@ -43,8 +43,9 @@ export type Session = {
   my_guest: string | null;
   my_recurring_id: string | null;
   audience: ClassAudience;
-  /** godzina i dzień tygodnia w strefie studia – do dopasowania pory z ankiety */
+  /** godzina, minuta od północy i dzień tygodnia w strefie studia – do dopasowania dni i godzin z preferencji */
   local_hour: number;
+  local_min: number;
   local_weekday: number;
 };
 
@@ -57,11 +58,17 @@ export type ForYou = { s: Session; fav: boolean; reason: string | null };
 export function pickForYou(list: Session[], favorites: string[], fit: ClassFit | null): ForYou[] {
   return list
     .filter((s) => s.status !== 'cancelled' && Date.parse(s.starts_at) > Date.now())
-    .map((s) => ({ s, fav: favorites.includes(s.class_type_id), score: fit ? fitScore(s.audience, fit, dayTimesOf(s.local_hour, s.local_weekday)) : 0 }))
+    .map((s) => ({ s, fav: favorites.includes(s.class_type_id), score: fit ? fitScore(s.audience, fit, whenOf(s)) : 0 }))
     .filter((x) => x.fav || x.score >= FIT_THRESHOLD)
     .sort((a, b) => Number(b.fav) - Number(a.fav) || b.score - a.score || a.s.starts_at.localeCompare(b.s.starts_at))
     .map((x) => ({ s: x.s, fav: x.fav, reason: x.fav ? 'ulubione' : fit && fitReason(x.s.audience, fit) }));
 }
+
+/** Kiedy są zajęcia w języku preferencji: dzień tygodnia i minuty od północy (start i koniec) w strefie studia. */
+const whenOf = (s: Session) => {
+  const start = s.local_min ?? s.local_hour * 60;
+  return { weekday: s.local_weekday, start, end: start + Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60_000) };
+};
 
 /** Zajęcia do otwarcia przy następnym wejściu do Grafiku (np. z podpowiedzi na Starcie): dzień i arkusz z zapisem. */
 let pendingFocus: { id: string; day: string } | null = null;
@@ -79,7 +86,7 @@ const DOW = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
 type View = 'day' | 'week' | 'month';
 
 export function Schedule() {
-  const { studio, openShop, open } = useClient();
+  const { studio, openShop, open, reloadMe } = useClient();
   const today = localDate();
   const [view, setView] = useState<View>('day');
   // Czytamy bez czyszczenia – inicjalizator może się wykonać dwa razy (StrictMode); czyści efekt po otwarciu arkusza.
@@ -291,7 +298,7 @@ export function Schedule() {
       {/* Dzień: dwie zwijane sekcje zamiast długiej ściany kafelków. Stan rozwinięcia wraca do domyślnego przy zmianie dnia. */}
       {view === 'day' && data && !dayRest && list.length > 0 && (
         <div className="folds">
-          <Fold key={`fit-${day}`} title={<>Dopasowane <span className="serif">do Ciebie</span></>} meta={forYou.length ? classCount(forYou.length) : fit ? '' : '3 pytania'} defaultOpen={forYou.length > 0}>
+          <Fold key={`fit-${day}`} title={<>Dopasowane <span className="serif">do Ciebie</span></>} meta={forYou.length ? classCount(forYou.length) : fit ? '' : 'szybkie wybory'} defaultOpen={forYou.length > 0}>
             <div className="stack" style={{ gap: 12 }}>
               {forYou.length > 0 ? (
                 <div className="cover-carousel">
@@ -302,8 +309,8 @@ export function Schedule() {
               ) : !fit ? (
                 <button className="fit-prompt" onClick={() => setAskFit(true)}>
                   <span>
-                    <b>Trzy pytania i wiemy, co Ci polecić</b>
-                    <span className="small muted">Poziom, cel i pora dnia – mniej niż minuta.</span>
+                    <b>Kilka dotknięć i wiemy, co Ci polecić</b>
+                    <span className="small muted">Poziom, cel, dni i godziny – mniej niż minuta.</span>
                   </span>
                   <Icon name="chevron" size={18} />
                 </button>
@@ -314,7 +321,7 @@ export function Schedule() {
               )}
               {fit && (
                 <button className="link small" style={{ justifySelf: 'start' }} onClick={() => setAskFit(true)}>
-                  Zmień odpowiedzi z ankiety
+                  Twoje preferencje: {fitShort(fit)}
                 </button>
               )}
             </div>
@@ -372,7 +379,7 @@ export function Schedule() {
         </>
       )}
 
-      {askFit && <ClassFitSheet initial={fit} onClose={() => setAskFit(false)} onSaved={reload} />}
+      {askFit && <ClassFitSheet initial={fit} onClose={() => setAskFit(false)} onSaved={() => (reload(), void reloadMe())} />}
 
       {detail && (
         <Sheet onClose={closeDetail} label={detail.class_name} className={morph ? 'class-sheet morph' : 'class-sheet'}>

@@ -390,7 +390,7 @@ export function courseRoutes(app: FastifyInstance, deps: Deps) {
 
   const validateCourse = (b: any) => {
     if (!b.title?.trim()) throw badRequest('Podaj tytuł kursu.');
-    if (!['video', 'program', 'mindbody', 'live', 'hybrid', 'bundle'].includes(b.kind)) throw badRequest('Wybierz typ kursu.');
+    if (!['workout', 'video', 'program', 'mindbody', 'live', 'hybrid', 'bundle'].includes(b.kind)) throw badRequest('Wybierz typ kursu.');
     if (!b.level?.trim()) throw badRequest('Oznacz poziom kursu (5.6).');
     const claims = medicalClaims(`${b.title} ${b.subtitle ?? ''} ${b.description ?? ''}`);
     if (claims.length) throw badRequest(`Bez obietnic medycznych (5.6): usuń „${claims[0]}”.`);

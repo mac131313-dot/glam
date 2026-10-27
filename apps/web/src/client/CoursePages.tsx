@@ -3,15 +3,17 @@
 // opinie po 30% kursu, certyfikat po ukończeniu.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PLAYBACK_RATES } from '@glam/core';
-import { api, fmtDay, goToCheckout, fmtLongDay, fmtTime, useApi } from '../api.ts';
+import { api, fmtDay, goToCheckout, fmtLongDay, fmtTime, useApi, type ApiError } from '../api.ts';
 import { Empty, availableMethods, PAYMENT_LABELS, Pending, Progress, Sheet, Spinner, STARS, Toggle, useAction, useThanks } from '../ui.tsx';
 import { CastButton } from './CastButton.tsx';
 import { useClient } from './ClientApp.tsx';
 import { openAuthed } from './PassPages.tsx';
 import type { RouteProps } from './router.tsx';
 
-type Card = {
+export type CourseCard = {
   id: string;
+  /** „workout” = pojedynczy trening do domu; reszta to kursy. */
+  kind: string;
   title: string;
   subtitle: string | null;
   kindLabel: string;
@@ -40,9 +42,12 @@ export default function CoursePages({ route, arg }: RouteProps) {
   return route === 'course' && arg ? <CourseDetail id={arg} /> : <Catalog />;
 }
 
-function Catalog() {
+/** Katalog: wszystkie kursy albo tylko treningi do domu / tylko kursy (zakładka Sklep podaje już pobraną listę). */
+export function Catalog({ only, list: given }: { only?: 'workout' | 'courses'; list?: { data?: CourseCard[]; error?: ApiError; reload: () => Promise<void> } }) {
   const { open } = useClient();
-  const list = useApi<Card[]>('/courses');
+  const own = useApi<CourseCard[]>(given ? null : '/courses');
+  const fetched = given ?? own;
+  const list = { ...fetched, data: fetched.data?.filter((c) => !only || (only === 'workout') === (c.kind === 'workout')) };
   const [level, setLevel] = useState('');
   const [author, setAuthor] = useState('');
   const [goal, setGoal] = useState('');
@@ -54,7 +59,8 @@ function Catalog() {
       (list.data ?? []).filter(
         (c) => (!level || c.level === level) && (!author || c.author === author) && (!goal || c.goal === goal) && (!part || c.dayPart === part) && (!time || (time === 'short' ? c.minutes <= 60 : c.minutes > 60)),
       ),
-    [list.data, level, author, goal, time, part],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fetched.data, only, level, author, goal, time, part],
   );
   if (list.error?.code === 'feature_off') return <Empty>Studio nie prowadzi jeszcze kursów online.</Empty>;
   if (!list.data) return <Pending error={list.error} reload={list.reload} />;
@@ -93,7 +99,7 @@ function Catalog() {
           <div className="card-title">{c.title}</div>
           {c.subtitle && <div className="small muted">{c.subtitle}</div>}
           <div className="tiny muted">
-            {c.author} · {c.level} · {c.lessons} lekcji · {c.minutes} min {c.rating ? `· ${STARS(c.rating)} (${c.reviews})` : ''}
+            {c.author} · {c.level} · {c.kind === 'workout' ? '' : `${c.lessons} lekcji · `}{c.minutes} min {c.rating ? `· ${STARS(c.rating)} (${c.reviews})` : ''}
           </div>
           {c.enrolled || c.access ? (
             <Progress value={c.progress} max={100} label="Postęp kursu" />
@@ -134,7 +140,7 @@ type Lesson = {
   completed: boolean;
   questions: { id: string; body: string; answer: string | null; name: string; answered_by_name: string | null; mine: boolean }[];
 };
-type Detail = Card & {
+type Detail = CourseCard & {
   description: string | null;
   lessonsList: Lesson[];
   reviewsList: { rating: number; body: string | null; name: string; created_at: string }[];
@@ -156,6 +162,7 @@ function CourseDetail({ id }: { id: string }) {
   if (!data) return <Pending error={error} reload={reload} />;
   if (lesson) return <LessonView lesson={lesson} onBack={() => (setLesson(null), reload())} />;
   const hasAccess = !!data.access;
+  const workout = data.kind === 'workout';
   const modules = [...new Set(data.lessonsList.map((l) => l.module))];
   return (
     <div className="stack-lg">
@@ -163,7 +170,7 @@ function CourseDetail({ id }: { id: string }) {
       <div>
         <div className="eyebrow">{data.kindLabel} · {data.level}</div>
         <h1 style={{ fontSize: '1.8rem' }}>{data.title}</h1>
-        <p className="muted">prowadzi {data.author} · {data.minutes} min · {data.rating ? `${STARS(data.rating)} (${data.reviews})` : 'nowy kurs'}</p>
+        <p className="muted">prowadzi {data.author} · {data.minutes} min · {data.rating ? `${STARS(data.rating)} (${data.reviews})` : workout ? 'nowość' : 'nowy kurs'}</p>
         {data.description && <p>{data.description}</p>}
         {data.contraindications && <p className="small" style={{ color: 'var(--danger)' }}>Uwaga: {data.contraindications}</p>}
       </div>
@@ -177,23 +184,23 @@ function CourseDetail({ id }: { id: string }) {
               </div>
               {data.seatsLeft !== null && <span className="tiny muted">Zostało miejsc: {data.seatsLeft}</span>}
               <button className="btn" onClick={() => setBuy(true)}>
-                Kup kurs
+                {workout ? 'Kup trening' : 'Kup kurs'}
               </button>
             </>
           ) : (
             <>
-              <p style={{ margin: 0 }}>Ten kurs jest częścią karnetu studia.</p>
+              <p style={{ margin: 0 }}>{workout ? 'Ten trening jest w karnecie studia.' : 'Ten kurs jest częścią karnetu studia.'}</p>
               <button className="btn" onClick={() => openShop('Kursy online są w karnecie studia.')}>
                 Zobacz karnety
               </button>
             </>
           )}
-          <p className="tiny muted" style={{ margin: 0 }}>Pierwszą lekcję obejrzysz za darmo.</p>
+          {data.lessonsList.some((l) => l.freePreview) && <p className="tiny muted" style={{ margin: 0 }}>{workout ? 'Fragment obejrzysz za darmo.' : 'Pierwszą lekcję obejrzysz za darmo.'}</p>}
         </section>
       )}
       {hasAccess && !data.enrolled && (
         <button className="btn" disabled={busy} onClick={() => run(() => api(`/courses/${id}/enroll`, { method: 'POST', body: {} }).then((r) => (reload(), r)))}>
-          Zaczynam kurs
+          {workout ? 'Zaczynam' : 'Zaczynam kurs'}
         </button>
       )}
       {(data.enrolled || hasAccess) && <Progress value={data.progress} max={100} label="Postęp kursu" />}
@@ -204,7 +211,7 @@ function CourseDetail({ id }: { id: string }) {
       )}
       {data.bundle.length > 0 && <p className="small">W pakiecie: {data.bundle.map((b) => b.title).join(', ')}</p>}
       <section className="stack">
-        <div className="eyebrow">Program</div>
+        <div className="eyebrow">{workout ? 'Trening' : 'Program'}</div>
         {modules.map((m) => (
           <div key={m} className="stack gap-0">
             <div className="small" style={{ fontWeight: 600, margin: '8px 0 4px' }}>{m}</div>
@@ -266,7 +273,7 @@ function BuyCourse({ course, onClose, onDone }: { course: Detail; onClose: () =>
   const [code, setCode] = useState('');
   const { run, busy } = useAction();
   return (
-    <Sheet onClose={onClose} label="Kup kurs">
+    <Sheet onClose={onClose} label={course.kind === 'workout' ? 'Kup trening' : 'Kup kurs'}>
       <div className="stack">
         <h2>{course.title}</h2>
         <input className="input" placeholder="Kod rabatowy (opcjonalnie)" value={code} onChange={(e) => setCode(e.target.value)} />

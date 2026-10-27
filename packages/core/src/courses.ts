@@ -1,8 +1,10 @@
 // Kursy od instruktorek (5): dostęp (karnet / zakup / podgląd), drip content, postęp, certyfikat,
 // opinie po 30% kursu, podział przychodów (decyzja B2: domyślnie 70/30), cena z promocją i zniżką.
 
-export type CourseKind = 'video' | 'program' | 'mindbody' | 'live' | 'hybrid' | 'bundle';
+export type CourseKind = 'workout' | 'video' | 'program' | 'mindbody' | 'live' | 'hybrid' | 'bundle';
 export const COURSE_KIND_LABEL: Record<CourseKind, string> = {
+  // Pojedynczy płatny trening (np. do domu): jeden film, kupowany jak kurs.
+  workout: 'Trening do domu',
   video: 'Wideo on-demand',
   program: 'Program tematyczny',
   mindbody: 'Ciało i głowa',

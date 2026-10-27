@@ -104,7 +104,7 @@ const GROUP: Record<string, ComponentType<RouteProps>> = {
 /** Akcje z powiadomień → trasy (np. „profile/passes” → „passes”). Zakładki obsługuje ClientApp. */
 export function normalizeRoute(action: string): { tab?: string; route?: string } {
   const a = action.replace(/^profile\//, '').replace(/^community\/(challenge\/)?/, (m) => (m.includes('challenge') ? 'challenges/' : ''));
-  if (['start', 'schedule', 'forme', 'community', 'profile'].includes(a)) return { tab: a };
+  if (['start', 'schedule', 'forme', 'store', 'community', 'profile'].includes(a)) return { tab: a };
   if (a === 'survey/dormant') return { route: 'survey' };
   if (a.startsWith('confirm/')) return { tab: 'start' };
   if (a.startsWith('gift/')) return { route: 'invites' };

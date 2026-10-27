@@ -210,8 +210,9 @@ export function Empty({ children }: { icon?: string; children: ReactNode }) {
   return <div className="empty">{children}</div>;
 }
 
-export function Avatar({ name, size }: { name?: string | null; size?: 'sm' }) {
-  return <div className={`avatar ${size ?? ''}`}>{(name ?? '?').slice(0, 1).toLowerCase()}</div>;
+/** Kółko ze zdjęciem profilowym; bez zdjęcia – pierwsza litera imienia. */
+export function Avatar({ name, url, size }: { name?: string | null; url?: string | null; size?: 'sm' }) {
+  return <div className={`avatar ${size ?? ''}`}>{url ? <img src={url} alt="" /> : (name ?? '?').slice(0, 1).toLowerCase()}</div>;
 }
 
 export function Progress({ value, max, label }: { value: number; max: number; label: string }) {
