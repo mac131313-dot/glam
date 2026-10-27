@@ -1392,6 +1392,25 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   value TEXT NOT NULL
 );
 
+-- Wydarzenia w studiu ogłaszane przez właścicielkę (panel → Treści → Wydarzenia), np. spotkanie z trenerką:
+-- tytuł, dzień i godziny, opcjonalnie miejsce i opis. Bez zapisów – klientki dostają powiadomienie w aplikacji.
+CREATE TABLE IF NOT EXISTS studio_announcements (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  title TEXT NOT NULL,
+  description TEXT,
+  place TEXT,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled')),
+  notified_count INTEGER NOT NULL DEFAULT 0,
+  notified_at TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_studio_announcements ON studio_announcements(studio_id, starts_at);
+
 -- Nieużywana od 17.10.2026 (bez sensorów zdrowia). Zostaje dla starych baz; czyszczona przy usunięciu konta.
 CREATE TABLE IF NOT EXISTS health_sync (
   user_id TEXT NOT NULL REFERENCES users(id),

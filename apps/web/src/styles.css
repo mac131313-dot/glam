@@ -135,6 +135,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* Pływający, miękki pasek nawigacji */
 .tabbar { position: fixed; bottom: calc(14px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(448px, calc(100% - 32px)); display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: color-mix(in srgb, var(--surface) 78%, transparent); backdrop-filter: blur(20px) saturate(1.2); -webkit-backdrop-filter: blur(20px) saturate(1.2); border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); border-radius: 999px; padding: 8px; z-index: 10; box-shadow: var(--shadow); }
 .tab { background: none; border: 0; padding: 8px 2px 8px; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); font-family: var(--font-head); font-size: var(--text-2xs); letter-spacing: 0.02em; color: var(--muted); cursor: pointer; border-radius: 999px; min-height: 54px; transition: background 0.3s var(--ease), color 0.3s; }
+.tab-dot { position: absolute; top: 8px; left: calc(50% + 6px); width: 8px; height: 8px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 2px var(--surface, var(--bg)); }
+.tabbar .tab { position: relative; }
 .tab[aria-current='page'] { color: var(--ink); background: var(--soft); }
 
 /* Płaszczyzny */
@@ -413,6 +415,7 @@ textarea.input { border-radius: var(--radius-sm); resize: vertical; min-height: 
 .checkin-row { flex-wrap: wrap; }
 .checkin-row .input { flex: 1 1 220px; min-width: 0; }
 @media (max-width: 600px) { .checkin-row .input { flex-basis: 100%; } .checkin-row .btn { flex: 1; } }
+.phone .checkin-row .input { flex-basis: 100%; } .phone .checkin-row .btn { flex: 1; } .phone .scan-input { font-size: var(--text-md); min-height: 52px; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-4); flex-wrap: wrap; }
 .page-head h1 { margin: 0; }
 
@@ -483,6 +486,11 @@ body:has(.staff) .toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
 }
 
 @media (max-width: 820px) {
+  /* Panel na telefonie: szeroka tabela (Klientki, Finanse…) przewija się sama w bok zamiast przesuwać całą stronę,
+     a pola obok siebie (np. daty od–do) mogą się zwęzić poniżej swojej naturalnej szerokości. */
+  .main .table { display: block; overflow-x: auto; }
+  .main .row > .field { flex: 1 1 0; min-width: 0; }
+  .main .row > .field > .input { min-width: 0; }
   /* Pasek ma swoją wysokość, a nadmiar miejsca na krótkiej stronie idzie do treści – inaczej wiersz paska rósł i zostawiał pusty pas. */
   .staff { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   .side { display: none; }
@@ -665,6 +673,11 @@ label.btn { cursor: pointer; }
 .list-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); width: 100%; background: none; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding: 16px 2px; cursor: pointer; color: inherit; font: inherit; text-align: left; }
 .list-row:last-child { border-bottom: 0; }
 .list-row-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; flex: none; }
+/* Start recepcji: rozmowy czekające na odpowiedź – jedna miękka pigułka z kropką jak przy zakładce Wiadomości. */
+.inbox-nudge { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 10px 18px 10px 10px; border: 0; border-radius: var(--radius-pill); background: var(--soft); color: inherit; font: inherit; text-align: left; cursor: pointer; transition: transform 0.2s var(--ease); }
+.inbox-nudge:active { transform: scale(0.98); }
+.inbox-nudge-icon { position: relative; width: 44px; height: 44px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; flex: none; }
+.inbox-nudge-icon::after { content: ''; position: absolute; top: 9px; right: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 2px var(--surface); }
 .field-label { font-family: var(--font-head); font-size: var(--text-xs); letter-spacing: 0.04em; color: var(--muted); }
 .qr { border-radius: 14px; display: block; margin: 0 auto; background: #fff; }
 /* Kod wejścia na żywo: pod QR kreska odliczająca 30 s do zmiany kodu i zegar z sekundami z pulsującą kropką.
@@ -840,6 +853,7 @@ html.a11y-reduce .scanner-frame > span { animation: none; top: 50%; }
 
 /* Lista „Obecne dziś”: nowa osoba wsuwa się na górę z krótkim podświetleniem. */
 .arrival { gap: var(--space-3); padding: 8px 8px; margin: 0 -8px; border-radius: 12px; }
+.arrival > :first-child, .arrival .avatar { flex: none; } .arrival .grow { min-width: 4.5em; } .arrival > :last-child { text-align: right; min-width: 0; }
 .arrival-new { animation: arrival-in 2.4s var(--ease) 0.5s both; }
 @keyframes arrival-in {
   0% { opacity: 0; transform: translateY(-10px); background: color-mix(in srgb, var(--entry-ok) 18%, transparent); }

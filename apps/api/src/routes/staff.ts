@@ -36,7 +36,7 @@ import { purchaseProduct, recordPayment } from '../services/payments.ts';
 import { clientFacts } from '../services/segments.ts';
 import type { Studio } from '../services/studio.ts';
 import { activateGuestPass } from './account.ts';
-import { createGuestPass, deliverGuestPass, guestCode, passesView } from './client.ts';
+import { createGuestPass, deliverGuestPass, guestCode, passesView, PHOTO_URL } from './client.ts';
 import { checkinCodeProblem, findByShortCode, isShortCheckinCode, parseCheckinCode } from '../services/checkin.ts';
 
 export const WELCOME_MAX = 400;
@@ -153,7 +153,8 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
     const from = req.query.from && /^\d{4}-\d{2}-\d{2}$/.test(req.query.from) ? req.query.from : localParts(new Date(), studio.timezone).date;
     const days = Math.min(Math.max(Number(req.query.days) || 7, 1), 42);
     return scope.all(
-      `SELECT s.id, s.starts_at, s.ends_at, s.capacity, s.status, s.kind, s.public, s.trainer_id, COALESCE(s.title, ct.name) AS class_name, ct.color, z.name AS zone_name, u.name AS trainer_name,
+      `SELECT s.id, s.starts_at, s.ends_at, s.capacity, s.status, s.kind, s.public, s.trainer_id, COALESCE(s.title, ct.name) AS class_name, ct.color, ct.level, ${PHOTO_URL}, z.name AS zone_name, u.name AS trainer_name,
+              CASE WHEN u.avatar_mime IS NOT NULL THEN '/api/users/' || u.id || '/avatar?v=' || u.avatar_version END AS trainer_avatar_url,
               (SELECT COUNT(*) FROM bookings b WHERE b.session_id = s.id AND b.status IN ('booked', 'attended')) AS taken,
               (SELECT COUNT(*) FROM bookings b WHERE b.session_id = s.id AND b.status = 'waitlist') AS waiting
        FROM class_sessions s JOIN class_types ct ON ct.id = s.class_type_id JOIN zones z ON z.id = ct.zone_id JOIN users u ON u.id = s.trainer_id
@@ -610,6 +611,37 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       audit(scope, { actorId: user.id, action: 'client.trainer_assigned', entity: 'client', entityId: req.params.id, subjectUserId: req.params.id, details: { trainer: t.name } });
     });
     return { ok: true };
+  });
+
+  // Historia płatności studia dla recepcji (aplikacja → Profil): te same wiersze, które i tak eksportuje do CSV
+  // (finance.export), ale bez sum przychodu – podsumowania finansów zostają u właścicielki (finance.view).
+  app.get<{ Querystring: { days?: string } }>('/api/staff/payments', perm('finance.export'), async (req) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 92);
+    const rows = ctx(req)
+      .scope.all<{ amount_grosze: number; refunded_grosze: number }>(
+        `SELECT p.id, p.kind, p.amount_grosze, p.method, p.status, p.created_at, COALESCE(p.description, ps.product_name) AS description, u.name,
+                (SELECT COALESCE(SUM(r.amount_grosze), 0) FROM refunds r WHERE r.studio_id = p.studio_id AND r.payment_id = p.id AND r.status = 'succeeded') AS refunded_grosze
+         FROM payments p LEFT JOIN users u ON u.id = p.user_id
+         LEFT JOIN passes ps ON ps.studio_id = p.studio_id AND ps.id = p.reference_id AND p.kind IN ('pass', 'renewal')
+         WHERE p.studio_id = $studio AND p.created_at >= $from ORDER BY p.created_at DESC LIMIT 201`,
+        { from: new Date(Date.now() - days * 86_400_000).toISOString() },
+      )
+      .map(({ amount_grosze, refunded_grosze, ...p }) => ({ ...p, amount: formatPLN(amount_grosze), refunded: refunded_grosze ? formatPLN(refunded_grosze) : null }));
+    // Jeden wiersz ponad limit mówi, że lista jest ucięta – aplikacja pokazuje wtedy, gdzie szukać reszty.
+    return { payments: rows.slice(0, 200), more: rows.length > 200 };
+  });
+
+  // Ostatnie sesje oddechu i medytacji klientek (aplikacja recepcji → Profil → Klientki), najnowsze na górze.
+  app.get<{ Querystring: { days?: string } }>('/api/staff/breath-activity', perm('clients.view'), async (req) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 92);
+    const rows = ctx(req).scope.all(
+      `SELECT m.id, m.user_id AS userId, u.name, m.kind, m.ref, m.minutes, m.completed_at AS completedAt
+       FROM mindful_logs m JOIN users u ON u.id = m.user_id
+       WHERE m.studio_id = $studio AND m.kind IN ('breath', 'meditation') AND m.completed_at >= $from
+       ORDER BY m.completed_at DESC LIMIT 201`,
+      { from: new Date(Date.now() - days * 86_400_000).toISOString() },
+    );
+    return { sessions: rows.slice(0, 200), more: rows.length > 200 };
   });
 
   // ——— Sprzedaż przy kasie (4.11 recepcja): karnet (gotówka / terminal / link do płatności), wejściówki ———

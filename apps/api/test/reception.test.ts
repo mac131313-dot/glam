@@ -155,3 +155,60 @@ test('pomyłkowa sprzedaż karnetu w recepcji: cofnięta znika z konta i z rapor
   assert.equal(blocked.statusCode, 409, blocked.body);
   assert.equal(blocked.json().error, 'cannot_undo');
 });
+
+test('historia płatności w aplikacji recepcji: lista bez sum przychodu; trenerka jej nie widzi', async () => {
+  const reception = await login(DEMO.reception);
+  const res = await call(reception, 'GET', '/api/staff/payments?days=92');
+  assert.equal(res.statusCode, 200, res.body);
+  const { payments: list, more } = res.json() as { payments: { amount: string; amount_grosze?: number; created_at: string }[]; more: boolean };
+  assert.equal(more, false);
+  assert.ok(list.length > 0);
+  assert.match(list[0].amount, /zł/);
+  assert.equal(list[0].amount_grosze, undefined);
+  assert.ok(list.every((p, i) => i === 0 || list[i - 1].created_at >= p.created_at), 'najnowsze na górze');
+  assert.equal((await call(await login(DEMO.marzena), 'GET', '/api/staff/payments')).statusCode, 403);
+});
+
+test('klientka pisze do recepcji: jedno powiadomienie na rozmowę i tylko w godzinach recepcji', async () => {
+  const kasia = (db.prepare('SELECT id FROM users WHERE phone = ?').get(DEMO.reception) as { id: string }).id;
+  const magda = await login(DEMO.magda);
+  const pings = () => (db.prepare("SELECT COUNT(*) AS n FROM notifications WHERE studio_id = ? AND user_id = ? AND body LIKE '%napisała do recepcji%'").get(R, kasia) as { n: number }).n;
+  const setHours = (slots: { weekday: number; from: string; to: string }[]) => {
+    const row = db.prepare('SELECT settings_json FROM studios WHERE id = ?').get(R) as { settings_json: string | null };
+    const settings = row.settings_json ? JSON.parse(row.settings_json) : {};
+    settings.support = { ...settings.support, hours: { from: '00:00', to: '00:00', weekdays: [], slots } };
+    db.prepare('UPDATE studios SET settings_json = ? WHERE id = ?').run(JSON.stringify(settings), R);
+  };
+  db.prepare('UPDATE chat_messages SET read_at = ? WHERE studio_id = ? AND read_at IS NULL').run(new Date().toISOString(), R);
+
+  setHours([0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: '00:00', to: '23:59' })));
+  const before = pings();
+  assert.equal((await call(magda, 'POST', '/api/chat', { body: 'Dzień dobry, mam pytanie o karnet' })).statusCode, 200);
+  assert.equal((await call(magda, 'POST', '/api/chat', { body: 'I jeszcze jedno' })).statusCode, 200);
+  assert.equal(pings(), before + 1, 'druga wiadomość w tej samej rozmowie nie dzwoni drugi raz');
+
+  db.prepare('UPDATE chat_messages SET read_at = ? WHERE studio_id = ? AND read_at IS NULL').run(new Date().toISOString(), R);
+  setHours([]);
+  assert.equal((await call(magda, 'POST', '/api/chat', { body: 'Piszę wieczorem' })).statusCode, 200);
+  assert.equal(pings(), before + 1, 'poza godzinami recepcji tylko autoodpowiedź, bez powiadomienia');
+});
+
+test('lista klientek: przychód widzi tylko właścicielka; dane bramki płatności – też tylko ona', async () => {
+  const owner = await login(DEMO.owner);
+  const reception = await login(DEMO.reception);
+  const trainer = await login(DEMO.marzena);
+  const asOwner = (await call(owner, 'GET', '/api/owner/clients')).json().clients as { revenue?: string }[];
+  const asDesk = (await call(reception, 'GET', '/api/owner/clients')).json().clients as { revenue?: string }[];
+  assert.ok(asOwner.length > 0 && asOwner.every((c) => typeof c.revenue === 'string'));
+  assert.ok(asDesk.length === asOwner.length && asDesk.every((c) => c.revenue === undefined));
+
+  const saved = await call(owner, 'PUT', '/api/owner/gateway', { provider: 'p24', merchantId: 'M-12345', apiKey: 'sekretnyklucz9876', crc: 'crc-abc' });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.equal((await call(owner, 'GET', '/api/owner/config')).json().gateway.merchantId, 'M-12345');
+  // Zespół wie najwyżej, czy bramka jest połączona (przy płatnościach dzielonych) – bez dostawcy, ID i końcówki klucza.
+  db.prepare('INSERT OR REPLACE INTO studio_features (studio_id, flag, enabled) VALUES (?, ?, 1)').run(R, 'split_payments');
+  for (const t of [trainer, reception]) {
+    const gw = (await call(t, 'GET', '/api/owner/config')).json().gateway;
+    assert.deepEqual(Object.keys(gw), ['connected']);
+  }
+});

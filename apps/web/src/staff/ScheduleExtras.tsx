@@ -57,7 +57,7 @@ function Absences({ roles }: { roles: Role[] }) {
               <b>
                 {a.trainer_name}: {a.date_from} – {a.date_to}
               </b>
-              <button className="btn ghost sm" onClick={() => run(() => api(`/staff/absences/${a.id}`, { method: 'DELETE' }).then(list.reload))}>
+              <button className="btn ghost sm" onClick={() => window.confirm(`Usunąć nieobecność: ${a.trainer_name}, ${a.date_from} – ${a.date_to}?`) && run(() => api(`/staff/absences/${a.id}`, { method: 'DELETE' }).then(list.reload))}>
                 Usuń
               </button>
             </div>

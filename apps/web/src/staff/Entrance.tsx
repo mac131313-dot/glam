@@ -107,22 +107,25 @@ function useQrCamera(enabled: boolean, paused: boolean, onCode: (code: string) =
 type Arrival = { id: string; userId: string; name: string; at: string; what: string };
 
 /** Check-in: czytnik / telefon / kod wejściówki, kamera, decyzje jednym kliknięciem; udane wejście – okienko, które samo znika. */
-export function CheckinPanel({ onDone, big = false, scanner = false }: { onDone: () => void; big?: boolean; scanner?: boolean }) {
+/** `phone`: telefon recepcji w ręce – domyślnie tylna kamera (skanuje ekran klientki), wybór pamiętany osobno od tabletu. */
+export function CheckinPanel({ onDone, big = false, scanner = false, phone = false }: { onDone: () => void; big?: boolean; scanner?: boolean; phone?: boolean }) {
   const [value, setValue] = useState('');
   // Tryb skanera (zakładka Wejściówki): kamera włączona od razu, domyślnie przednia – tablet stoi przodem do klientek.
   const [camera, setCamera] = useState(scanner);
+  const facingKey = phone ? 'glam:scan-facing-phone' : 'glam:scan-facing';
   const [facing, setFacing] = useState<'environment' | 'user'>(() => {
     try {
-      return localStorage.getItem('glam:scan-facing') === 'environment' ? 'environment' : 'user';
+      const saved = localStorage.getItem(facingKey);
+      return saved === 'environment' || saved === 'user' ? saved : phone ? 'environment' : 'user';
     } catch {
-      return 'user';
+      return phone ? 'environment' : 'user';
     }
   });
   const flip = () => {
     const next = facing === 'user' ? 'environment' : 'user';
     setFacing(next);
     try {
-      localStorage.setItem('glam:scan-facing', next);
+      localStorage.setItem(facingKey, next);
     } catch {}
   };
   const [outcome, setOutcome] = useState<Outcome | null>(null);

@@ -58,8 +58,11 @@ export function fillSchedule(scope: StudioScope, studio: Studio, now = new Date(
     taken,
   );
   let created = 0;
+  // Dzisiejsze godziny, które już minęły, pomijamy – nowy slot nie może dopisać zajęć wstecz.
+  const nowIso = now.toISOString();
   scope.tx(() => {
     for (const p of planned) {
+      if (p.startsAt <= nowIso) continue;
       const r = scope.run(
         `INSERT OR IGNORE INTO class_sessions (id, studio_id, template_id, class_type_id, trainer_id, starts_at, ends_at, capacity)
          VALUES ($id, $studio, $tpl, $ct, $tr, $start, $end, $cap)`,

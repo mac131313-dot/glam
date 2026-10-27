@@ -80,9 +80,12 @@ export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)'
 /**
  * Zwijana sekcja: cienka linia, nagłówek z krótką informacją po prawej i strzałką. Treść rozwija się płynnie
  * (wysokość przez grid 0fr → 1fr), a gdy nagłówek jest nisko na ekranie – strona delikatnie podjeżdża do sekcji.
+ * lazy: treść powstaje dopiero przy pierwszym rozwinięciu – długie listy kafelków ze zdjęciami nie spowalniają ekranu.
  */
-export function Fold({ title, meta, defaultOpen = false, children }: { title: ReactNode; meta?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+export function Fold({ title, meta, defaultOpen = false, lazy = false, children }: { title: ReactNode; meta?: ReactNode; defaultOpen?: boolean; lazy?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [opened, setOpened] = useState(defaultOpen);
+  if (open && !opened) setOpened(true);
   const ref = useRef<HTMLElement>(null);
   const bodyId = useId();
   const toggle = () => {
@@ -105,7 +108,7 @@ export function Fold({ title, meta, defaultOpen = false, children }: { title: Re
         </button>
       </h2>
       <div className="fold-body" id={bodyId} inert={!open}>
-        <div className="fold-inner">{children}</div>
+        <div className="fold-inner">{!lazy || opened ? children : null}</div>
       </div>
     </section>
   );

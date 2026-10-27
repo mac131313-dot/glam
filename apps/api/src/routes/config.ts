@@ -71,7 +71,8 @@ export function configRoutes(app: FastifyInstance, deps: Deps) {
       studio: isOwner
         ? { name: studio.name, tagline: studio.tagline, city: studio.city, phone: studio.phone, email: studio.email, address: studio.address, nip: studio.nip, foundedOn: studio.founded_on, catalogVisible: !!studio.catalog_visible, published: !!studio.published, welcomeApproval: !!studio.welcome_approval, inviteCode: studio.invite_code, timezone: studio.timezone, whiteLabel: studio.white_label_json ? JSON.parse(studio.white_label_json) : null }
         : undefined,
-      gateway: gateway ? { provider: gateway.provider, merchantId: gateway.merchantId, apiKey: gateway.apiKey ? `••••${gateway.apiKey.slice(-4)}` : '', connected: true } : { connected: false },
+      // Dane bramki (dostawca, merchant ID, końcówka klucza) widzi tylko właścicielka; reszta zespołu – czy jest połączona.
+      gateway: gateway ? (isOwner ? { provider: gateway.provider, merchantId: gateway.merchantId, apiKey: gateway.apiKey ? `••••${gateway.apiKey.slice(-4)}` : '', connected: true } : { connected: true }) : { connected: false },
       presets: PRESETS.map((p) => ({ id: p.id, label: p.label, description: p.description })),
     };
   });

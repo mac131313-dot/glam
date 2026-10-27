@@ -1,6 +1,6 @@
 // Tryb demo: dwie powierzchnie pod jednym serwerem, bez ekranu logowania.
 //   /panel – panel studia (domyślnie właścicielka Joanna, ma dostęp do wszystkiego)
-//   /app   – aplikacja mobilna klientki (domyślnie Magda)
+//   /app   – aplikacja mobilna klientki (domyślnie Julia); ?jako=recepcja – konto firmowe recepcji
 // Inne konto demo: ?jako=marzena, ?jako=kasia, ?jako=ania … (lista w PERSONAS).
 // Ekran logowania SMS (screens/Login.tsx) wraca po wyłączeniu DEMO_MODE.
 import { useCallback, useEffect, useState } from 'react';
@@ -14,6 +14,7 @@ import { Lazy, lazyRetry, Spinner } from './ui.tsx';
 
 // Każda powierzchnia osobno, na żądanie: klientka nie pobiera panelu studia ani stron WWW (i odwrotnie).
 const ClientApp = lazyRetry(() => import('./client/ClientApp.tsx').then((m) => ({ default: m.ClientApp })));
+const ReceptionApp = lazyRetry(() => import('./reception/ReceptionApp.tsx').then((m) => ({ default: m.ReceptionApp })));
 const StaffApp = lazyRetry(() => import('./staff/StaffApp.tsx').then((m) => ({ default: m.StaffApp })));
 const SiteEditor = lazyRetry(() => import('./staff/site-editor/SiteEditor.tsx').then((m) => ({ default: m.SiteEditor })));
 const CourseSite = lazyRetry(() => import('./site/CourseSite.tsx').then((m) => ({ default: m.CourseSite })));
@@ -114,7 +115,8 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
   const [token, setToken] = useState(session.persona === persona ? session.token : null);
   const [studioId, setStudioId] = useState(session.studioId);
   const [me, setMe] = useState<Me | null>(null);
-  const [picking, setPicking] = useState(false);
+  // Kod studia z QR w recepcji (/app?kod=KOD) – od razu ekran dołączania, także gdy klientka ma już inne studio.
+  const [picking, setPicking] = useState(() => surface === 'app' && new URLSearchParams(location.search).has('kod'));
   const [error, setError] = useState<string | null>(null);
 
   // Automatyczne logowanie na konto demo (zamiast ekranu z kodem SMS).
@@ -208,5 +210,7 @@ function Surface({ surface }: { surface: 'panel' | 'app' }) {
       </Lazy>
     );
   }
+  // Konto firmowe recepcji ma w aplikacji własny ekran zamiast zakładek klientki.
+  if (studio.roles.includes('reception')) return <Lazy><ReceptionApp key={studioId} me={me} studio={studio} onSwitchStudio={() => setPicking(true)} /></Lazy>;
   return <Lazy><ClientApp key={studioId} me={me} reloadMe={loadMe} onSwitchStudio={() => setPicking(true)} onLogout={() => {}} /></Lazy>;
 }

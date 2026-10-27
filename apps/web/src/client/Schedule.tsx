@@ -3,15 +3,15 @@
 // playlista zajęć, synchronizacja z kalendarzem telefonu. Widok dnia: karuzela „Dopasowane do Ciebie” (ankieta
 // + ulubione, core/classfit) i pod nią karuzela pozostałych zajęć tego dnia – duże karty ze zdjęciem, przewijane w bok.
 import { useEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { FIT_THRESHOLD, fitReason, fitScore, type ClassAudience, type ClassFit } from '@glam/core';
 import { Icon } from '../icons.tsx';
 import { ClassFitSheet, fitShort } from './ClassFitQuestions.tsx';
 import { addDaysStr, api, ApiError, fmtDay, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
-import { Empty, Field, Fold, reducedMotion, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
+import { Empty, Field, Fold, Sheet, Spinner, Toggle, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { ClassHistory } from './ClassHistory.tsx';
 import { useClient } from './ClientApp.tsx';
+import { classCount, DayRest, DayStrip, DOW, MonthGrid, TrainerFace, useMorphSheet, useScheduleView, ViewSwitch, type DayRestKind } from './ScheduleParts.tsx';
 
 export type Session = {
   id: string;
@@ -76,50 +76,14 @@ export const focusSession = (s: Pick<Session, 'id' | 'starts_at'>) => {
   pendingFocus = { id: s.id, day: localDate(new Date(s.starts_at)) };
 };
 
-/** Przelot zdjęcia kafelek → arkusz tylko tam, gdzie przeglądarka je ma i nikt nie wyłączył animacji (system albo ustawienia aplikacji). */
-const canMorph = () => typeof document.startViewTransition === 'function' && !reducedMotion();
-
-/** „jedne zajęcia”, „3 zajęcia”, „12 zajęć” – zajęcia mają tylko liczbę mnogą. */
-const classCount = (n: number) => (n === 1 ? 'jedne zajęcia' : `${n} ${n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'zajęcia' : 'zajęć'}`);
-
-const DOW = ['nd', 'pn', 'wt', 'śr', 'czw', 'pt', 'sob'];
-type View = 'day' | 'week' | 'month';
-
 export function Schedule() {
   const { studio, openShop, open, reloadMe } = useClient();
-  const today = localDate();
-  const [view, setView] = useState<View>('day');
   // Czytamy bez czyszczenia – inicjalizator może się wykonać dwa razy (StrictMode); czyści efekt po otwarciu arkusza.
   const [focus] = useState(() => pendingFocus);
-  const [day, setDay] = useState(focus?.day ?? today);
-  /** Miesiąc: bieżący (0) albo następny (1) – zapisy i tak otwierają się z wyprzedzeniem najwyżej kilku tygodni. */
-  const [monthOffset, setMonthOffset] = useState(0);
-  const month = monthBounds(today, monthOffset);
-  // Dzień i tydzień: od dziś co najmniej 21 dni i zawsze 7 dni za wybranym dniem (pasek dni sięga dziś + 13).
-  // Miesiąc: od dziś (albo od 1. dnia następnego miesiąca) do ostatniego dnia miesiąca.
-  const ahead = daysBetween(today, day);
-  const from = view === 'month' && month.first > today ? month.first : today;
-  const span = view === 'month' ? daysBetween(from, month.last) + 1 : Math.min(42, Math.max(21, ahead + 7));
-  const { data, error, reload } = useApi<{ sessions: Session[]; fit: ClassFit | null; favorites: string[] }>(`/schedule?from=${from}&days=${span}`);
-  /** Panel zajęć wybranego dnia pod kalendarzem miesiąca – po wybraniu dnia strona płynnie do niego podjeżdża. */
+  /** Panel zajęć wybranego dnia pod kalendarzem miesiąca. */
   const monthDayRef = useRef<HTMLElement>(null);
-  const pickMonthDay = (d: string) => {
-    setDay(d);
-    requestAnimationFrame(() => {
-      const el = monthDayRef.current;
-      if (el && el.getBoundingClientRect().top > window.innerHeight * 0.6) el.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
-    });
-  };
-  const changeView = (v: View) => {
-    // Miesiąc otwiera się na miesiącu wybranego dnia (pasek dni może sięgać już następnego).
-    if (v === 'month') setMonthOffset(day > monthBounds(today, 0).last ? 1 : 0);
-    setView(v);
-  };
-  const changeMonth = (o: number) => {
-    setMonthOffset(o);
-    const b = monthBounds(today, o);
-    setDay(b.first > today ? b.first : today);
-  };
+  const { today, view, day, setDay, month, monthOffset, from, span, pickMonthDay, changeView, changeMonth } = useScheduleView(monthDayRef, focus?.day);
+  const { data, error, reload } = useApi<{ sessions: Session[]; fit: ClassFit | null; favorites: string[] }>(`/schedule?from=${from}&days=${span}`);
   /** Serduszka zmieniamy od razu na ekranie, serwer dostaje zmianę w tle. */
   const [favs, setFavs] = useState<string[] | null>(null);
   const [askFit, setAskFit] = useState(false);
@@ -131,14 +95,6 @@ export function Schedule() {
   const [guest, setGuest] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
   const toast = useToast();
-  /** Pasek dni płynnie przesuwa wybrany dzień na środek – także gdy dzień zmienił się z planszy „Najbliższe” albo z miesiąca. */
-  const stripRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const strip = stripRef.current;
-    const chip = strip?.querySelector<HTMLElement>('[aria-pressed="true"]');
-    if (!strip || !chip) return;
-    strip.scrollTo({ left: chip.offsetLeft - strip.offsetLeft - (strip.clientWidth - chip.clientWidth) / 2, behavior: reducedMotion() ? 'auto' : 'smooth' });
-  }, [day, view]);
   /** Każde zajęcia otwierają się „na czysto” – „we dwie”, imię gościa i numer koleżanki nie przechodzą z poprzednich. */
   const openDetail = (s: Session) => {
     setDetail(s);
@@ -156,30 +112,8 @@ export function Schedule() {
     const s = data.sessions.find((x) => x.id === focus.id);
     if (s) openDetail(s);
   }, [data, focus]);
-  /** Zdjęcie kafelka, z którego otwarto arkusz – przy zamknięciu zdjęcie wraca na swoje miejsce. */
-  const photoRef = useRef<HTMLElement | null>(null);
-  const [morph, setMorph] = useState(false);
-  const openFromTile = (s: Session, tile: HTMLElement) => {
-    const photo = tile.querySelector<HTMLElement>('.cover-img');
-    photoRef.current = photo;
-    if (!photo || !canMorph()) return (setMorph(false), openDetail(s));
-    // Zdjęcie przelatuje z kafelka na górę arkusza: przed zmianą nazwa przejścia jest na zdjęciu kafelka,
-    // po zmianie – na zdjęciu arkusza (.class-sheet.morph .sheet-hero > img).
-    photo.style.viewTransitionName = 'class-photo';
-    document.startViewTransition(() => {
-      photo.style.viewTransitionName = '';
-      flushSync(() => (setMorph(true), openDetail(s)));
-    });
-  };
-  const closeDetail = () => {
-    const photo = photoRef.current;
-    if (!morph || !photo?.isConnected || !canMorph()) return (setDetail(null), setMorph(false));
-    const t = document.startViewTransition(() => {
-      flushSync(() => (setDetail(null), setMorph(false)));
-      photo.style.viewTransitionName = 'class-photo';
-    });
-    t.finished.finally(() => (photo.style.viewTransitionName = ''));
-  };
+  /** Zdjęcie przelatuje z kafelka na górę arkusza, a przy zamknięciu wraca na swoje miejsce. */
+  const { morph, setMorph, openFromTile, close: closeDetail } = useMorphSheet(openDetail, () => setDetail(null));
 
   const sessions = data?.sessions ?? [];
   const list = view === 'week' ? sessions.filter((s) => localDate(new Date(s.starts_at)) >= day && localDate(new Date(s.starts_at)) < addDaysStr(day, 7)) : sessions.filter((s) => localDate(new Date(s.starts_at)) === day);
@@ -234,7 +168,6 @@ export function Schedule() {
   const nextAfterDay = dayRest ? (data?.sessions ?? []).find((s) => s.status !== 'cancelled' && !started(s) && localDate(new Date(s.starts_at)) > day) ?? null : null;
   const canQuickBook = (s: Session) => !s.my_status && s.status !== 'cancelled' && !started(s) && s.taken < s.capacity;
   const lateCancel = (s: Session) => Date.parse(s.starts_at) - Date.now() < studio.policy.cancelMinutesBefore * 60_000;
-  const days = Array.from({ length: 14 }, (_, i) => addDaysStr(today, i));
   /** Tydzień pogrupowany po dniach – każdy dzień to osobna zwijana sekcja. */
   const weekDays: { date: string; items: Session[] }[] = [];
   if (view === 'week') {
@@ -250,38 +183,13 @@ export function Schedule() {
     <div className="stack">
       <div className="row between">
         <h1 style={{ margin: 0 }}>Grafik</h1>
-        <div className="segmented" role="group" aria-label="Widok grafiku">
-          {(
-            [
-              ['day', 'Dzień'],
-              ['week', 'Tydzień'],
-              ['month', 'Miesiąc'],
-            ] as const
-          ).map(([v, l]) => (
-            <button key={v} aria-pressed={view === v} onClick={() => changeView(v)}>
-              {l}
-            </button>
-          ))}
-        </div>
+        <ViewSwitch view={view} onChange={changeView} />
       </div>
 
       {view === 'month' ? (
         <MonthGrid month={month} today={today} sessions={sessions} selected={day} onPick={pickMonthDay} offset={monthOffset} onMonth={changeMonth} />
       ) : (
-        <div className="chips" role="group" aria-label="Wybierz dzień" ref={stripRef}>
-          {days.map((d) => {
-            const date = new Date(`${d}T12:00:00Z`);
-            return (
-              <button key={d} className="day ring" aria-pressed={d === day} onClick={() => setDay(d)}>
-                <svg viewBox="0 0 56 56" aria-hidden="true">
-                  <circle cx="28" cy="28" r="26" pathLength={24} />
-                </svg>
-                {d === today ? 'dziś' : DOW[date.getUTCDay()]}
-                <b>{date.getUTCDate()}</b>
-              </button>
-            );
-          })}
-        </div>
+        <DayStrip today={today} day={day} view={view} onPick={setDay} />
       )}
 
       {/* Błąd przy pierwszym wczytaniu – zamiast spinnera bez końca. */}
@@ -558,116 +466,6 @@ export function SessionCard({ s, fav, onFav, onOpen, reason, day }: { s: Session
       <button type="button" className={`fav-btn${s.photo_url ? ' on-photo' : ''}`} aria-pressed={fav} aria-label={fav ? `Usuń ${s.class_name} z ulubionych` : `Dodaj ${s.class_name} do ulubionych`} onClick={onFav}>
         <Icon name="heart" size={16} />
       </button>
-    </div>
-  );
-}
-
-/** Samo zdjęcie prowadzącej na karcie zajęć (imię dla czytników ekranu i w podpowiedzi). */
-function TrainerFace({ name, url }: { name: string; url: string | null }) {
-  return (
-    <span className="cover-face" title={`prowadzi ${name}`} aria-label={`prowadzi ${name}`} role="img">
-      {url ? <img src={url} alt="" loading="lazy" /> : name.charAt(0)}
-    </span>
-  );
-}
-
-type DayRestKind = 'today-empty' | 'empty' | 'done';
-
-const DAY_REST: Record<DayRestKind, { title: [string, string]; text: string }> = {
-  done: { title: ['Na dziś', 'to wszystko'], text: 'Do zobaczenia na macie.' },
-  'today-empty': { title: ['Dziś studio', 'odpoczywa'], text: 'Czas na regenerację.' },
-  empty: { title: ['Tego dnia', 'odpoczywamy'], text: 'Zajrzyj na inny dzień.' },
-};
-
-/** Plansza pustego dnia: ikonka, krótki nagłówek, jedno zdanie i ciche wyjście do najbliższych zajęć. */
-function DayRest({ kind, next, onNext }: { kind: DayRestKind; next: Session | null; onNext: (day: string) => void }) {
-  const t = DAY_REST[kind];
-  const nextDay = next ? localDate(new Date(next.starts_at)) : null;
-  const when = nextDay === addDaysStr(localDate(), 1) ? 'jutro' : next ? DOW[new Date(`${nextDay}T12:00:00Z`).getUTCDay()] + '.' : '';
-  return (
-    <section className="day-rest" aria-live="polite">
-      <span className="day-rest-icon">
-        <Icon name={kind === 'done' ? 'moon' : 'leaf'} size={20} />
-      </span>
-      <h2>
-        {t.title[0]} <span className="serif">{t.title[1]}</span>
-      </h2>
-      <p>{t.text}</p>
-      {next && nextDay && (
-        <button className="day-rest-next" onClick={() => onNext(nextDay)}>
-          Najbliższe: {when} {fmtTime(next.starts_at)} <Icon name="chevron" size={16} />
-        </button>
-      )}
-    </section>
-  );
-}
-
-const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
-const MONTHS_OF = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'];
-
-/** Pierwszy i ostatni dzień miesiąca (YYYY-MM-DD) – bieżącego albo o `offset` dalej. */
-function monthBounds(today: string, offset: number) {
-  const [y, m] = today.split('-').map(Number);
-  const first = new Date(Date.UTC(y, m - 1 + offset, 1));
-  const last = new Date(Date.UTC(y, m + offset, 0));
-  return { first: first.toISOString().slice(0, 10), last: last.toISOString().slice(0, 10), month: first.getUTCMonth(), year: first.getUTCFullYear() };
-}
-const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
-
-/** Kalendarz jednego miesiąca: tylko jego dni, kropka – są zajęcia, ciemna kropka – Twój zapis. Minione dni wyciszone. */
-function MonthGrid({ month, today, sessions, selected, onPick, offset, onMonth }: { month: ReturnType<typeof monthBounds>; today: string; sessions: Session[]; selected: string; onPick: (d: string) => void; offset: number; onMonth: (o: number) => void }) {
-  const lead = (new Date(`${month.first}T12:00:00Z`).getUTCDay() + 6) % 7;
-  const cells = Array.from({ length: daysBetween(month.first, month.last) + 1 }, (_, i) => addDaysStr(month.first, i));
-  const count = new Map<string, { all: number; mine: number }>();
-  for (const s of sessions) {
-    if (s.status === 'cancelled') continue;
-    const d = localDate(new Date(s.starts_at));
-    const c = count.get(d) ?? { all: 0, mine: 0 };
-    c.all++;
-    if (s.my_status === 'booked' || s.my_status === 'waitlist') c.mine++;
-    count.set(d, c);
-  }
-  return (
-    <div className="month">
-      <div className="month-head">
-        <button type="button" className="month-nav prev" disabled={offset === 0} onClick={() => onMonth(0)} aria-label="Poprzedni miesiąc">
-          <Icon name="chevron" size={18} />
-        </button>
-        <span className="month-name">
-          {MONTHS[month.month]} <span className="muted">{month.year}</span>
-        </span>
-        <button type="button" className="month-nav" disabled={offset === 1} onClick={() => onMonth(1)} aria-label="Następny miesiąc">
-          <Icon name="chevron" size={18} />
-        </button>
-      </div>
-      <div className="month-grid" role="group" aria-label={`${MONTHS[month.month]} ${month.year}`}>
-        {['pn', 'wt', 'śr', 'czw', 'pt', 'sob', 'nd'].map((d) => (
-          <span key={d} className="month-dow" aria-hidden="true">
-            {d}
-          </span>
-        ))}
-        {Array.from({ length: lead }, (_, i) => (
-          <span key={`lead-${i}`} aria-hidden="true" />
-        ))}
-        {cells.map((d) => {
-          const c = count.get(d);
-          const n = Number(d.slice(8));
-          return (
-            <button
-              key={d}
-              type="button"
-              className={d === today ? 'month-cell is-today' : 'month-cell'}
-              disabled={d < today}
-              aria-pressed={d === selected}
-              aria-label={`${n} ${MONTHS_OF[month.month]}, ${c ? classCount(c.all) : 'bez zajęć'}${c?.mine ? ', Twój zapis' : ''}`}
-              onClick={() => onPick(d)}
-            >
-              {n}
-              <i className={c?.mine ? 'mine' : c ? 'has' : ''} aria-hidden="true" />
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
