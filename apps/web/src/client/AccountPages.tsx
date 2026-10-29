@@ -2,11 +2,11 @@
 // prywatność i zgody, biometria, zmiana numeru, kalendarz, integracje, dostępność, eksport i usunięcie danych,
 // skrzynka Wiadomości (rozmowy + powiadomienia), czat z recepcją, pomoc (FAQ, regulamin, telefon), kod QR do wejścia.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { CLASS_REMINDER_OPTIONS, classReminderOffsets, cleanFit, receptionSlots, WEEKDAY_LONG, type LiveCheckin } from '@glam/core';
+import { CLASS_REMINDER_OPTIONS, classReminderOffsets, cleanFit, liveShortCode, receptionSlots, WEEKDAY_LONG, type LiveCheckin } from '@glam/core';
 import { api, fmtDay, fmtTime, session, useApi } from '../api.ts';
 import { getAppearance, setAppearance, type Appearance } from '../look.ts';
 import { disablePush, enablePush, passkeySupported, pushEnabled, pushSupported, registerPasskey } from '../push.ts';
-import { AuthVideo, Empty, Field, ListRow, LiveCheckinQr, Pending, Toggle, useAction, useToast } from '../ui.tsx';
+import { AuthVideo, Empty, Field, ListRow, LiveCheckinQr, Pending, Toggle, useAction, useConfirm, useToast } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 import { ThreadRow, type ThreadItem } from '../groupChat.tsx';
 import { ClassFitSheet, fitShort } from './ClassFitQuestions.tsx';
@@ -200,7 +200,7 @@ function ThisDevice() {
       {on ? (
         <div className="row between">
           <span className="small">Włączone</span>
-          <button className="link small" onClick={async () => (await disablePush().catch(() => false), setOn(false), toast('Wyłączone na tym telefonie'))}>
+          <button className="text-btn small" onClick={async () => (await disablePush().catch(() => false), setOn(false), toast('Wyłączone na tym telefonie'))}>
             Wyłącz
           </button>
         </div>
@@ -332,14 +332,22 @@ function Privacy({ close }: { close: () => void }) {
   const has = (kind: string, studioId = '') => !!consents.data?.find((c) => c.kind === kind && c.studio_id === studioId)?.granted;
   const set = (kind: string, granted: boolean, studioId?: string) =>
     run(async () => {
-      if (!granted && (kind === 'health' || kind === 'cycle') && !confirm2(kind)) return;
+      if (!granted && (kind === 'health' || kind === 'cycle') && !(await confirm2(kind))) return;
       await api('/me/consents', { method: 'PUT', global: true, body: { kind, granted, studioId } });
       consents.reload();
     }, granted ? 'Zgoda zapisana' : 'Zgoda wycofana');
-  const confirm2 = (kind: string) => window.confirm(kind === 'health' ? 'Wycofanie zgody usunie Twój dziennik, ankietę zdrowia i pomiary. Kontynuować?' : 'Wycofanie zgody usunie dane cyklu. Kontynuować?');
+  const ask = useConfirm();
+  const confirm2 = (kind: string) =>
+    ask.confirm({
+      title: 'Wycofać zgodę?',
+      body: kind === 'health' ? 'Usuniemy Twój dziennik, ankietę zdrowia i pomiary. Tego nie da się cofnąć.' : 'Usuniemy dane cyklu. Tego nie da się cofnąć.',
+      ok: 'Wycofaj i usuń',
+      danger: true,
+    });
   const vis = me.user.prefs.visibility ?? 'studio';
   return (
     <div className="stack-lg">
+      {ask.dialog}
       <section className="stack">
         <div className="eyebrow">Widoczność w społeczności</div>
         <div className="segmented" role="group" aria-label="Widoczność profilu">
@@ -726,8 +734,28 @@ function Faq() {
   );
 }
 
+/** Kod z 6 liter pod QR, dwie trójki. key={code}: nowe litery wchodzą miękko przy każdej zmianie. Miejsce zarezerwowane od początku. */
+function ShortCode({ code }: { code: string | null }) {
+  return (
+    <div className="pass-short">
+      <span key={code ?? ''} className="pass-short-code">
+        {code ? (
+          <>
+            {code.slice(0, 3)}
+            <i aria-hidden="true">·</i>
+            {code.slice(3)}
+          </>
+        ) : (
+          ' '
+        )}
+      </span>
+      <span className="pass-short-label">kod, gdy QR nie działa</span>
+    </div>
+  );
+}
+
 function Checkin() {
-  const { data, error, reload } = useApi<LiveCheckin & { short: string }>('/my/checkin-code');
+  const { data, error, reload } = useApi<LiveCheckin>('/my/checkin-code');
   useEffect(() => {
     const t = setInterval(reload, 60 * 60_000);
     return () => clearInterval(t);
@@ -754,22 +782,15 @@ function Checkin() {
     <div className="pass-view">
       <p className="pass-lead">Pokaż ten kod w recepcji.</p>
       <div ref={tile} className="pass-tile">
-        {data ? <LiveCheckinQr checkin={data} size={210} label="Kod wejścia" /> : <div className="qr" style={{ width: 210, height: 210 }} />}
-        {/* Gdy QR się nie czyta: 6 liter do podania na głos albo wpisania w recepcji. Miejsce zarezerwowane od początku. */}
-        <div className="pass-short">
-          <span className="pass-short-code">
-            {data ? (
-              <>
-                {data.short.slice(0, 3)}
-                <i aria-hidden="true">·</i>
-                {data.short.slice(3)}
-              </>
-            ) : (
-              ' '
-            )}
-          </span>
-          <span className="pass-short-label">kod, gdy QR nie działa</span>
-        </div>
+        {/* Gdy QR się nie czyta: 6 liter do podania na głos albo wpisania w recepcji – zmieniają się co minutę razem z QR. */}
+        {data ? (
+          <LiveCheckinQr checkin={data} size={210} label="Kod wejścia" below={(step) => <ShortCode code={liveShortCode(data, step)} />} />
+        ) : (
+          <>
+            <div className="qr" style={{ width: 210, height: 210 }} />
+            <ShortCode code={null} />
+          </>
+        )}
       </div>
       {/* Bez zasięgu w recepcji i bez kodu zapisanego dziś w telefonie: mówimy, co zrobić, zamiast pustego kafelka. */}
       {!data && error ? (
@@ -781,7 +802,7 @@ function Checkin() {
           .
         </p>
       ) : (
-        <p className="pass-note">Kod zmienia się co 30 sekund, więc zrzut ekranu nie zadziała – otwieraj go w aplikacji.</p>
+        <p className="pass-note">Kod zmienia się co minutę, więc zrzut ekranu nie zadziała – otwieraj go w aplikacji.</p>
       )}
     </div>
   );

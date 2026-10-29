@@ -6,10 +6,11 @@ import { Lazy } from '../ui.tsx';
 
 const Messages = lazy(() => import('../staff/Messages.tsx'));
 
-export function ReceptionMessages({ roles }: { roles: string[] }) {
+export function ReceptionMessages({ roles, initial }: { roles: string[]; initial?: 'inbox' }) {
   return (
     <Lazy>
-      <Messages roles={roles as Role[]} />
+      {/* Mailing zostaje w panelu na komputerze – w telefonie na ladzie jest zbędny. */}
+      <Messages roles={roles as Role[]} without={['mailing']} initial={initial} />
     </Lazy>
   );
 }

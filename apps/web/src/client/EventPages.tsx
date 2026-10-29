@@ -3,7 +3,7 @@
 // notatką dla trenerki, zmianą godziny, odwołaniem i zaproszeniami dla gości (link, QR, RSVP).
 import { useState } from 'react';
 import { api, fmtDay, goToCheckout, fmtLongDay, fmtTime, localDate, useApi } from '../api.ts';
-import { Avatar, Empty, Field, availableMethods, PAYMENT_LABELS, Pending, QrCode, Spinner, Toggle, useAction, useToast } from '../ui.tsx';
+import { Avatar, Empty, Field, availableMethods, PAYMENT_LABELS, Pending, QrCode, Spinner, Toggle, useAction, useConfirm, useToast } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
 import type { RouteProps } from './router.tsx';
 
@@ -259,6 +259,7 @@ function EventDetail({ id }: { id: string }) {
   const [method, setMethod] = useState('blik');
   const [note, setNote] = useState<string | null>(null);
   const { run, busy } = useAction();
+  const ask = useConfirm();
   const toast = useToast();
   if (!data) return <Pending error={error} reload={reload} />;
   const act = (body: object, msg?: string) => run(() => api<{ checkoutUrl?: string }>(`/events/${id}/client`, { method: 'POST', body }).then((r) => (goToCheckout(r) || reload(), r)), msg);
@@ -335,10 +336,11 @@ function EventDetail({ id }: { id: string }) {
         ))}
       </section>
       {data.canCancel && (
-        <button className="btn danger" onClick={() => window.confirm('Odwołać wydarzenie?') && act({ action: 'cancel' })}>
+        <button className="btn danger" onClick={async () => (await ask.confirm({ title: 'Odwołać wydarzenie?', body: 'Studio dostanie informację, że rezygnujesz.', ok: 'Odwołaj', danger: true })) && act({ action: 'cancel' })}>
           Odwołaj wydarzenie
         </button>
       )}
+      {ask.dialog}
     </div>
   );
 }

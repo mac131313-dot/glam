@@ -1,14 +1,14 @@
-// Grafik recepcji: ten sam grafik co u klientki (pasek dni, Dzień / Tydzień, kafelki ze zdjęciem,
-// plansza pustego dnia, przelot zdjęcia do arkusza) – wspólne kawałki są w client/ScheduleParts.tsx. Z oczu studia:
+// Grafik recepcji: ten sam grafik co u klientki (pasek dni, Dzień / Tydzień), ale zajęcia jako zwarta lista zajętości,
+// plansza pustego dnia – wspólne kawałki są w client/ScheduleParts.tsx. Z oczu studia:
 // wszystkie zajęcia (także niepubliczne), zajętość i lista oczekujących, a arkusz to lista uczestniczek z check-inem (dziś).
 // Dzisiejsze zajęcia zostają na kafelkach także po ich rozpoczęciu – recepcja zapisuje wejścia.
 // Miesiąc to lista wszystkich dni z zajęciami jako zwijane sekcje (zamiast kalendarza) – kafelki powstają po rozwinięciu.
 import { useRef, useState, type ReactNode } from 'react';
 import { plural } from '@glam/core';
 import { addDaysStr, api, fmtLongDay, fmtMinutes, fmtTime, localDate, useApi } from '../api.ts';
-import { ClassCover } from '../client/ClassCover.tsx';
-import { classCount, DayRest, DayStrip, MonthHead, TrainerFace, useMorphSheet, useScheduleView, ViewSwitch, type DayRestKind } from '../client/ScheduleParts.tsx';
-import { Avatar, Empty, Fold, Sheet, Spinner, useAction } from '../ui.tsx';
+import { classCount, DayRest, DayStrip, MonthHead, useMorphSheet, useScheduleView, ViewSwitch, type DayRestKind } from '../client/ScheduleParts.tsx';
+import { AddParticipant } from '../staff/Today.tsx';
+import { Avatar, Empty, Fold, Sheet, Spinner, UNDO_MS, useAction, useToast } from '../ui.tsx';
 
 type Session = {
   id: string;
@@ -53,10 +53,11 @@ export function ReceptionSchedule() {
     if (last?.date === dateOf(s)) last.items.push(s);
     else weekDays.push({ date: dateOf(s), items: [s] });
   }
+  // Recepcja patrzy na zajętość, nie na zdjęcia: zwarta lista – na ekranie mieści się cały dzień.
   const grid = (items: Session[]) => (
-    <div className="session-grid">
+    <div className="rs-list">
       {items.map((s) => (
-        <SessionTile key={s.id} s={s} onOpen={(el) => openFromTile(s, el)} />
+        <SessionRow key={s.id} s={s} onOpen={(el) => openFromTile(s, el)} />
       ))}
     </div>
   );
@@ -118,49 +119,112 @@ export function ReceptionSchedule() {
   );
 }
 
-/** Kafelek jak u klientki; w stopce zajętość zamiast wolnych miejsc. */
-function SessionTile({ s, onOpen }: { s: Session; onOpen: (tile: HTMLElement) => void }) {
+/** Wiersz zajęć: godzina i czas trwania, nazwa, kto prowadzi i gdzie, zajętość z paskiem. Zakończone i odwołane przygaszone. */
+function SessionRow({ s, onOpen }: { s: Session; onOpen: (row: HTMLElement) => void }) {
   const past = Date.parse(s.ends_at) < Date.now();
+  const cancelled = s.status === 'cancelled';
   const full = s.taken >= s.capacity;
+  const minutes = Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000);
+  const badge = cancelled ? 'odwołane' : !s.public ? 'niepubliczne' : s.kind === 'themed' ? 'tematyczne' : s.kind === 'special' ? 'specjalne' : null;
   return (
-    <ClassCover
-      compact
-      photoUrl={s.photo_url}
-      onClick={(e) => onOpen(e.currentTarget)}
-      dimmed={past || s.status === 'cancelled'}
-      eyebrow={`${fmtTime(s.starts_at)} · ${Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60000)} min`}
-      title={s.class_name}
-      aside={<TrainerFace name={s.trainer_name} url={s.trainer_avatar_url} />}
-      corner={
-        s.status === 'cancelled' ? (
-          <span className="badge">odwołane</span>
-        ) : !s.public ? (
-          <span className="badge">niepubliczne</span>
-        ) : s.kind === 'themed' || s.kind === 'special' ? (
-          <span className="badge">{s.kind === 'themed' ? 'tematyczne' : 'specjalne'}</span>
-        ) : null
-      }
-      footer={s.status === 'cancelled' ? null : full ? (s.waiting > 0 ? `Komplet · ${s.waiting} na liście` : 'Komplet') : `${s.taken} z ${s.capacity} zapisanych`}
-    />
+    <button className={`rs-row${past || cancelled ? ' is-done' : ''}`} onClick={(e) => onOpen(e.currentTarget)}>
+      <span className="rs-time">
+        {fmtTime(s.starts_at)}
+        <span>{minutes} min</span>
+      </span>
+      <span className="rs-main">
+        <span className="rs-name">
+          {s.class_name}
+          {badge && <span className="badge">{badge}</span>}
+        </span>
+        <span className="rs-meta">
+          {s.trainer_name} · {s.zone_name}
+        </span>
+      </span>
+      {!cancelled && (
+        <span className={`rs-count${full ? ' is-full' : ''}`}>
+          {s.taken}/{s.capacity}
+          <span className="rs-bar" aria-hidden>
+            <i style={{ transform: `scaleX(${Math.min(1, s.taken / Math.max(1, s.capacity))})` }} />
+          </span>
+          {s.waiting > 0 && <span>+{s.waiting} czeka</span>}
+        </span>
+      )}
+    </button>
   );
 }
 
-/** Arkusz zajęć: kto jest zapisany, kto czeka, check-in w dniu zajęć. Nagłówek i animacje jak u klientki. */
-function SessionSheet({ s, morph, onClose, onChanged }: { s: Session; morph: boolean; onClose: () => void; onChanged: () => unknown }) {
+/** Zajęcia w arkuszu – wystarczy to, co mają i Grafik, i Start recepcji (zdjęcie i zajętość są opcjonalne). */
+export type SheetSession = Pick<Session, 'id' | 'starts_at' | 'ends_at' | 'class_name' | 'trainer_name' | 'zone_name' | 'capacity' | 'status'> & { photo_url?: string | null; taken?: number };
+
+type Mark = 'attended' | 'no_show';
+/**
+ * Obecność i nieobecność zapisują się dopiero po czasie na cofnięcie (UNDO_MS) – do tego czasu widać je od razu,
+ * a „Cofnij” w komunikacie po prostu nic nie wysyła. Serwer nie musi umieć odkręcać punktów lojalnościowych.
+ * Odliczanie żyje poza arkuszem: zamknięcie arkusza nie gubi zapisu, a cofnąć można także po zamknięciu.
+ */
+const pendingMarks = new Map<string, { kind: Mark; timer: number; send: () => void }>();
+const flushMarks = () => {
+  for (const [id, m] of pendingMarks) {
+    window.clearTimeout(m.timer);
+    pendingMarks.delete(id);
+    m.send();
+  }
+};
+// Aplikacja chowana albo zamykana – zapisujemy od razu, żeby obecność nie przepadła.
+if (typeof window !== 'undefined') window.addEventListener('pagehide', flushMarks);
+
+/** Arkusz zajęć: kto jest zapisany, kto czeka; obecność, nieobecność, wypisanie i dopisanie osoby. Nagłówek i animacje jak u klientki. */
+export function SessionSheet({ s, morph, onClose, onChanged }: { s: SheetSession; morph: boolean; onClose: () => void; onChanged: () => unknown }) {
   const date = localDate(new Date(s.starts_at));
   const { data, reload } = useApi<Day>(`/staff/day?date=${date}`, [date]);
   const { run, busy } = useAction();
+  const toast = useToast();
+  const [marks, setMarks] = useState<Record<string, Mark>>(() => Object.fromEntries([...pendingMarks].map(([id, m]) => [id, m.kind])));
+  const [adding, setAdding] = useState(false);
+  const [confirmDrop, setConfirmDrop] = useState<string | null>(null);
+  const refresh = useRef(() => Promise.all([reload(), onChanged()]));
+  refresh.current = () => Promise.all([reload(), onChanged()]);
   const people = data?.sessions.find((x) => x.id === s.id)?.participants ?? null;
   const booked = people?.filter((p) => p.status !== 'waitlist') ?? [];
   const waiting = people?.filter((p) => p.status === 'waitlist') ?? [];
   const isToday = date === localDate();
-  const checkIn = (p: Participant) =>
-    run(
-      () => api(`/staff/bookings/${p.booking_id}/checkin`, { method: 'POST' }).then(() => Promise.all([reload(), onChanged()])),
-      `${p.name} – obecna ✓`,
-    );
+  const open = s.status !== 'cancelled';
+  const ended = Date.parse(s.ends_at) <= Date.now();
+  const taken = people ? booked.length : s.taken ?? 0;
+
+  const mark = (p: Participant, kind: Mark) => {
+    const drop = () => setMarks(({ [p.booking_id]: _, ...rest }) => rest);
+    const send = () =>
+      api(`/staff/bookings/${p.booking_id}/${kind === 'attended' ? 'checkin' : 'no-show'}`, { method: 'POST' })
+        .then(() => refresh.current())
+        .catch((e: Error) => (drop(), toast(e.message || 'Nie udało się zapisać.', 'error')));
+    setMarks((m) => ({ ...m, [p.booking_id]: kind }));
+    const timer = window.setTimeout(() => {
+      pendingMarks.delete(p.booking_id);
+      send();
+    }, UNDO_MS);
+    pendingMarks.set(p.booking_id, { kind, timer, send });
+    toast(`${p.name} – ${kind === 'attended' ? 'obecna' : 'nieobecna'}`, 'ok', {
+      label: 'Cofnij',
+      run: () => {
+        const m = pendingMarks.get(p.booking_id);
+        if (!m) return;
+        window.clearTimeout(m.timer);
+        pendingMarks.delete(p.booking_id);
+        drop();
+      },
+    });
+  };
+  // Wypisanie oddaje wejście i powiadamia klientkę – drugie stuknięcie w ten sam przycisk potwierdza (bez okna, które blokuje ekran).
+  const remove = (p: Participant) => {
+    if (confirmDrop !== p.booking_id) return setConfirmDrop(p.booking_id);
+    setConfirmDrop(null);
+    run(() => api(`/staff/bookings/${p.booking_id}`, { method: 'DELETE' }).then(() => refresh.current()), `${p.name} wypisana z zajęć`);
+  };
 
   return (
+    <>
     <Sheet onClose={onClose} label={s.class_name} className={morph ? 'class-sheet morph' : 'class-sheet'}>
       <div className="stack">
         {/* Ze zdjęciem: zdjęcie na całą szerokość arkusza, data i nazwa leżą na nim. Bez zdjęcia – zwykły nagłówek. */}
@@ -185,7 +249,7 @@ function SessionSheet({ s, morph, onClose, onChanged }: { s: Session; morph: boo
           </>
         )}
         <div className="meta-line">
-          {[s.trainer_name, s.zone_name, fmtMinutes(Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60_000)), s.status === 'cancelled' ? 'odwołane' : `${s.taken} / ${s.capacity}`].map((x) => (
+          {[s.trainer_name, s.zone_name, fmtMinutes(Math.round((Date.parse(s.ends_at) - Date.parse(s.starts_at)) / 60_000)), s.status === 'cancelled' ? 'odwołane' : `${taken} / ${s.capacity}`].map((x) => (
             <span key={x}>{x}</span>
           ))}
         </div>
@@ -195,47 +259,71 @@ function SessionSheet({ s, morph, onClose, onChanged }: { s: Session; morph: boo
         {booked.length > 0 && (
           <section className="stack gap-2">
             <div className="eyebrow" style={{ margin: 0 }}>Zapisane</div>
-            {booked.map((p) => (
-              <PersonRow key={p.booking_id} p={p}>
-                {p.status === 'attended' ? (
-                  <span className="badge ok">obecna</span>
-                ) : p.status === 'no_show' ? (
-                  <span className="badge">nieobecna</span>
-                ) : isToday && s.status !== 'cancelled' ? (
-                  <button className="btn sm" disabled={busy} onClick={() => checkIn(p)}>
-                    Zapisz wejście
-                  </button>
-                ) : null}
-              </PersonRow>
-            ))}
+            {booked.map((p) => {
+              const status: string = marks[p.booking_id] ?? p.status;
+              const undecided = status === 'booked';
+              return (
+                <PersonRow key={p.booking_id} p={p} badge={status === 'attended' ? <span className="badge ok">obecna</span> : status === 'no_show' ? <span className="badge">nieobecna</span> : null}>
+                  {undecided && open && (
+                    <div className="person-actions">
+                      {isToday && (
+                        <>
+                          <button className="btn sm" disabled={busy} onClick={() => mark(p, 'attended')}>
+                            Obecna
+                          </button>
+                          <button className="btn ghost sm" disabled={busy} onClick={() => mark(p, 'no_show')}>
+                            Nie przyszła
+                          </button>
+                        </>
+                      )}
+                      {!ended && (
+                        <button className="btn danger sm" disabled={busy} onClick={() => remove(p)} onBlur={() => setConfirmDrop(null)}>
+                          {confirmDrop === p.booking_id ? 'Na pewno wypisać?' : 'Wypisz'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </PersonRow>
+              );
+            })}
           </section>
         )}
         {waiting.length > 0 && (
           <section className="stack gap-2">
             <div className="eyebrow" style={{ margin: 0 }}>Lista oczekujących</div>
             {waiting.map((p, i) => (
-              <PersonRow key={p.booking_id} p={p}>
-                <span className="badge warn">{i + 1}.</span>
-              </PersonRow>
+              <PersonRow key={p.booking_id} p={p} badge={<span className="badge warn">{i + 1}.</span>} />
             ))}
           </section>
         )}
+        {/* Osoba bez zapisu przy ladzie – dopisanie od razu z arkusza (karnet albo płatność na miejscu). */}
+        {open && !ended && (
+          <button className="btn ghost block" onClick={() => setAdding(true)}>
+            Dopisz osobę
+          </button>
+        )}
       </div>
     </Sheet>
+    {/* Obok arkusza, nie w nim: przesuwany arkusz (transform) zamknąłby w sobie okno z position: fixed. */}
+    {adding && <AddParticipant session={s} onClose={() => setAdding(false)} onDone={() => refresh.current()} />}
+    </>
   );
 }
 
-function PersonRow({ p, children }: { p: Participant; children: ReactNode }) {
+function PersonRow({ p, badge, children }: { p: Participant; badge?: ReactNode; children?: ReactNode }) {
   const health = p.health && [p.health.pregnancy && 'ciąża', p.health.limitations, p.health.injuries].filter(Boolean).join(' · ');
   return (
-    <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
-      <Avatar name={p.name} size="sm" />
-      <div className="grow" style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 600 }}>{p.name}</div>
-        <div className="tiny muted">
-          {p.visits === 0 && !p.guest_name ? 'pierwszy raz' : `${p.visits} ${plural(p.visits, 'wizyta', 'wizyty', 'wizyt')}`}
-          {health && <span style={{ color: 'var(--brand-strong)' }}> · ⚑ {health}</span>}
+    <div className="person-row">
+      <div className="row">
+        <Avatar name={p.name} size="sm" />
+        <div className="grow" style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>{p.name}</div>
+          <div className="tiny muted">
+            {p.visits === 0 && !p.guest_name ? 'pierwszy raz' : `${p.visits} ${plural(p.visits, 'wizyta', 'wizyty', 'wizyt')}`}
+            {health && <span style={{ color: 'var(--brand-strong)' }}> · ⚑ {health}</span>}
+          </div>
         </div>
+        {badge}
       </div>
       {children}
     </div>

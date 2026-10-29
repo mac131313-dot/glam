@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react';
 import { goalCount, goalExtra, plural, rewardCounterCopy, type ClassFit, type LiveCheckin } from '@glam/core';
 import { api, ApiError, fmtDay, fmtTime, useApi } from '../api.ts';
-import { Icon } from '../icons.tsx';
-import { Empty, ListRow, LiveCheckinQr, Progress, Pending, Sheet, rememberOrigin, useAction, useToast } from '../ui.tsx';
+import { Icon, type IconName } from '../icons.tsx';
+import { LiveCheckinQr, MoreLink, Progress, Pending, Sheet, rememberOrigin, useAction, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { PassMeter, type Meter } from './PassMeter.tsx';
@@ -109,10 +109,10 @@ export function Start() {
           <Icon name="pass" size={22} />
         </button>
         <p className="eyebrow">{new Intl.DateTimeFormat('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}</p>
-        <h1 style={{ fontSize: '2.4rem', lineHeight: 1.05 }}>
-          {hello},
-          <br />
-          <span className="serif" style={{ fontSize: '2.9rem' }}>
+        <h1 className="hello">
+          {/* Jedna linijka „Cześć, Julia”; dłuższe imię schodzi w całości do następnej (inline-block nie łamie się w środku). */}
+          {hello},{' '}
+          <span className="hello-name">
             {me.user.name ?? 'miło Cię widzieć'}
           </span>
         </h1>
@@ -140,7 +140,10 @@ export function Start() {
       )}
 
       <section className="stack gap-3">
-        <div className="eyebrow" style={{ margin: 0 }}>Najbliższe zajęcia</div>
+        <div className="sec-head">
+          <div className="eyebrow">Najbliższe zajęcia</div>
+          {next && <MoreLink label={home.upcoming.length > 1 ? `Grafik · +${home.upcoming.length - 1}` : 'Grafik'} onClick={() => go('schedule')} />}
+        </div>
         {next ? (
           <ClassCover
             bleed
@@ -155,38 +158,32 @@ export function Start() {
         ) : (
           <ForYouNext />
         )}
-        <div className="row between">
-          <span className="muted small">{home.upcoming.length > 1 ? `i jeszcze ${home.upcoming.length - 1} w planie` : ''}</span>
-          <button className="link small" onClick={() => go('schedule')}>
-            {next ? 'Zobacz grafik' : 'Zarezerwuj zajęcia'}
-          </button>
-        </div>
         {ticket && <ClassTicket item={ticket} onClose={() => setTicket(null)} />}
       </section>
 
-      <section className="card soft stack">
-        <div className="row between">
-          <div className="eyebrow" style={{ margin: 0 }}>Mój karnet</div>
-          {home.passes.length > 0 && (
-            <button className="link small" onClick={() => open('passes')}>
-              Szczegóły
-            </button>
-          )}
+      <section className="stack gap-3">
+        <div className="sec-head">
+          <div className="eyebrow">Mój karnet</div>
+          {home.passes.length > 0 && <MoreLink label="Szczegóły" onClick={() => open('passes')} />}
         </div>
         {home.passes.length === 0 ? (
-          <>
-            <p style={{ margin: 0 }}>Nie masz aktywnego karnetu.</p>
-            <button className="btn" onClick={() => openShop()}>
-              Kup karnet
-            </button>
-          </>
+          <button className="nudge" onClick={() => openShop()}>
+            <span className="nudge-icon">
+              <Icon name="pass" size={20} />
+            </span>
+            <span className="grow">
+              <span className="nudge-title">Nie masz aktywnego karnetu</span>
+              <span className="small muted">Wybierz karnet i zapisuj się na zajęcia</span>
+            </span>
+            <Icon name="chevron" size={18} />
+          </button>
         ) : (
           home.passes.map((p) => (
-            <div key={p.id} className="stack gap-2">
+            <div key={p.id} className={`home-pass${p.expiringSoon ? ' is-expiring' : ''}`}>
               <PassMeter name={p.productName} summary={p.summary} meter={p.meter} />
               {p.expiringSoon && (
-                <div className="row between">
-                  <span className="small muted">Ostatni tydzień ważności</span>
+                <div className="home-pass-alert">
+                  <span>Ostatni tydzień ważności</span>
                   <button className="btn sm" onClick={() => openShop('Przedłuż karnet, żeby nie stracić rytmu.')}>
                     Przedłuż
                   </button>
@@ -197,16 +194,15 @@ export function Start() {
         )}
       </section>
 
-      <section className="stack gap-2">
-        <div className="row between">
-          <div className="eyebrow" style={{ margin: 0 }}>Cel tygodnia</div>
-          <button className="link small" onClick={() => open('goal')}>
-            {goalCount(home.week.done.trainings, home.week.goal.trainings)} {plural(home.week.goal.trainings, 'trening', 'treningi', 'treningów')}
-            {goalExtra(home.week.done.trainings, home.week.goal.trainings)} · {goalCount(home.week.done.mindful, home.week.goal.mindful)} {plural(home.week.goal.mindful, 'chwila', 'chwile', 'chwil')}
-            {goalExtra(home.week.done.mindful, home.week.goal.mindful)}
-          </button>
+      <section className="stack gap-3">
+        <div className="sec-head">
+          <div className="eyebrow">Cel tygodnia</div>
+          <MoreLink label="Szczegóły" onClick={() => open('goal')} />
         </div>
-        <Progress value={Math.min(home.week.done.trainings, home.week.goal.trainings) + Math.min(home.week.done.mindful, home.week.goal.mindful)} max={Math.max(1, home.week.goal.trainings + home.week.goal.mindful)} label="Postęp celu tygodnia" />
+        <div className="goal-grid">
+          <GoalStat label={plural(home.week.goal.trainings, 'trening', 'treningi', 'treningów')} done={home.week.done.trainings} goal={home.week.goal.trainings} />
+          <GoalStat label={plural(home.week.goal.mindful, 'chwila dla siebie', 'chwile dla siebie', 'chwil dla siebie')} done={home.week.done.mindful} goal={home.week.goal.mindful} />
+        </div>
         <p className="small muted" style={{ margin: 0 }}>{home.week.message}</p>
       </section>
 
@@ -220,31 +216,29 @@ export function Start() {
       )}
 
       {(home.nps || home.survey || home.invites > 0 || home.quizDue || home.challenge) && (
-        <section className="list-rows">
-          {home.survey && <ListRow title="Dawno Cię nie widziałyśmy" hint="Co się stało? Jedno kliknięcie – bez presji." onClick={() => open(`survey/${home.survey!.id}`)} />}
-          {home.nps && <ListRow title="Jak Ci u nas?" hint="Dwa kliknięcia, a bardzo nam pomogą." onClick={() => open(`nps/${home.nps!.id}`)} />}
-          {home.invites > 0 && <ListRow title="Masz zaproszenie na wspólny trening" onClick={() => open('invites')} />}
-          {home.challenge && <ListRow title={`Wyzwanie: ${home.challenge!.title}`} hint="Dołącz, w swoim tempie" onClick={() => open(`challenges/${home.challenge!.id}`)} />}
-          {home.quizDue && <ListRow title="Mój styl dnia" hint="5 pytań, żeby lepiej dopasować przypomnienia" onClick={() => open('quiz')} />}
+        <section className="stack gap-2">
+          <div className="eyebrow">Dla Ciebie</div>
+          <div className="nudges">
+            {home.survey && <Nudge icon="heart" title="Dawno Cię nie widziałyśmy" hint="Co się stało? Jedno kliknięcie – bez presji." onClick={() => open(`survey/${home.survey!.id}`)} />}
+            {home.nps && <Nudge icon="star" title="Jak Ci u nas?" hint="Dwa kliknięcia, a bardzo nam pomogą." onClick={() => open(`nps/${home.nps!.id}`)} />}
+            {home.invites > 0 && <Nudge icon="people" title="Masz zaproszenie na wspólny trening" onClick={() => open('invites')} />}
+            {home.challenge && <Nudge icon="flag" title={`Wyzwanie: ${home.challenge!.title}`} hint="Dołącz, w swoim tempie" onClick={() => open(`challenges/${home.challenge!.id}`)} />}
+            {home.quizDue && <Nudge icon="sun" title="Mój styl dnia" hint="5 pytań, żeby lepiej dopasować przypomnienia" onClick={() => open('quiz')} />}
+          </div>
         </section>
       )}
 
-      <hr className="hairline" />
-
-      <section className="center" style={{ padding: '6px 8px' }}>
+      <section className="ritual">
+        <span className="ritual-glow" aria-hidden />
         <div className="eyebrow">Rytuał dnia</div>
-        <p className="serif" style={{ fontSize: 'var(--text-2xl)', lineHeight: 1.3, margin: 0 }}>
-          {ritual}
-        </p>
+        <p className="ritual-text">{ritual}</p>
       </section>
 
-      <hr className="hairline" />
-
       {/* Na dole tylko skróty do rzeczy dla siebie. Pomoc i telefon do studia są w Profilu → Pomoc, rozmowy w Razem → Wiadomości. */}
-      <div className="list-rows">
-        <ListRow title="Trzy minuty oddechu" hint="Rytm 4–6, prowadzi aplikacja" onClick={() => openBreath({ patternId: 'calm', minutes: 3 })} />
-        {hasFeature(studio, 'shop') && <ListRow title="Sklep studia" hint="Maty, akcesoria i stroje do domu" onClick={() => open('shop')} />}
-        {home.eventsEnabled && <ListRow title="Zorganizuj wydarzenie w studiu" hint="Urodziny, babski wieczór, trening w prezencie" onClick={() => open('event-new')} />}
+      <div className="quick-tiles">
+        <QuickTile icon="wave" title="Trzy minuty oddechu" hint="Rytm 4–6" onClick={() => openBreath({ patternId: 'calm', minutes: 3 })} />
+        {hasFeature(studio, 'shop') && <QuickTile icon="bag" title="Sklep studia" hint="Maty i akcesoria" onClick={() => open('shop')} />}
+        {home.eventsEnabled && <QuickTile icon="sparkle" title="Wydarzenie w studiu" hint="Urodziny, babski wieczór" onClick={() => open('event-new')} />}
       </div>
 
       {home.welcome && !popupDismissed && (
@@ -261,6 +255,50 @@ export function Start() {
         />
       )}
     </div>
+  );
+}
+
+/** Podpowiedź na Starcie (ankieta, wyzwanie, quiz…): kafelek z ikoną, żeby nie ginęła wśród zwykłych wierszy. */
+function Nudge({ icon, title, hint, onClick }: { icon: IconName; title: string; hint?: string; onClick: () => void }) {
+  return (
+    <button className="nudge" onClick={onClick}>
+      <span className="nudge-icon">
+        <Icon name={icon} size={20} />
+      </span>
+      <span className="grow">
+        <span className="nudge-title">{title}</span>
+        {hint && <span className="small muted">{hint}</span>}
+      </span>
+      <Icon name="chevron" size={18} />
+    </button>
+  );
+}
+
+
+/** Jedna połowa celu tygodnia: duże „2/3”, podpis i własny pasek. Nadwyżka ponad cel jako „+1”. */
+function GoalStat({ label, done, goal }: { label: string; done: number; goal: number }) {
+  return (
+    <div className={`goal-stat${goal > 0 && done >= goal ? ' is-done' : ''}`}>
+      <div className="goal-stat-value">
+        {goalCount(done, goal)}
+        {goalExtra(done, goal) && <span className="goal-stat-extra">{goalExtra(done, goal)}</span>}
+      </div>
+      <div className="small muted">{label}</div>
+      <Progress value={Math.min(done, goal)} max={Math.max(1, goal)} label={`Cel tygodnia: ${label}`} />
+    </div>
+  );
+}
+
+/** Skrót na dole Startu: ikona i krótki podpis, po dwa w rzędzie. */
+function QuickTile({ icon, title, hint, onClick }: { icon: IconName; title: string; hint: string; onClick: () => void }) {
+  return (
+    <button className="quick-tile" onClick={onClick}>
+      <span className="nudge-icon">
+        <Icon name={icon} size={20} />
+      </span>
+      <span className="nudge-title">{title}</span>
+      <span className="tiny muted">{hint}</span>
+    </button>
   );
 }
 
@@ -296,9 +334,16 @@ function ForYouNext() {
 
   if (!picks.length)
     return (
-      <div className="card stack">
-        <Empty icon="">Nic jeszcze nie zaplanowałaś.</Empty>
-      </div>
+      <button className="nudge" onClick={() => go('schedule')}>
+        <span className="nudge-icon">
+          <Icon name="calendar" size={20} />
+        </span>
+        <span className="grow">
+          <span className="nudge-title">Nic jeszcze nie zaplanowałaś</span>
+          <span className="small muted">Zarezerwuj zajęcia w grafiku</span>
+        </span>
+        <Icon name="chevron" size={18} />
+      </button>
     );
 
   const toggleFav = async (s: Session) => {
@@ -325,6 +370,10 @@ function ForYouNext() {
         {picks.map(({ s, reason }) => (
           <SessionCard key={s.id} s={s} fav={favorites.includes(s.class_type_id)} onFav={() => toggleFav(s)} onOpen={() => book(s)} reason={reason} day />
         ))}
+      </div>
+      <div className="sec-head">
+        <span />
+        <MoreLink label="Cały grafik" onClick={() => go('schedule')} />
       </div>
     </div>
   );

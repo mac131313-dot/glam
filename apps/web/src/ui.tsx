@@ -1,14 +1,18 @@
 import { SURFACE, useAuthedUrl } from './api.ts';
 import { useLayer } from './back.ts';
-import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnimationEvent, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnimationEvent, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
 import { project, rubberband, Spring, SPRING_FLICK, SPRING_SMOOTH, SPRING_SNAPPY, VelocityTracker } from './spring.ts';
 import { createPortal } from 'react-dom';
 import { CHECKIN_STEP_MS, checkinStep, liveCheckinCode, type LiveCheckin } from '@glam/core';
 
-type Toast = { text: string; kind: 'ok' | 'error'; leaving?: boolean } | null;
+/** Akcja w komunikacie, np. „Cofnij” – pomyłkę naprawia się jednym stuknięciem zamiast okna z pytaniem przed każdą czynnością. */
+export type ToastAction = { label: string; run: () => void };
+type Toast = { text: string; kind: 'ok' | 'error'; action?: ToastAction; leaving?: boolean } | null;
 /** Wyjście komunikatu – zgodnie z `toast-out` w styles.css. */
 const TOAST_EXIT_MS = 220;
-const ToastCtx = createContext<(text: string, kind?: 'ok' | 'error') => void>(() => {});
+/** Komunikat z akcją wisi dłużej – tyle, ile jest czasu na cofnięcie. */
+export const UNDO_MS = 5000;
+const ToastCtx = createContext<(text: string, kind?: 'ok' | 'error', action?: ToastAction) => void>(() => {});
 
 const ThanksCtx = createContext<() => void>(() => {});
 
@@ -16,15 +20,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast>(null);
   const [thanks, setThanks] = useState(0);
   const timer = useRef<number | undefined>(undefined);
-  const show = useCallback((text: string, kind: 'ok' | 'error' = 'ok') => {
-    setToast({ text, kind });
+  const hide = useCallback(() => {
     window.clearTimeout(timer.current);
     // Komunikat schodzi tą samą drogą, którą przyszedł, i dopiero wtedy znika.
-    timer.current = window.setTimeout(() => {
-      setToast((t) => t && { ...t, leaving: true });
-      timer.current = window.setTimeout(() => setToast(null), TOAST_EXIT_MS);
-    }, 3800);
+    setToast((t) => t && { ...t, leaving: true });
+    timer.current = window.setTimeout(() => setToast(null), TOAST_EXIT_MS);
   }, []);
+  const show = useCallback(
+    (text: string, kind: 'ok' | 'error' = 'ok', action?: ToastAction) => {
+      setToast({ text, kind, action });
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(hide, action ? UNDO_MS : 3800);
+    },
+    [hide],
+  );
   // Licznik zamiast true/false: druga opinia pod rząd montuje ekran od nowa i animacja serca rusza ponownie.
   const showThanks = useCallback(() => setThanks((n) => n + 1), []);
   const hideThanks = useCallback(() => setThanks(0), []);
@@ -37,6 +46,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {toast && (
         <div className={`toast ${toast.kind === 'error' ? 'error' : ''} ${toast.leaving ? 'is-leaving' : ''}`} role="status" aria-live="polite">
           {toast.text}
+          {toast.action && (
+            <button
+              type="button"
+              className="toast-action"
+              onClick={() => {
+                toast.action?.run();
+                hide();
+              }}
+            >
+              {toast.action.label}
+            </button>
+          )}
         </div>
       )}
     </ToastCtx.Provider>
@@ -444,7 +465,55 @@ export function Page({ title, onBack, children, actions, bodyClass, className, s
 }
 
 /** Wiersz menu (Profil, ustawienia): tytuł, podpowiedź, znacznik, strzałka. */
-export function ListRow({ title, hint, badge, onClick, icon }: { title: ReactNode; hint?: ReactNode; badge?: ReactNode; onClick: () => void; icon?: ReactNode }) {
+type ConfirmAsk = { title: string; body?: string; ok?: string; danger?: boolean };
+
+/**
+ * Potwierdzenie w stylu aplikacji zamiast szarego window.confirm: `const { confirm, dialog } = useConfirm()`,
+ * `if (await confirm({ title, body, ok, danger })) …`, a `{dialog}` wstawiamy w drzewo komponentu.
+ * Zamknięcie arkusza (tło, Esc, gest) liczy się jako „Anuluj”.
+ */
+export function useConfirm() {
+  const [ask, setAsk] = useState<(ConfirmAsk & { resolve: (ok: boolean) => void }) | null>(null);
+  const confirm = useCallback((o: ConfirmAsk) => new Promise<boolean>((resolve) => setAsk({ ...o, resolve })), []);
+  const done = (ok: boolean) => {
+    ask?.resolve(ok);
+    setAsk(null);
+  };
+  const dialog = ask && (
+    <Sheet onClose={() => done(false)} label={ask.title}>
+      <div className="stack">
+        <h2 style={{ margin: 0 }}>{ask.title}</h2>
+        {ask.body && <p className="muted" style={{ margin: 0 }}>{ask.body}</p>}
+        <div className="row gap-2">
+          <button className="btn ghost grow" onClick={() => done(false)}>
+            Anuluj
+          </button>
+          <button className={`btn grow${ask.danger ? ' danger' : ''}`} onClick={() => done(true)}>
+            {ask.ok ?? 'Tak'}
+          </button>
+        </div>
+      </div>
+    </Sheet>
+  );
+  return { confirm, dialog };
+}
+
+/**
+ * „Szczegóły ›” – cichy przycisk obok nagłówka sekcji albo pod treścią, zamiast podkreślonego linku, który mieszał się
+ * z tekstem. Jeden wzór w całej aplikacji klientki i recepcji.
+ */
+export function MoreLink({ label, onClick, disabled }: { label: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" className="more-link" onClick={onClick} disabled={disabled}>
+      {label}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden>
+        <path d="m9 6 6 6-6 6" />
+      </svg>
+    </button>
+  );
+}
+
+export function ListRow({ title, hint, badge, onClick, icon }: { title: ReactNode; hint?: ReactNode; badge?: ReactNode; onClick: (e: ReactMouseEvent<HTMLButtonElement>) => void; icon?: ReactNode }) {
   return (
     <button className="list-row" onClick={onClick}>
       {icon && <span className="list-row-icon">{icon}</span>}
@@ -770,11 +839,11 @@ export function QrCode({ text, size = 200, label }: { text: string; size?: numbe
 }
 
 /**
- * Kod wejścia na żywo: QR liczony w telefonie co 30 s z dziennego sekretu (działa też offline), pod nim kreska
- * odliczająca do zmiany i zegar z sekundami. Przeglądarka nie pozwala zablokować zrzutu ekranu – zrzut za to szybko
+ * Kod wejścia na żywo: QR liczony w telefonie co minutę z dziennego sekretu (działa też offline), pod nim kreska
+ * odliczająca do zmiany i licznik sekund (59 → 0). Przeglądarka nie pozwala zablokować zrzutu ekranu – zrzut za to szybko
  * wygasa, a recepcja od razu widzi, czy ekran żyje (ważne przy kodzie z liter, który zostaje dzienny).
  */
-export function LiveCheckinQr({ checkin, size, label }: { checkin: LiveCheckin; size: number; label: string }) {
+export function LiveCheckinQr({ checkin, size, label, below }: { checkin: LiveCheckin; size: number; label: string; below?: (step: number) => ReactNode }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     // Tykamy równo z pełną sekundą – zegar nie odstaje od zegarka na ręce, a kod zmienia się dokładnie na granicy okna.
@@ -790,7 +859,7 @@ export function LiveCheckinQr({ checkin, size, label }: { checkin: LiveCheckin; 
   const { user, date, seed } = checkin;
   const code = useMemo(() => liveCheckinCode({ user, date, seed }, step), [user, date, seed, step]);
   return (
-    <div className="live-qr" title="Kod zmienia się co 30 sekund">
+    <div className="live-qr" title="Kod zmienia się co minutę">
       <QrCode text={code} size={size} label={label} />
       {/* key={step}: nowa kreska w każdym oknie, więc powrót do pełnej długości nie animuje się wstecz. */}
       <span className="live-qr-bar" aria-hidden="true">
@@ -798,8 +867,11 @@ export function LiveCheckinQr({ checkin, size, label }: { checkin: LiveCheckin; 
       </span>
       <span className="live-qr-clock" aria-hidden="true">
         <i />
-        {new Date(now).toLocaleTimeString('pl-PL')}
+        {/* Sekundy do nowego kodu: 59 → 0, potem kod się zmienia i liczymy od nowa. */}
+        nowy kod za {59 - Math.floor((now % CHECKIN_STEP_MS) / 1000)} s
       </span>
+      {/* Np. kod z liter – w tym samym oknie co QR, więc zmienia się razem z nim. */}
+      {below?.(step)}
     </div>
   );
 }

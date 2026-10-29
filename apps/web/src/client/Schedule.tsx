@@ -228,7 +228,7 @@ export function Schedule() {
                 </p>
               )}
               {fit && (
-                <button className="link small" style={{ justifySelf: 'start' }} onClick={() => setAskFit(true)}>
+                <button className="text-btn small" style={{ justifySelf: 'start' }} onClick={() => setAskFit(true)}>
                   Twoje preferencje: {fitShort(fit)}
                 </button>
               )}

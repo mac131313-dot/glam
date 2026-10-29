@@ -199,7 +199,7 @@ function Payments() {
                 Faktura {p.number}
               </a>
             ) : p.kind !== 'shop' ? (
-              <button className="link tiny" onClick={() => setInv(p.id)}>
+              <button className="text-btn tiny" onClick={() => setInv(p.id)}>
                 Poproś o fakturę
               </button>
             ) : (

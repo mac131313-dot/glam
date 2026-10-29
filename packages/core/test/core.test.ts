@@ -245,9 +245,9 @@ test('kwadrat oddechu: kropka obiega kwadrat w rytmie box, inny rytm chodzi po p
   assert.equal(squarePoint(night, 1, 0.5).y, 0, 'przytrzymanie po wdechu stoi u góry');
 });
 
-test('kod wejścia na żywo: SHA-256/HMAC jak w node:crypto, nowy kod co 30 s', async () => {
+test('kod wejścia na żywo: SHA-256/HMAC jak w node:crypto, nowy kod co minutę', async () => {
   const { createHash, createHmac } = await import('node:crypto');
-  const { acceptCheckinStep, CHECKIN_STEP_MS, checkinStep, hmacSha256Hex, liveCheckinCode, sha256 } = await import('../src/checkin.ts');
+  const { acceptCheckinStep, CHECKIN_STEP_MS, checkinStep, hmacSha256Hex, liveCheckinCode, liveShortCode, sha256 } = await import('../src/checkin.ts');
   for (const n of [0, 55, 56, 64, 65, 200]) {
     const s = 'ż'.repeat(n);
     assert.equal(Buffer.from(sha256(new TextEncoder().encode(s))).toString('hex'), createHash('sha256').update(s).digest('hex'));
@@ -259,5 +259,9 @@ test('kod wejścia na żywo: SHA-256/HMAC jak w node:crypto, nowy kod co 30 s', 
   assert.notEqual(liveCheckinCode(seed, checkinStep(t)), liveCheckinCode(seed, checkinStep(t + CHECKIN_STEP_MS)));
   assert.match(liveCheckinCode(seed, 1), /^GLAM2\.u_1\.2026-10-20\.1\.[0-9a-f]{16}$/);
   assert.equal(acceptCheckinStep(100, 100), true);
-  assert.equal(acceptCheckinStep(96, 100), false, 'kod sprzed 2 minut już nie przechodzi');
+  assert.equal(acceptCheckinStep(96, 100), false, 'kod sprzed 4 minut już nie przechodzi');
+  // Kod z liter zmienia się razem z QR: 6 liter bez I/L/O/Q, inny w następnym oknie.
+  assert.match(liveShortCode(seed, 1), /^[ABCDEFGHJKMNPRSTUVWXYZ]{6}$/);
+  assert.equal(liveShortCode(seed, checkinStep(t)), liveShortCode(seed, checkinStep(t + CHECKIN_STEP_MS - 1)));
+  assert.notEqual(liveShortCode(seed, checkinStep(t)), liveShortCode(seed, checkinStep(t + CHECKIN_STEP_MS)));
 });

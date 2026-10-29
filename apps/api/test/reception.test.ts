@@ -2,7 +2,7 @@
 // wejściówka od znajomej zeskanowana z QR i aktywowana przy ladzie.
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { canWalkIn, checkinStep, liveCheckinCode } from '@glam/core';
+import { canWalkIn, checkinStep, liveCheckinCode, liveShortCode } from '@glam/core';
 import { buildApp } from '../src/app.ts';
 import type { Deps } from '../src/context.ts';
 import { openDb } from '../src/db.ts';
@@ -101,6 +101,47 @@ test('zrzut ekranu sprzed 2 minut nie wpuszcza – recepcja wie dlaczego; podrob
   assert.equal(old.json().error, 'code_expired');
   const forged = await call(reception, 'POST', '/api/staff/checkin', { code: screenshot.slice(0, -2) + 'zz' });
   assert.equal(forged.statusCode, 404, 'podrobiony podpis to zwykły nierozpoznany kod');
+});
+
+test('dzień recepcji: przy zapisanych urodziny i koniec karnetu (do „Kogo dziś przywitać”), u gości puste', async () => {
+  const reception = await login(DEMO.reception);
+  const day = (await call(reception, 'GET', '/api/staff/day')).json() as { sessions: { participants: { guest_name: string | null; birthday: unknown; pass_until: unknown }[] }[] };
+  const people = day.sessions.flatMap((s) => s.participants);
+  assert.ok(people.length > 0, 'ktoś jest dziś zapisany');
+  for (const p of people) {
+    assert.ok('birthday' in p && 'pass_until' in p);
+    if (p.guest_name) assert.deepEqual([p.birthday, p.pass_until], [null, null]);
+  }
+});
+
+test('notatki zespołu: kilka naraz, X = załatwione z podpisem, klientka ich nie widzi', async () => {
+  const reception = await login(DEMO.reception);
+  const a = (await call(reception, 'POST', '/api/staff/team-notes', { body: '  Zrobić faktury za kwiecień  ' })).json().id;
+  await call(reception, 'POST', '/api/staff/team-notes', { body: 'Zrobić kartki' });
+  let notes = (await call(reception, 'GET', '/api/staff/team-notes')).json();
+  assert.deepEqual(notes.open.slice(0, 2).map((n: { body: string }) => n.body), ['Zrobić kartki', 'Zrobić faktury za kwiecień'], 'druga notatka nie nadpisuje pierwszej, najnowsza na górze');
+  assert.equal((await call(reception, 'POST', '/api/staff/team-notes', { body: '   ' })).statusCode, 400);
+  assert.equal((await call(reception, 'POST', '/api/staff/team-notes', { body: 'x'.repeat(601) })).statusCode, 400);
+
+  assert.equal((await call(reception, 'POST', `/api/staff/team-notes/${a}/done`)).statusCode, 200);
+  notes = (await call(reception, 'GET', '/api/staff/team-notes')).json();
+  assert.ok(!notes.open.some((n: { id: string }) => n.id === a));
+  const closed = notes.done.find((n: { id: string }) => n.id === a);
+  assert.ok(closed?.done_at && closed.done_by, 'załatwiona zostaje w historii – kto i kiedy');
+
+  const client = await login(DEMO.magda);
+  assert.equal((await call(client, 'GET', '/api/staff/team-notes')).statusCode, 403);
+});
+
+test('kod z 6 liter zmienia się co minutę: bieżący rozpoznaje klientkę, sprzed 2 minut już nie', async () => {
+  const magda = await login(DEMO.magda);
+  const reception = await login(DEMO.reception);
+  const seed = (await call(magda, 'GET', '/api/my/checkin-code')).json();
+  const now = await call(reception, 'POST', '/api/staff/checkin', { code: liveShortCode(seed, checkinStep()) });
+  assert.notEqual(now.statusCode, 404, now.body);
+  assert.equal((now.json().details ?? now.json()).name, 'Magda');
+  const old = await call(reception, 'POST', '/api/staff/checkin', { code: liveShortCode(seed, checkinStep(Date.now() - 2 * 60_000)) });
+  assert.equal(old.statusCode, 404, 'stare litery to już nierozpoznany kod');
 });
 
 test('wejściówka od znajomej: skan QR z kasy → imię i telefon → aktywna i wpuszczona', async () => {

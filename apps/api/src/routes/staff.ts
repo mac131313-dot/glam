@@ -129,9 +129,11 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
         ...s,
         rating: scope.get<{ avg: number | null; n: number }>('SELECT ROUND(AVG(rating), 1) AS avg, COUNT(rating) AS n FROM bookings WHERE studio_id = $studio AND session_id = $sid', { sid: s.id }),
         participants: scope
-          .all<{ booking_id: string; status: string; user_id: string; name: string; phone: string; goal: string | null; visits: number; guest_name: string | null; confirmed_at: string | null; rating: number | null }>(
-            `SELECT b.id AS booking_id, b.status, b.guest_name, b.confirmed_at, b.rating, u.id AS user_id, u.name, u.phone, m.goal,
-                    (SELECT COUNT(*) FROM bookings b2 WHERE b2.studio_id = $studio AND b2.user_id = u.id AND b2.status = 'attended' AND b2.guest_name IS NULL) AS visits
+          .all<{ booking_id: string; status: string; user_id: string; name: string; phone: string; goal: string | null; visits: number; guest_name: string | null; confirmed_at: string | null; rating: number | null; birthday: string | null; pass_until: string | null }>(
+            // birthday (MM-DD) i pass_until (najbliższy koniec aktywnego karnetu) – dla „Kogo dziś przywitać” w recepcji.
+            `SELECT b.id AS booking_id, b.status, b.guest_name, b.confirmed_at, b.rating, u.id AS user_id, u.name, u.phone, u.birthday, m.goal,
+                    (SELECT COUNT(*) FROM bookings b2 WHERE b2.studio_id = $studio AND b2.user_id = u.id AND b2.status = 'attended' AND b2.guest_name IS NULL) AS visits,
+                    (SELECT MIN(p.valid_until) FROM passes p WHERE p.studio_id = $studio AND p.user_id = u.id AND p.status = 'active') AS pass_until
              FROM bookings b JOIN users u ON u.id = b.user_id
              LEFT JOIN memberships m ON m.studio_id = b.studio_id AND m.user_id = u.id AND m.role = 'client'
              WHERE b.studio_id = $studio AND b.session_id = $sid AND b.status IN ('booked', 'attended', 'waitlist', 'no_show')
@@ -144,11 +146,45 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
               ...p,
               phone: contact ? p.phone : undefined,
               name: p.guest_name ? `${p.guest_name} (gość: ${p.name})` : p.name,
+              // Gość przychodzi na konto kupującej – jej urodziny i karnet go nie dotyczą.
+              birthday: p.guest_name ? null : p.birthday,
+              pass_until: p.guest_name ? null : p.pass_until,
               health: health ? { limitations: health.limitations, injuries: health.injuries, pregnancy: health.pregnancy } : null,
             };
           }),
       })),
     };
+  });
+
+  // Notatki zespołu (Start recepcji → okienko po wejściu → Wiadomości › Dla mnie): otwarte od najnowszej i załatwione
+  // z ostatnich 7 dni – kto i kiedy zamknął. X w okienku albo na liście = załatwione, notatka zostaje w historii.
+  const TEAM_NOTE_LIMIT = 600;
+  app.get('/api/staff/team-notes', perm('day.all'), async (req) => {
+    const { scope } = ctx(req);
+    const rows = scope.all<{ id: string; body: string; author: string | null; created_at: string; done_at: string | null; done_by: string | null }>(
+      `SELECT n.id, n.body, a.name AS author, n.created_at, n.done_at, d.name AS done_by FROM team_notes n
+       LEFT JOIN users a ON a.id = n.author_id LEFT JOIN users d ON d.id = n.done_by
+       WHERE n.studio_id = $studio AND (n.done_at IS NULL OR n.done_at >= $from)
+       ORDER BY n.created_at DESC LIMIT 60`,
+      { from: new Date(Date.now() - 7 * 86_400_000).toISOString() },
+    );
+    return { open: rows.filter((r) => !r.done_at), done: rows.filter((r) => r.done_at) };
+  });
+
+  app.post<{ Body: { body?: string } }>('/api/staff/team-notes', perm('day.all'), async (req) => {
+    const { scope, user } = ctx(req);
+    const body = String(req.body?.body ?? '').trim();
+    if (!body) throw badRequest('Wpisz treść notatki.');
+    if (body.length > TEAM_NOTE_LIMIT) throw badRequest(`Notatka może mieć najwyżej ${TEAM_NOTE_LIMIT} znaków.`);
+    const noteId = id();
+    scope.run('INSERT INTO team_notes (id, studio_id, body, author_id, created_at) VALUES ($id, $studio, $b, $me, $now)', { id: noteId, b: body, me: user.id, now: nowIso() });
+    return { id: noteId };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/staff/team-notes/:id/done', perm('day.all'), async (req) => {
+    const { scope, user } = ctx(req);
+    scope.run('UPDATE team_notes SET done_at = $now, done_by = $me WHERE studio_id = $studio AND id = $id AND done_at IS NULL', { id: req.params.id, me: user.id, now: nowIso() });
+    return { ok: true };
   });
 
   app.get<{ Querystring: { from?: string; days?: string } }>('/api/staff/schedule', perm('schedule.view'), async (req) => {
@@ -227,7 +263,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
       const raw = String(body.code ?? '').trim();
       // Zapasowy kod z 6 liter (pod QR w aplikacji) ma pierwszeństwo – dopiero gdy nie pasuje do żadnej klientki, to wejściówka.
       const shortMatch = isShortCheckinCode(raw)
-        ? findByShortCode(studio.id, raw, today, scope.all<{ user_id: string }>("SELECT user_id FROM memberships WHERE studio_id = $studio AND role = 'client'").map((m) => m.user_id))
+        ? findByShortCode(studio.id, raw, today, checkinStep(now.getTime()), scope.all<{ user_id: string }>("SELECT user_id FROM memberships WHERE studio_id = $studio AND role = 'client'").map((m) => m.user_id))
         : null;
       const giftCode = shortMatch ? null : guestPassCodeOf(raw);
       let clientId: string | null = null;
@@ -274,7 +310,7 @@ export function staffRoutes(app: FastifyInstance, deps: Deps) {
           throw conflict('code_other_day', `Ten kod jest na ${problem.date.split('-').reverse().join('.')}, a działa tylko w swoim dniu. Poproś o otwarcie „Mój kod wejścia” w aplikacji albo wpisz numer telefonu.`);
         }
         if (problem?.kind === 'expired') {
-          throw conflict('code_expired', 'Ten kod wygasł – to pewnie zrzut ekranu. Kod w aplikacji zmienia się co 30 sekund: poproś o otwarcie „Mój kod wejścia” albo wpisz numer telefonu.');
+          throw conflict('code_expired', 'Ten kod wygasł – to pewnie zrzut ekranu. Kod w aplikacji zmienia się co minutę: poproś o otwarcie „Mój kod wejścia” albo wpisz numer telefonu.');
         }
         throw notFound(body.phone ? 'Nie ma klientki z tym numerem w studiu.' : 'Nie rozpoznałyśmy kodu. Poproś o odświeżenie kodu w aplikacji albo wpisz numer telefonu.');
       }

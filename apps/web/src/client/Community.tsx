@@ -23,9 +23,8 @@ export function Community() {
   const close = () => setTab(options[0][0]);
   return (
     <div className="stack-lg">
-      <h1>
-        Razem <span className="serif">raźniej</span>
-      </h1>
+      {/* Ta sama nazwa co na pasku zakładek – „Czat”. */}
+      <h1>Czat</h1>
       <Tabs label="Społeczność" value={tab} onChange={setTab} options={options} />
       <Lazy>{tab === 'messages' ? <AccountPages route="messages" arg={null} close={close} /> : <CommunityPages route={tab} arg={null} close={close} />}</Lazy>
     </div>

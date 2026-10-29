@@ -11,6 +11,7 @@ import { ReceptionEntrance } from './Entrance.tsx';
 import { ReceptionMessages } from './Messages.tsx';
 import { ReceptionProfile } from './Profile.tsx';
 import { ReceptionSchedule } from './Schedule.tsx';
+import { ShiftNotePopup } from './ShiftNote.tsx';
 import { ReceptionStart } from './Start.tsx';
 
 type Tab = 'start' | 'schedule' | 'entrance' | 'messages' | 'profile';
@@ -29,6 +30,8 @@ export function ReceptionApp(props: { me: Me; studio: MeStudio; onSwitchStudio: 
     const go = new URLSearchParams(location.search).get('go');
     return TABS.some((t) => t.id === go) ? (go as Tab) : 'start';
   });
+  // Wiadomości otwarte ze Startu na konkretnej zakładce (np. notatki zespołu → „Dla mnie”).
+  const [messagesTab, setMessagesTab] = useState<'inbox' | undefined>();
   // Kropka przy Wiadomościach: ten sam licznik co „Rozmowy (n)”; odświeżany co minutę, po powrocie do aplikacji
   // i przy każdej zmianie zakładki (np. po odpisaniu w Wiadomościach znika od razu po wyjściu).
   const threads = useApi<{ unread: number }>('/staff/threads');
@@ -51,6 +54,13 @@ export function ReceptionApp(props: { me: Me; studio: MeStudio; onSwitchStudio: 
     applyLook(props.studio.look);
   }, [props.studio]);
 
+  // Okienka notatek tylko na pierwszym ekranie po wejściu – po zmianie zakładki chowają się (zostają w „Dla mnie”).
+  const [firstScreen, setFirstScreen] = useState(true);
+  const [startTab] = useState(tab);
+  useEffect(() => {
+    if (tab !== startTab) setFirstScreen(false);
+  }, [tab, startTab]);
+
   // Nowa zakładka zaczyna się od góry.
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -68,8 +78,10 @@ export function ReceptionApp(props: { me: Me; studio: MeStudio; onSwitchStudio: 
         </button>
         <span className="tiny muted">Recepcja</span>
       </header>
+      {/* Notatka od zespołu – w rogu ekranu zaraz po wejściu, X = załatwione. */}
+      {firstScreen && <ShiftNotePopup />}
       <main className="content">
-        {tab === 'start' ? <ReceptionStart go={setTab} /> : tab === 'schedule' ? <ReceptionSchedule /> : tab === 'entrance' ? <ReceptionEntrance /> : tab === 'messages' ? <ReceptionMessages roles={props.studio.roles} /> : <ReceptionProfile me={props.me} />}
+        {tab === 'start' ? <ReceptionStart go={(t, sub) => (setMessagesTab(sub), setTab(t))} /> : tab === 'schedule' ? <ReceptionSchedule /> : tab === 'entrance' ? <ReceptionEntrance /> : tab === 'messages' ? <ReceptionMessages roles={props.studio.roles} initial={messagesTab} /> : <ReceptionProfile me={props.me} />}
       </main>
       <nav className="tabbar" aria-label="Główna nawigacja">
         {TABS.map((t) => (

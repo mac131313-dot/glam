@@ -55,7 +55,7 @@ export function loadFontIds(ids: string[]) {
   }
 }
 
-/** Tryb jasny / ciemny / jak w systemie (sekcja 10). Domyślnie jasny – zgodnie z moodboardem. */
+/** Tryb jasny / ciemny / jak w systemie (sekcja 10). Domyślnie jasny (beżowy) – zgodnie z moodboardem; ciemny tylko z wyboru w Ustawieniach. */
 export type Appearance = 'light' | 'dark' | 'auto';
 const APPEARANCE_KEY = 'glam.appearance';
 
@@ -142,3 +142,9 @@ export function applySystemLook(tintId?: string | null) {
   vars['--tint-soft'] = tint.soft;
   setRootVars(vars, 'light');
 }
+
+// „Jak w systemie”: przełączenie trybu w telefonie zmienia wygląd od razu, bez ponownego otwierania aplikacji.
+if (typeof window !== 'undefined')
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
+    if (last && getAppearance() === 'auto') applyLook(last.look);
+  });

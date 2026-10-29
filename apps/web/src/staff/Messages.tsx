@@ -10,12 +10,14 @@ import { api, fmtDay, fmtTime, localDate, useApi } from '../api.ts';
 import { Empty, Lazy, Page, Select, Spinner, Tabs, useAction } from '../ui.tsx';
 import { AttachmentView, ChatComposer, type ChatMessage } from '../chat.tsx';
 import { DirectChatPage, GroupChatPage, ThreadRow, type ThreadItem } from '../groupChat.tsx';
+import { TeamNotesList } from '../reception/ShiftNote.tsx';
 
 type Tab = 'threads' | 'group' | 'mailing' | 'followups' | 'inbox';
 
 const Mailing = lazy(() => import('./Mailing.tsx'));
 
-export default function Messages({ roles }: { roles: Role[] }) {
+/** without: zakładki ukryte na danej powierzchni (telefon recepcji nie potrzebuje Mailingu – jest w panelu). */
+export default function Messages({ roles, without = [], initial }: { roles: Role[]; without?: Tab[]; initial?: Tab }) {
   const hasThreads = can(roles, 'chat.answer') || can(roles, 'messages.group.own') || can(roles, 'community.moderate') || roles.includes('trainer');
   const threads = useApi<{ threads: ThreadItem[]; unread: number }>(hasThreads ? '/staff/threads' : null);
   const unread = threads.data?.unread ?? 0;
@@ -26,8 +28,8 @@ export default function Messages({ roles }: { roles: Role[] }) {
     ...(can(roles, 'clients.contact') ? ([['followups', 'Prośby o kontakt']] as [Tab, string][]) : []),
     // Skrzynka „Dla mnie” – dla zespołu (np. zastępstwa trenerek); właścicielka jej nie potrzebuje.
     ...(roles.includes('owner') ? [] : ([['inbox', 'Dla mnie']] as [Tab, string][])),
-  ];
-  const [tab, setTab] = useState<Tab>(options[0]?.[0] ?? 'inbox');
+  ].filter(([t]) => !without.includes(t));
+  const [tab, setTab] = useState<Tab>(initial && options.some(([t]) => t === initial) ? initial : (options[0]?.[0] ?? 'inbox'));
   return (
     <div className="stack-lg">
       <h1>Wiadomości</h1>
@@ -40,7 +42,7 @@ export default function Messages({ roles }: { roles: Role[] }) {
         </Lazy>
       )}
       {tab === 'followups' && <Followups />}
-      {tab === 'inbox' && <StaffInbox />}
+      {tab === 'inbox' && <StaffInbox roles={roles} />}
     </div>
   );
 }
@@ -224,13 +226,22 @@ function Followups() {
   );
 }
 
-function StaffInbox() {
+// Recepcja i właścicielka: „Dla mnie” to notatki zespołu. Trenerki (bez dnia studia) – jak dotąd skrzynka powiadomień.
+function StaffInbox({ roles }: { roles: Role[] }) {
+  return can(roles, 'day.all') ? <TeamNotesList /> : <PersonalInbox />;
+}
+
+function PersonalInbox() {
   const inbox = useApi<{ id: string; body: string; deliver_at: string }[]>('/staff/inbox');
   if (!inbox.data) return <Spinner />;
+  return <InboxItems items={inbox.data} />;
+}
+
+function InboxItems({ items }: { items: { id: string; body: string; deliver_at: string }[] }) {
   return (
     <div className="stack gap-2">
-      {inbox.data.length === 0 && <Empty>Brak powiadomień.</Empty>}
-      {inbox.data.map((n) => (
+      {items.length === 0 && <Empty>Brak powiadomień.</Empty>}
+      {items.map((n) => (
         <div key={n.id} className="card flat small row between">
           <span>{n.body}</span>
           <span className="tiny muted">{fmtDay(n.deliver_at)}</span>

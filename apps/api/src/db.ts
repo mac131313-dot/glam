@@ -1411,6 +1411,19 @@ CREATE TABLE IF NOT EXISTS studio_announcements (
 );
 CREATE INDEX IF NOT EXISTS idx_studio_announcements ON studio_announcements(studio_id, starts_at);
 
+-- Notatki zespołu („zrobić faktury za kwiecień”): zostawiane na Starcie recepcji, wyskakują po wejściu do aplikacji
+-- recepcji i panelu, lista w Wiadomości → Dla mnie. X = załatwione (done_at, done_by) – zostają w historii.
+CREATE TABLE IF NOT EXISTS team_notes (
+  id TEXT PRIMARY KEY,
+  studio_id TEXT NOT NULL REFERENCES studios(id),
+  body TEXT NOT NULL,
+  author_id TEXT,
+  created_at TEXT NOT NULL,
+  done_at TEXT,
+  done_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_team_notes ON team_notes(studio_id, created_at);
+
 -- Nieużywana od 17.10.2026 (bez sensorów zdrowia). Zostaje dla starych baz; czyszczona przy usunięciu konta.
 CREATE TABLE IF NOT EXISTS health_sync (
   user_id TEXT NOT NULL REFERENCES users(id),

@@ -52,7 +52,8 @@ export function ForMe() {
         </button>
         <header className="forme-hello">
           <div className="eyebrow">Dla mnie · {new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-          <p className="forme-quote serif">Zacznij dzień od spokojnego oddechu</p>
+          {/* Nagłówek strony (h1) – czytnik ekranu ogłasza go po wejściu w zakładkę. */}
+          <h1 className="forme-quote serif">Zacznij dzień od spokojnego oddechu</h1>
         </header>
       </section>
 
@@ -61,7 +62,9 @@ export function ForMe() {
 
       {/* Medytacje: tytuł, rytm i czas – bez powtarzania kategorii i bez przycisków; cały wiersz startuje sesję. */}
       <section className="forme-list">
-        <h2 className="forme-h">Medytacje</h2>
+        <div className="sec-head">
+          <h2 className="eyebrow">Medytacje</h2>
+        </div>
         <div ref={catRow} className="chips scroll-row" role="group" aria-label="Kategoria medytacji">
           {[...new Set(SESSIONS.map((x) => x.category))].map((c) => (
             <button key={c} className="chip" aria-pressed={category === c} aria-expanded={category === c} onClick={() => setCategory(category === c ? null : c)}>
@@ -99,7 +102,9 @@ export function ForMe() {
       />
 
       <section className="forme-list">
-        <h2 className="forme-h">Więcej dla Ciebie</h2>
+        <div className="sec-head">
+          <h2 className="eyebrow">Więcej dla Ciebie</h2>
+        </div>
         {/* Zawijane pigułki zamiast długiej listy – wszystko na jednym ekranie. */}
         <nav className="more-pills" aria-label="Więcej dla Ciebie">
           {more.map(([title, route]) => (

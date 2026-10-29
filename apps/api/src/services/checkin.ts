@@ -1,7 +1,7 @@
-// Kod QR klientki do check-inu (C3, 4.11): zmienia się co 30 s (liveCheckinCode z core), więc zrzut ekranu szybko przestaje działać.
+// Kod QR klientki do check-inu (C3, 4.11): zmienia się co minutę (liveCheckinCode z core), więc zrzut ekranu szybko przestaje działać.
 // Telefon dostaje dzienny sekret i sam liczy kody, także offline; sekret jest podpisany HMAC i ważny tylko w swoim dniu.
 import { createHmac } from 'node:crypto';
-import { acceptCheckinStep, liveCheckinCode, type LiveCheckin } from '@glam/core';
+import { acceptCheckinStep, liveCheckinCode, liveShortCode, type LiveCheckin } from '@glam/core';
 
 const key = () => process.env.GLAM_QR_KEY ?? 'dev-qr-key';
 
@@ -28,19 +28,17 @@ export function checkinCodeProblem(studioId: string, code: string, today: string
   return c.date !== today ? { kind: 'other_day', date: c.date } : { kind: 'expired' };
 }
 
-/** Litery bez łatwych do pomylenia (I/L, O/Q) – kod czyta się na głos albo przepisuje z ekranu. */
-const LETTERS = 'ABCDEFGHJKMNPRSTUVWXYZ';
-
-/** Zapasowy kod z 6 liter, gdy QR się nie czyta: też podpisany i ważny tylko w swoim dniu. */
-export function shortCheckinCode(studioId: string, userId: string, date: string): string {
-  const mac = createHmac('sha256', key()).update(`short:${studioId}:${userId}:${date}`).digest();
-  return Array.from(mac.subarray(0, 6), (b) => LETTERS[b % LETTERS.length]).join('');
-}
-
 export const isShortCheckinCode = (s: string) => /^[A-Za-z]{6}$/.test(s.replace(/[\s-]/g, ''));
 
-/** Klientka po kodzie z liter: kod nie zawiera identyfikatora, więc sprawdzamy klientki studia (to tylko HMAC na osobę). */
-export function findByShortCode(studioId: string, code: string, today: string, clientIds: string[]): string | null {
+/**
+ * Klientka po kodzie z 6 liter (liveShortCode z core – zmienia się co minutę, jak QR). Kod nie zawiera identyfikatora,
+ * więc sprawdzamy klientki studia w bieżącym oknie ± jedno (acceptCheckinStep) – kilka HMAC na osobę.
+ */
+export function findByShortCode(studioId: string, code: string, today: string, nowStep: number, clientIds: string[]): string | null {
   const want = code.replace(/[\s-]/g, '').toUpperCase();
-  return clientIds.find((u) => shortCheckinCode(studioId, u, today) === want) ?? null;
+  const steps = [nowStep - 1, nowStep, nowStep + 1].filter((s) => acceptCheckinStep(s, nowStep));
+  return clientIds.find((u) => {
+    const seed = checkinSeed(studioId, u, today);
+    return steps.some((s) => liveShortCode(seed, s) === want);
+  }) ?? null;
 }
