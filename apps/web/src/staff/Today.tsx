@@ -144,7 +144,8 @@ export function Today({ roles }: { roles: Role[] }) {
   );
 }
 
-function AddParticipant({ session, onClose, onDone }: { session: Session; onClose: () => void; onDone: () => void }) {
+/** Dopisanie klientki do zajęć – w panelu (Dziś) i w aplikacji recepcji (arkusz zajęć). */
+export function AddParticipant({ session, onClose, onDone }: { session: Pick<Session, 'id' | 'starts_at' | 'class_name'>; onClose: () => void; onDone: () => void }) {
   const [q, setQ] = useState('');
   const clients = useApi<{ id: string; name: string | null; phone?: string; hasActivePass: boolean }[]>(`/staff/clients?q=${encodeURIComponent(q)}`, [q]);
   const [payAtDesk, setPayAtDesk] = useState(false);

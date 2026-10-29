@@ -38,8 +38,15 @@
 .site-photo.tall { aspect-ratio: 4 / 5; }
 .site-photo.card { aspect-ratio: 4 / 5; margin-bottom: 18px; }
 .site-photo.portrait { aspect-ratio: 3 / 4; margin-bottom: 14px; }
-.site-photo.empty { display: grid; place-items: center; }
-.site-photo.empty .serif { font-size: clamp(2.4rem, 5vw, 3.6rem); color: color-mix(in srgb, var(--ink) 30%, transparent); }
+/* Karta bez zdjęcia: w tonacji strony (piasek), kolor zajęć z GLAM tylko jako ledwie widoczny odcień – pastelowe kafle
+   gryzły się z beżem. Delikatne światło z góry, żeby pusta płaszczyzna nie była martwa; inicjał w kursywie jak znak wodny. */
+.site-photo.empty {
+  display: grid; place-items: center;
+  background:
+    radial-gradient(120% 80% at 30% 0%, color-mix(in srgb, var(--bg) 70%, transparent), transparent 60%),
+    color-mix(in srgb, var(--tint, var(--soft)) 9%, var(--soft));
+}
+.site-photo.empty .serif { font-size: clamp(2.4rem, 5vw, 3.6rem); color: color-mix(in srgb, var(--ink) 22%, transparent); }
 .site-item:hover .site-photo img, .site-person:hover .site-photo img { transform: scale(1.025); }
 @media (prefers-reduced-motion: reduce) { .site-photo img, .site-photo video { transition: none; } }
 
@@ -102,6 +109,27 @@
 .site-contact dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 .site-contact-lines { display: flex; flex-direction: column; gap: 4px; margin-top: 18px; font-size: 0.9rem; }
 .site-contact-lines a { color: var(--ink); }
+
+/* Zakładka Kontakt: po lewej adres, dojazd i sposoby kontaktu, po prawej recepcja i aplikacja. Cienkie linie zamiast kart. */
+.site-contact-page { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(32px, 6vw, 96px); align-items: start; }
+.site-contact-main, .site-contact-side { display: grid; gap: clamp(28px, 4vw, 44px); }
+.site-contact-block { display: grid; gap: 10px; justify-items: start; }
+.site-contact-block .site-eyebrow { margin: 0; }
+.site-contact-address { font-style: normal; font-family: var(--font-head); font-size: clamp(1.3rem, 2.2vw, 1.75rem); line-height: 1.25; letter-spacing: -0.015em; max-width: 22em; text-wrap: balance; }
+.site-contact-note { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.55; max-width: 34em; text-wrap: pretty; }
+.site-contact-maps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.site-contact-list, .site-contact-hours { margin: 0; width: 100%; max-width: 520px; }
+.site-contact-list div, .site-contact-hours div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.site-contact-list div:first-child, .site-contact-hours div:first-child { border-top: 1px solid var(--line); }
+.site-contact-list dt, .site-contact-hours dt { color: var(--muted); font-size: 0.9rem; }
+.site-contact-list dd, .site-contact-hours dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.site-contact-list a { color: var(--ink); text-decoration: none; font-family: var(--font-head); font-size: clamp(1.02rem, 1.4vw, 1.12rem); }
+.site-contact-list a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.site-contact-hours dt { text-transform: capitalize; }
+.site-contact-hours div { padding: 8px 0; font-size: 0.92rem; }
+.site-contact-hours .is-today dt, .site-contact-hours .is-today dd { color: var(--ink); font-weight: 600; }
+.site-contact-code { font-family: var(--font-head); letter-spacing: 0.08em; color: var(--ink); }
+@media (max-width: 900px) { .site-contact-page { grid-template-columns: 1fr; } }
 .site-faq { margin-top: clamp(40px, 6vw, 72px); border-top: 1px solid var(--line); max-width: 760px; }
 .site-faq details { border-bottom: 1px solid var(--line); }
 .site-faq summary { list-style: none; cursor: pointer; padding: 20px 0; font-family: var(--font-head); display: flex; justify-content: space-between; gap: 16px; }
@@ -199,6 +227,18 @@ button.site-row-main:focus-visible { outline: 2px solid var(--ink); outline-offs
 .site-person { all: unset; display: block; cursor: pointer; text-align: left; transition: opacity 0.4s var(--ease); }
 .site-person:focus-visible { outline: 1px solid var(--ink); outline-offset: 6px; border-radius: var(--radius); }
 .site-person-more { display: inline-block; margin-top: 10px; font-family: var(--font-head); font-size: 0.82rem; color: var(--muted); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+/* Karta zajęć jako przycisk (otwiera okno z terminami): wygląd karty bez zmian, reakcja w chwili wciśnięcia. */
+button.site-class { all: unset; display: block; cursor: pointer; text-align: left; transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+button.site-class:active { transform: scale(0.985); transition-duration: 80ms; }
+button.site-class:focus-visible { outline: 1px solid var(--ink); outline-offset: 6px; border-radius: var(--radius); }
+@media (hover: hover) { button.site-class:hover .site-person-more { color: var(--ink); } }
+/* Okno zajęć: najbliższe terminy – godzina pogrubiona, dzień obok, wolne miejsca po prawej, cienkie linie. */
+.site-class-dates { list-style: none; margin: 10px 0 24px; padding: 0; }
+.site-class-dates li { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 0.95rem; }
+.site-class-dates li:first-child { border-top: 1px solid var(--line); }
+.site-class-when b { font-family: var(--font-head); font-weight: 500; font-variant-numeric: tabular-nums; margin-right: 6px; }
+.site-class-spots { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.site-class-spots.tone-few, .site-class-spots.tone-last { color: var(--ink); font-weight: 500; }
 .site-trainer { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(24px, 4vw, 56px); align-items: start; }
 .site-trainer .site-photo.tall { position: sticky; top: 0; }
 .site-trainer-name { font-size: clamp(2.2rem, 4.6vw, 3.6rem); font-weight: 400; line-height: 1.05; letter-spacing: -0.01em; margin: 0; }
@@ -570,23 +610,17 @@ html:has(.site-menu[open]) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .site-menu[open], .site-menu-links a { animation: none; } }
 
 /* ===== Podstrona (jedna zakładka menu) =====
-   Nagłówek jak okładka rozdziału: duży tytuł z kursywą, wstęp, cienka linia; opcjonalnie szerokie zdjęcie.
-   Pod nim treść sekcji, na dole „Dalej” – następna zakładka, żeby strona nie kończyła się ślepo. */
-.site main > .site-page-head { width: min(var(--site-w), 100%); margin: 0 auto; padding: clamp(56px, 10vw, 136px) var(--gutter) 0; }
-.site-page-title { font-family: var(--font-head); font-weight: 400; font-size: clamp(2.8rem, 7.4vw, 6rem); line-height: 0.95; letter-spacing: -0.045em; margin: 0; text-wrap: balance; }
+   Nagłówek jak tytuł rozdziału: spokojny tytuł z kursywą (duży tekst ciaśniej), wstęp, cienka linia; opcjonalnie szerokie zdjęcie.
+   Pod nim treść sekcji; między zakładkami prowadzi menu u góry (przejście: viewTransition w StudioSite). */
+.site main > .site-page-head { width: min(var(--site-w), 100%); margin: 0 auto; padding: clamp(40px, 6vw, 88px) var(--gutter) 0; }
+.site-page-title { font-family: var(--font-head); font-weight: 400; font-size: clamp(2rem, 4.2vw, 3.25rem); line-height: 1.04; letter-spacing: -0.03em; margin: 0; text-wrap: balance; }
 .site-page-title .serif { letter-spacing: -0.01em; color: var(--muted); }
 .site-page-head .site-lead { margin-top: clamp(18px, 2.4vw, 28px); }
-.site-page-head::after { content: ''; display: block; height: 1px; background: var(--line); margin-top: clamp(36px, 5vw, 64px); }
+.site-page-head::after { content: ''; display: block; height: 1px; background: var(--line); margin-top: clamp(24px, 3vw, 40px); }
 .site-page-head.has-photo::after { display: none; }
-.site-page-head .site-photo.wide { margin-top: clamp(36px, 5vw, 64px); aspect-ratio: 16 / 7; }
-.site-subpage > .site-section { padding-top: clamp(40px, 6vw, 80px); min-height: 40vh; }
+.site-page-head .site-photo.wide { margin-top: clamp(24px, 3vw, 40px); aspect-ratio: 16 / 7; }
+.site-subpage > .site-section { padding-top: clamp(24px, 3vw, 40px); min-height: 40vh; }
 .site-subpage > .site-section .site-head:empty { display: none; }
-.site main > .site-page-next { width: min(var(--site-w), 100%); margin: 0 auto; padding: var(--gap) var(--gutter) 0; }
-.site-page-next a { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; padding-top: 28px; border-top: 1px solid var(--line); color: var(--ink); text-decoration: none; }
-.site-page-next .site-eyebrow { margin: 0; }
-.site-page-next-name { font-family: var(--font-display); font-style: italic; font-size: clamp(2rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: -0.01em; }
-.site-page-next-name span { display: inline-block; transition: translate 0.4s var(--ease-out); }
-@media (hover: hover) { .site-page-next a:hover .site-page-next-name span { translate: 8px 0; } }
 
 /* Na podstronie karty zajęć i trenerek leżą w siatce (wszystkie naraz) – bez karuzeli. */
 .site-subpage .site-cards .site-photo.card, .site-subpage .site-cards .site-photo.portrait { aspect-ratio: 4 / 5; }
@@ -626,7 +660,7 @@ html:has(.site-lightbox[open]) { overflow: hidden; }
 .site-bar-body { max-width: 760px; }
 .site-bar-lead { margin: 0 0 clamp(28px, 4vw, 44px); }
 .site-bar-group + .site-bar-group { margin-top: clamp(40px, 5vw, 64px); }
-.site-bar-cat { font-size: clamp(1.5rem, 2.6vw, 2rem); font-weight: 400; color: var(--muted); margin: 0 0 8px; }
+.site-bar-cat { font-size: clamp(1.15rem, 1.6vw, 1.35rem); font-weight: 400; color: var(--muted); margin: 0 0 4px; }
 .site-bar-list { list-style: none; margin: 0; padding: 0; }
 .site-bar-list li {
   display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 18px; padding: 18px 0; border-bottom: 1px solid var(--line);
@@ -639,7 +673,8 @@ html:has(.site-lightbox[open]) { overflow: hidden; }
 .site-bar-name { font-family: var(--font-head); font-size: clamp(1.05rem, 1.6vw, 1.2rem); letter-spacing: -0.01em; }
 .site-bar-dots { flex: 1; min-width: 24px; border-bottom: 1px dotted color-mix(in srgb, var(--ink) 28%, transparent); translate: 0 -0.3em; }
 .site-bar-price { font-family: var(--font-display); font-size: clamp(1.15rem, 1.8vw, 1.35rem); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.site-bar-desc { color: var(--muted); font-size: 0.9rem; margin-top: 4px; max-width: 34em; }
+/* pre-line: opis i linijka faktów (porcja, kcal) w osobnych wierszach. */
+.site-bar-desc { color: var(--muted); font-size: 0.9rem; margin-top: 4px; max-width: 34em; white-space: pre-line; }
 .site-bar-note { margin: clamp(28px, 4vw, 44px) 0 0; color: var(--muted); font-size: 1.1rem; }
 .site-bar-onsite { margin: clamp(24px, 3vw, 36px) 0 0; }
 @media (max-width: 900px) {
@@ -653,6 +688,16 @@ html:has(.site-lightbox[open]) { overflow: hidden; }
   .site-bar-thumb { width: 52px; height: 52px; }
 }
 @media (prefers-reduced-motion: reduce) { .site-bar-list li { animation: none; } }
+
+/* Sklep: ten sam spokojny nagłówek co podstrony (.site-page-title). */
+.shop-site-hero .site-h2 { font-size: clamp(2rem, 4.2vw, 3.25rem); line-height: 1.04; letter-spacing: -0.03em; }
+/* Zakładka Menu: karta baru, nie plakat – lista węższa, pozycje drobniejsze. */
+.site-subpage .site-bar .site-bar-body { max-width: 640px; }
+.site-subpage .site-bar .site-bar-list li { padding: 16px 0; }
+.site-subpage .site-bar .site-bar-name { font-size: 1.05rem; }
+.site-subpage .site-bar .site-bar-price { font-size: 1.15rem; }
+.site-subpage .site-bar .site-bar-desc { font-size: 0.86rem; line-height: 1.5; letter-spacing: 0.005em; }
+.site-subpage .site-bar .site-empty .serif { font-size: clamp(1.15rem, 1.8vw, 1.4rem); }
 
 /* ——— Nagłówek: zdjęcie na cały ekran z napisem na nim (układ „screen”). Menu leży na zdjęciu, po przewinięciu
    wraca do zwykłego wyglądu. Zdjęcie od krawędzi do krawędzi, bez zaokrągleń. ——— */
@@ -675,3 +720,19 @@ html:has(.site-lightbox[open]) { overflow: hidden; }
 }
 .site-hero.layout-screen .site-title { font-size: clamp(2.6rem, 6.2vw, 5.6rem); line-height: 0.95; max-width: 14em; }
 .site-hero.layout-screen .site-title .serif { font-size: 0.48em; }
+
+/* ——— Przejście między zakładkami (StudioSite → withPageTransition, View Transitions) ———
+   Stara treść odpływa lekko w górę i mięknie w rozmyciu, nowa wyłania się spod spodu – ten sam kierunek co czytanie
+   strony. Wyjście krótkie (ustępuje miejsca), wejście dłuższe, na krzywej sprężyny bez odbicia.
+   Menu, znak studia i rozmycie dołu mają własne nazwy – stoją w miejscu; kreska pod zakładką jedzie swoim przejściem. */
+@media (prefers-reduced-motion: no-preference) {
+  .site-nav { view-transition-name: site-nav; }
+  .site .watermark { view-transition-name: site-watermark; }
+  .site .gradual-blur { view-transition-name: site-page-blur; }
+  ::view-transition-old(site-nav), ::view-transition-old(site-watermark), ::view-transition-old(site-page-blur) { display: none; }
+  ::view-transition-new(site-nav), ::view-transition-new(site-watermark), ::view-transition-new(site-page-blur) { animation: none; }
+  ::view-transition-old(root) { animation: site-page-out 0.26s cubic-bezier(0.4, 0, 1, 1) both; }
+  ::view-transition-new(root) { animation: site-page-in 0.62s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both; }
+}
+@keyframes site-page-out { to { opacity: 0; transform: translateY(-14px); filter: blur(6px); } }
+@keyframes site-page-in { from { opacity: 0; transform: translateY(20px); filter: blur(10px); } }

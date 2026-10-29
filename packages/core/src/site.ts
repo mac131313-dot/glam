@@ -6,7 +6,7 @@
 import { FONTS, PALETTES, SOFTNESS, type FontRole, type Look, type Softness } from './look.ts';
 
 /** Sekcje z danymi z systemu (grafik, zajęcia, trenerki…) – każda występuje dokładnie raz. */
-export type SystemSectionType = 'about' | 'schedule' | 'classes' | 'trainers' | 'shop' | 'menu' | 'more';
+export type SystemSectionType = 'about' | 'schedule' | 'classes' | 'trainers' | 'shop' | 'menu' | 'contact' | 'more';
 /** Sekcje stałe: nagłówek na górze i stopka na dole – nie zmieniają miejsca. */
 export type FixedSectionType = 'hero' | 'footer';
 /** Sekcje własne – może ich być dowolnie wiele. */
@@ -168,7 +168,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
   trainers: {
     label: 'Trenerki',
     nav: 'Trenerki',
-    groups: [heading('Trenerki'), { label: 'Elementy', fields: [toggle('showClasses', 'Zajęcia trenerki', false), toggle('showBio', 'Opis trenerki', false)] }, pageGroup('Poznaj kobiety, które poprowadzą Cię na macie.')],
+    groups: [heading('Trenerki'), { label: 'Elementy', fields: [toggle('showClasses', 'Zajęcia trenerki', false), toggle('showBio', 'Opis trenerki', false)] }, pageGroup('Poznaj zespół, który poprowadzi Cię na macie.')],
   },
   shop: {
     label: 'Sklep',
@@ -185,7 +185,7 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
     nav: 'Menu',
     groups: [
       heading('Menu', 'po treningu'),
-      { label: 'Pozycje', fields: [{ key: 'items', label: 'Pozycje menu', kind: 'menu', default: [], max: MENU_MAX, hint: 'Dopóki lista jest pusta, zakładka Menu pokazuje „Menu wkrótce”, a strona główna jej nie pokazuje.' }] },
+      { label: 'Pozycje', fields: [{ key: 'items', label: 'Pozycje menu', kind: 'menu', default: [], max: MENU_MAX, hint: 'Dopóki lista jest pusta, zakładka Menu pokazuje napoje z Baru w sklepie studia.' }] },
       {
         label: 'Treść',
         fields: [area('text', 'Krótki wstęp', '', 300, { hint: 'Np. „Smoothie, matcha i coś słodkiego – po zajęciach przy barze.”' }), text('note', 'Dopisek pod menu', '', 160, { placeholder: 'np. Mleko roślinne bez dopłaty' })],
@@ -193,6 +193,39 @@ export const SECTION_SPECS: Record<Exclude<SectionType, CustomSectionType>, Sect
       { label: 'Zdjęcie lub film', fields: [image('image', 'Zdjęcie baru', 'Pokazuje się obok menu.')] },
       { label: 'Elementy', fields: [toggle('showPhotos', 'Zdjęcia pozycji', true), toggle('showTabs', 'Zakładki kategorii', true, 'Przy dwóch i więcej kategoriach.')] },
       pageGroup(''),
+    ],
+  },
+  // Kontakt: wszystko, czego szuka osoba przed pierwszą wizytą – gdzie, jak dojechać, jak zadzwonić, kiedy otwarte.
+  // Telefon, e-mail, adres i godziny recepcji są z ustawień studia (jedno źródło z aplikacją); tu tylko uzupełnienia.
+  contact: {
+    label: 'Kontakt',
+    nav: 'Kontakt',
+    groups: [
+      heading('Kontakt'),
+      {
+        label: 'Lokalizacja',
+        fields: [
+          text('address', 'Adres', '', 160, { hint: 'Puste = adres z Ustawienia → Studio.', placeholder: 'np. ul. Przykładowa 1, 35-001 Rzeszów' }),
+          area('directions', 'Jak dojechać', '', 400, { placeholder: 'np. Wejście od podwórza, parking za budynkiem, 5 min od dworca.' }),
+          toggle('showMapLinks', 'Przyciski map (Google, Apple)', true, 'Otwierają trasę do studia – bez mapy osadzonej na stronie.'),
+        ],
+      },
+      {
+        label: 'Kontakt',
+        fields: [
+          text('instagram', 'Instagram', '', 60, { placeholder: 'np. ssg.studio' }),
+          text('email', 'E-mail', '', 120, { hint: 'Puste = e-mail z ustawień studia.' }),
+        ],
+      },
+      {
+        label: 'Elementy',
+        fields: [
+          toggle('showHours', 'Godziny recepcji', true),
+          toggle('showJoin', 'Kod studia i aplikacja', true, 'Kod, którym nowa klientka dołącza w aplikacji.'),
+          toggle('showFaq', 'Pytania i odpowiedzi', false, 'Treść pytań: Ustawienia → Wsparcie.'),
+        ],
+      },
+      pageGroup('Zadzwoń, napisz albo wpadnij przed zajęciami – recepcja chętnie pomoże.'),
     ],
   },
   more: {
@@ -292,12 +325,12 @@ export type SiteDoc = {
   media: Record<string, 'video'>;
 };
 
-export const SYSTEM_SECTIONS: SystemSectionType[] = ['about', 'schedule', 'classes', 'trainers', 'shop', 'menu', 'more'];
+export const SYSTEM_SECTIONS: SystemSectionType[] = ['about', 'schedule', 'classes', 'trainers', 'shop', 'menu', 'contact', 'more'];
 const CUSTOM_PREFIX: Record<CustomSectionType, string> = { article: 'a', gallery: 'g' };
 export const MAX_SECTIONS = 30;
 
 /** Adresy podstron sekcji systemowych: /s/:slug/grafik itd. Sklep ma własną podstronę z katalogiem (ShopSite). */
-const SYSTEM_PATHS: Record<SystemSectionType, string> = { about: 'studio', schedule: 'grafik', classes: 'zajecia', trainers: 'trenerki', shop: 'sklep', menu: 'menu', more: 'wiecej' };
+const SYSTEM_PATHS: Record<SystemSectionType, string> = { about: 'studio', schedule: 'grafik', classes: 'zajecia', trainers: 'trenerki', shop: 'sklep', menu: 'menu', contact: 'kontakt', more: 'wiecej' };
 /** Adresy zajęte przez inne strony studia – sekcja z własnym tekstem nie może ich przejąć. */
 const RESERVED_PATHS = new Set([...Object.values(SYSTEM_PATHS), 'kurs']);
 
