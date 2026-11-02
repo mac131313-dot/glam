@@ -161,7 +161,7 @@ function SessionSheet({ s, morph, onClose, onChanged }: { s: Session; morph: boo
     );
 
   return (
-    <Sheet onClose={onClose} label={s.class_name} className={morph ? 'class-sheet morph' : 'class-sheet'}>
+    <Sheet onClose={onClose} instantClose={morph} label={s.class_name} className={morph ? 'class-sheet morph' : 'class-sheet'}>
       <div className="stack">
         {/* Ze zdjęciem: zdjęcie na całą szerokość arkusza, data i nazwa leżą na nim. Bez zdjęcia – zwykły nagłówek. */}
         {s.photo_url ? (

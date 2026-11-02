@@ -57,6 +57,9 @@ import { invitesForHome } from './trainers.ts';
 /** Ile nietrafionych kodów rabatowych w kwadransie, zanim sprawdzanie się zatrzyma. */
 export const COUPON_MISSES = 10;
 
+/** Jak długo po zajęciach pytamy „Jak oceniasz zajęcia?” – starszych już nie przypominamy. */
+const RATE_ASK_DAYS = 3;
+
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export function guestCode(len = 8) {
@@ -248,6 +251,15 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     const invites = scope.get<{ n: number }>("SELECT COUNT(*) AS n FROM session_invites WHERE studio_id = $studio AND to_user = $u AND status = 'sent'", { u: user.id })!.n;
     const challenge = scope.get<{ id: string; title: string }>('SELECT id, title FROM challenges WHERE studio_id = $studio AND starts_on <= $d AND ends_on >= $d ORDER BY starts_on DESC LIMIT 1', { d: lp.date });
     const firstClass = attendedCount(scope, user.id) === 0;
+    // „Jak oceniasz zajęcia?”: ostatnie zakończone zajęcia, na których była, jeszcze bez oceny i bez „Pomiń”.
+    const rateLast = scope.get<{ booking_id: string; class_name: string; trainer_name: string; starts_at: string }>(
+      `SELECT b.id AS booking_id, COALESCE(s.title, ct.name) AS class_name, u.name AS trainer_name, s.starts_at
+       FROM bookings b JOIN class_sessions s ON s.id = b.session_id JOIN class_types ct ON ct.id = s.class_type_id JOIN users u ON u.id = s.trainer_id
+       WHERE b.studio_id = $studio AND b.user_id = $user AND b.guest_name IS NULL AND b.status = 'attended' AND b.rating IS NULL AND b.rating_skipped_at IS NULL
+         AND s.ends_at <= $now AND s.ends_at >= $since
+       ORDER BY s.ends_at DESC LIMIT 1`,
+      { user: user.id, now: now.toISOString(), since: new Date(now.getTime() - RATE_ASK_DAYS * 86_400_000).toISOString() },
+    );
     return {
       greeting: `${greeting(lp.minutes)}${user.name ? `, ${user.name}` : ''}`,
       dayPart: dayPart(now, studio.timezone),
@@ -265,6 +277,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       reward: rewardProgress(scope, studio, user.id),
       loyalty: s.loyalty.enabled && studio.has('loyalty') ? { points, ...levelFor(points, s.loyalty.levels) } : null,
       nps,
+      rateLast,
       survey,
       locker,
       invites,
@@ -334,6 +347,12 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
     rateSession(scope, user.id, req.params.id, req.body?.rating, c);
     awardPoints(scope, studio, user.id, 'review', req.params.id, studio.settings.loyalty.points.review);
     return { message: 'Dziękujemy za ocenę.' };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/bookings/:id/rate/skip', member, async (req) => {
+    const { scope, user } = ctx(req);
+    scope.run('UPDATE bookings SET rating_skipped_at = $now WHERE studio_id = $studio AND id = $id AND user_id = $u', { id: req.params.id, u: user.id, now: nowIso() });
+    return { ok: true };
   });
 
   app.get('/api/calendar-sync', member, async (req) => {
@@ -505,6 +524,14 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
   app.get('/api/products', member, async (req) => {
     const { scope } = ctx(req);
     const names = nameMaps(scope);
+    // Zdjęcie karnetu = zdjęcie pierwszych obejmowanych zajęć, które je mają (dla „wszystkich” – dowolne zdjęcie studia).
+    const photos = scope.all<{ id: string; photo_url: string | null }>(`SELECT ct.id, ${PHOTO_URL} FROM class_types ct WHERE ct.studio_id = $studio AND ct.photo_mime IS NOT NULL ORDER BY ct.name`);
+    const photoOf = (rules: ProductRules) => {
+      const ids = [...(rules.pools ?? []).map((p) => p.classTypeIds), rules.unlimited?.classTypeIds].filter((x) => x !== undefined);
+      if (ids.some((x) => x === 'all')) return photos[0]?.photo_url ?? null;
+      const wanted = ids.flat() as string[];
+      return wanted.map((id) => photos.find((ph) => ph.id === id)?.photo_url).find(Boolean) ?? null;
+    };
     return scope
       .all<{ id: string; name: string; description: string | null; price_grosze: number; rules_json: string }>(
         `SELECT p.id, p.name, p.description, v.price_grosze, v.rules_json FROM products p JOIN product_versions v ON v.id = p.current_version_id
@@ -513,7 +540,7 @@ export function clientRoutes(app: FastifyInstance, deps: Deps) {
       .map((p) => {
         const rules = JSON.parse(p.rules_json) as ProductRules;
         // billing: miejsce na paywallu pakietu zajęć (rok / tydzień / jednorazowo); null = zwykły karnet.
-        return { id: p.id, name: p.name, description: p.description, price: formatPLN(p.price_grosze), priceGrosze: p.price_grosze, validityDays: rules.validityDays, billing: rules.billing ?? null, autoRenew: !!rules.autoRenew, lines: describeRules(rules, names) };
+        return { id: p.id, name: p.name, description: p.description, price: formatPLN(p.price_grosze), priceGrosze: p.price_grosze, validityDays: rules.validityDays, billing: rules.billing ?? null, autoRenew: !!rules.autoRenew, lines: describeRules(rules, names), photoUrl: photoOf(rules) };
       });
   });
 

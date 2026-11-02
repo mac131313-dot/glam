@@ -29,10 +29,6 @@ function Star({ filled, size = 14 }: { filled: boolean; size?: number }) {
 export function ClassHistory() {
   const bookings = useApi<Booking[]>('/my/bookings');
   const [rate, setRate] = useState<string | null>(null);
-  const [stars, setStars] = useState(5);
-  const [comment, setComment] = useState('');
-  const toast = useToast();
-  const thanks = useThanks();
 
   // Zapis albo odwołanie w Grafiku od razu odświeża historię pod spodem.
   const reload = bookings.reload;
@@ -86,10 +82,7 @@ export function ClassHistory() {
                       <button
                         className="history-rate"
                         aria-label={`Oceń ${b.class_name}`}
-                        onClick={() => {
-                          setStars(5);
-                          setRate(b.id);
-                        }}
+                        onClick={() => setRate(b.id)}
                       >
                         <Star filled={false} size={16} />
                         <span>Oceń</span>
@@ -103,37 +96,58 @@ export function ClassHistory() {
       )}
       </Fold>
 
-      {rate && (
-        <Sheet onClose={() => setRate(null)} label="Oceń zajęcia">
-          <div className="stack">
-            <h2>Jak było?</h2>
-            <div className="rate-stars" role="radiogroup" aria-label="Ocena">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} role="radio" aria-checked={stars === n} aria-label={`${n} z 5`} className={n <= stars ? 'is-on' : ''} onClick={() => setStars(n)}>
-                  <Star filled={n <= stars} size={34} />
-                </button>
-              ))}
-            </div>
-            <textarea className="input" placeholder="Kilka słów dla trenerki (opcjonalnie)" value={comment} onChange={(e) => setComment(e.target.value)} />
-            <button
-              className="btn block"
-              onClick={async () => {
-                try {
-                  await api(`/bookings/${rate}/rate`, { method: 'POST', body: { rating: stars, comment } });
-                  setRate(null);
-                  thanks();
-                  setComment('');
-                  bookings.reload();
-                } catch (e) {
-                  toast((e as ApiError).message, 'error');
-                }
-              }}
-            >
-              Wyślij
-            </button>
-          </div>
-        </Sheet>
-      )}
+      {rate && <RateSheet bookingId={rate} onClose={() => setRate(null)} onRated={bookings.reload} />}
     </>
+  );
+}
+
+/**
+ * Okno „Jak oceniasz zajęcia?”: gwiazdki i opcjonalny komentarz. Z Historii (przycisk „Oceń”) i samo po zajęciach na Starcie.
+ * `onSkip` pokazuje „Pomiń” – wtedy o te zajęcia już nie pytamy.
+ */
+export function RateSheet(props: { bookingId: string; title?: string; hint?: string; onClose: () => void; onRated?: () => void; onSkip?: () => void }) {
+  const [stars, setStars] = useState(5);
+  const [comment, setComment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const thanks = useThanks();
+  const send = async () => {
+    setBusy(true);
+    try {
+      await api(`/bookings/${props.bookingId}/rate`, { method: 'POST', body: { rating: stars, comment } });
+      props.onClose();
+      thanks();
+      props.onRated?.();
+    } catch (e) {
+      toast((e as ApiError).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet onClose={props.onClose} label="Oceń zajęcia">
+      <div className="stack">
+        <h2>{props.title ?? 'Jak było?'}</h2>
+        {props.hint && <p className="muted small" style={{ margin: 0 }}>{props.hint}</p>}
+        <div className="rate-stars" role="radiogroup" aria-label="Ocena">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} role="radio" aria-checked={stars === n} aria-label={`${n} z 5`} className={n <= stars ? 'is-on' : ''} onClick={() => setStars(n)}>
+              <Star filled={n <= stars} size={34} />
+            </button>
+          ))}
+        </div>
+        <textarea className="input" placeholder="Kilka słów dla trenerki (opcjonalnie)" value={comment} onChange={(e) => setComment(e.target.value)} />
+        <div className="row">
+          {props.onSkip && (
+            <button className="btn ghost" onClick={() => (props.onSkip!(), props.onClose())}>
+              Pomiń
+            </button>
+          )}
+          <button className="btn block grow" disabled={busy} onClick={send}>
+            Wyślij
+          </button>
+        </div>
+      </div>
+    </Sheet>
   );
 }

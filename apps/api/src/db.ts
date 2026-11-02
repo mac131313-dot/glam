@@ -344,6 +344,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   confirmed_at TEXT,
   rating INTEGER,
   rating_comment TEXT,
+  -- „Pomiń” w pytaniu po zajęciach – nie pytamy drugi raz o te same zajęcia
+  rating_skipped_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

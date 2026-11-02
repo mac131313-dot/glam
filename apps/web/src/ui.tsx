@@ -239,13 +239,13 @@ function useSheetDrag(sheetRef: RefObject<HTMLDivElement | null>, overlayRef: Re
   }, [sheetRef, overlayRef]);
 }
 
-export function Sheet({ onClose, children, label, className }: { onClose: () => void; children: ReactNode; label: string; className?: string }) {
+export function Sheet({ onClose, children, label, className, instantClose }: { onClose: () => void; children: ReactNode; label: string; className?: string; /** zamknięcie robi wywołujący (np. przelot zdjęcia do kafelka) – bez własnego zjazdu w dół */ instantClose?: boolean }) {
   // Okno odchodzi tą samą drogą, którą przyszło, i dopiero wtedy znika z drzewa. Tło przestaje łapać
   // kliknięcia od razu, więc nie trzeba czekać na koniec animacji.
   const [closing, setClosing] = useState(false);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  const close = reducedMotion() ? onClose : () => setClosing(true);
+  const close = reducedMotion() || instantClose ? onClose : () => setClosing(true);
   useEffect(() => {
     if (!closing) return;
     const t = window.setTimeout(() => closeRef.current(), SHEET_EXIT_MS);
@@ -254,7 +254,7 @@ export function Sheet({ onClose, children, label, className }: { onClose: () => 
   useLayer(close);
   const ref = useDialogFocus();
   const overlayRef = useRef<HTMLDivElement>(null);
-  useSheetDrag(ref, overlayRef, () => setClosing(true), onClose);
+  useSheetDrag(ref, overlayRef, instantClose ? onClose : () => setClosing(true), onClose);
   return (
     <div ref={overlayRef} className={closing ? 'overlay is-closing' : 'overlay'} onClick={close}>
       <div ref={ref} tabIndex={-1} className={className ? `sheet ${className}` : 'sheet'} role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>

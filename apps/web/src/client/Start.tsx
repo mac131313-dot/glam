@@ -5,6 +5,7 @@ import { api, ApiError, fmtDay, fmtTime, useApi } from '../api.ts';
 import { Icon } from '../icons.tsx';
 import { Empty, ListRow, LiveCheckinQr, Progress, Pending, Sheet, rememberOrigin, useAction, useToast } from '../ui.tsx';
 import { ClassCover } from './ClassCover.tsx';
+import { RateSheet } from './ClassHistory.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { PassMeter, type Meter } from './PassMeter.tsx';
 import { focusSession, pickForYou, SessionCard, type Session } from './Schedule.tsx';
@@ -43,6 +44,8 @@ type Home = {
   reward: { left: number; milestone: number; item: string } | null;
   loyalty: { points: number; current: { name: string }; next: { name: string } | null; toNext: number } | null;
   nps: { id: string } | null;
+  /** Ostatnie zakończone zajęcia bez oceny – pytamy o nie raz, samo. */
+  rateLast: { booking_id: string; class_name: string; trainer_name: string; starts_at: string } | null;
   survey: { id: string } | null;
   locker: number;
   invites: number;
@@ -76,6 +79,7 @@ export function Start() {
   const { run } = useAction();
   const { data: home, error, reload } = useApi<Home>('/home');
   const [popupDismissed, setPopupDismissed] = useState(false);
+  const [rateDismissed, setRateDismissed] = useState(false);
   const [ticket, setTicket] = useState<Upcoming | null>(null);
 
   useEffect(() => {
@@ -258,6 +262,18 @@ export function Start() {
           onBook={() => go('schedule')}
           onStudio={() => go('community')}
           onCourses={hasFeature(studio, 'courses') ? () => open('courses') : undefined}
+        />
+      )}
+
+      {/* Po zajęciach – ale nie na raz z powitaniem. Zamknięcie bez „Pomiń” zapyta przy następnym wejściu. */}
+      {home.rateLast && !rateDismissed && (!home.welcome || popupDismissed) && (
+        <RateSheet
+          bookingId={home.rateLast.booking_id}
+          title="Jak oceniasz zajęcia?"
+          hint={`${home.rateLast.class_name} · ${fmtDay(home.rateLast.starts_at)}${home.rateLast.trainer_name ? ` · ${home.rateLast.trainer_name}` : ''}`}
+          onClose={() => setRateDismissed(true)}
+          onRated={reload}
+          onSkip={() => api(`/bookings/${home.rateLast!.booking_id}/rate/skip`, { method: 'POST' }).catch(() => {})}
         />
       )}
     </div>

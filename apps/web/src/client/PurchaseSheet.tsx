@@ -1,12 +1,14 @@
 // Zakup pakietu zajęć: subskrypcja (rok / tydzień) albo jedna płatność, bez odnowienia.
 // Studia bez planów z `billing` dostają dotychczasową listę karnetów.
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { classPackagePlans, type Billing } from '@glam/core';
 import { api, ApiError, goToCheckout, useApi } from '../api.ts';
 import { useLayer } from '../back.ts';
 import { Icon } from '../icons.tsx';
 import { availableMethods, PAYMENT_LABELS, Pending, Sheet, Spinner, useToast } from '../ui.tsx';
 import { useClient } from './ClientApp.tsx';
+import { ClassCover } from './ClassCover.tsx';
+import { SlideCommit } from './SlideCommit.tsx';
 
 type Product = {
   id: string;
@@ -17,9 +19,12 @@ type Product = {
   validityDays: number;
   billing: Billing | null;
   lines: string[];
+  photoUrl: string | null;
 };
 
-const METHODS = ['blik', 'apple_pay', 'google_pay', 'p24', 'card'];
+// Portfel telefonu (Apple Pay na iOS, Google Pay na Androidzie) jest domyślny; reszta chowa się pod „Inna metoda płatności”.
+const METHODS = ['apple_pay', 'google_pay', 'blik', 'p24'];
+const defaultMethod = () => availableMethods(METHODS)[0] ?? 'blik';
 
 type PurchaseResult = { message: string; checkoutUrl?: string };
 
@@ -64,12 +69,11 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
   const [choice, setChoice] = useState<{ planId: string | null; extraId: string | null } | null>(null);
   const [showOthers, setShowOthers] = useState(suggested.showOthers);
   const [notice, setNotice] = useState<keyof typeof LEGAL | null>(null);
-  const [method, setMethod] = useState('blik');
-  const [busy, setBusy] = useState(false);
+  const [method, setMethod] = useState(defaultMethod);
   const [coupon, setCoupon] = useState('');
-  const [payOpen, setPayOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
   const toast = useToast();
+  const paid = useRef('');
 
   const picked = choice ?? { planId: suggested.planId, extraId: suggested.extraId };
   const plan = plans.find((p) => p.productId === picked.planId) ?? null;
@@ -80,18 +84,23 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
 
   const pay = async () => {
     if (!productId) return;
-    setBusy(true);
     try {
       const res = await api<PurchaseResult>('/purchases', { method: 'POST', body: { productId, method, couponCode: coupon || undefined } });
-      if (goToCheckout(res)) return;
-      toast(res.message);
-      window.dispatchEvent(new Event('glam:passes-changed'));
-      onClose();
+      // Przekierowanie do Checkoutu (Apple/Google Pay): kręciołek zostaje do opuszczenia strony.
+      if (goToCheckout(res)) return new Promise<never>(() => {});
+      paid.current = res.message;
     } catch (e) {
       toast((e as ApiError).message, 'error');
-    } finally {
-      setBusy(false);
+      throw e;
     }
+  };
+  // Po rozwinięciu „Opłacone” chwila na nacieszenie oka, potem zamknięcie.
+  const finish = () => {
+    window.dispatchEvent(new Event('glam:passes-changed'));
+    setTimeout(() => {
+      toast(paid.current);
+      onClose();
+    }, 900);
   };
 
   const planCard = (p: (typeof plans)[number]) => {
@@ -186,32 +195,25 @@ function ClassPackagePaywall({ products, reason, highlight, onClose }: { product
         {extra && !covers(extra.id) && <p className="center small" style={{ margin: '12px 0 0' }}>{extra.name}</p>}
 
         <div className="paywall-options">
-          <button type="button" aria-expanded={payOpen} onClick={() => setPayOpen((v) => !v)}>
-            {PAYMENT_LABELS[method]} · <u>zmień</u>
-          </button>
-          <span aria-hidden>·</span>
           <button type="button" aria-expanded={codeOpen} onClick={() => setCodeOpen((v) => !v)}>
             {coupon ? `Kod: ${coupon}` : 'Masz kod rabatowy?'}
           </button>
         </div>
 
-        {payOpen && (
-          <div className="chips paywall-methods" role="group" aria-label="Płatność">
-            {availableMethods(METHODS).map((m) => (
-              <button key={m} type="button" className="chip" aria-pressed={method === m} onClick={() => { setMethod(m); setPayOpen(false); }}>
-                {PAYMENT_LABELS[m]}
-              </button>
-            ))}
-          </div>
-        )}
-
         {codeOpen && (
           <input className="input paywall-code" placeholder="Kod rabatowy" value={coupon} onChange={(e) => setCoupon(e.target.value)} aria-label="Kod rabatowy" autoFocus />
         )}
 
-        <button className="btn paywall-cta" disabled={busy || !productId} onClick={pay}>
-          {subscribing ? 'Subskrybuj' : 'Kup raz'}
-        </button>
+        <SlideCommit
+          className="paywall-slide"
+          label={subscribing ? 'Przesuń, aby subskrybować' : 'Przesuń, aby zapłacić'}
+          doneLabel={subscribing ? 'Subskrybujesz' : 'Opłacone'}
+          disabled={!productId}
+          onConfirm={pay}
+          onDone={finish}
+          holdMs={0}
+        />
+        <MethodPicker method={method} onPick={setMethod} />
         <p className="paywall-cancel">{subscribing ? 'Anuluj kiedy chcesz' : 'Płatność jednorazowa, bez odnowienia'}</p>
 
         {notice && <p className="paywall-note">{LEGAL[notice]}</p>}
@@ -285,25 +287,33 @@ function PassList({ products, reason, highlight, onClose }: { products: Product[
   const [chosen, setChosen] = useState<Product | null>(null);
   // Karnety obejmujące zajęcia, na które ktoś się zapisuje, na górze listy (sort jest stabilny – reszta w kolejności studia).
   const sorted = [...products].sort((a, b) => Number(!!highlight?.includes(b.id)) - Number(!!highlight?.includes(a.id)));
-  const [method, setMethod] = useState('blik');
-  const [busy, setBusy] = useState(false);
+  const [method, setMethod] = useState(defaultMethod);
   const [coupon, setCoupon] = useState('');
   const toast = useToast();
+  const paid = useRef('');
+  // „Ważny 30 dni od zakupu” idzie drobnym tekstem obok głównej linii, nie jako osobny punkt.
+  const validity = chosen?.lines.find((l) => l.startsWith('Ważny'))?.replace(/^Ważny/, 'Ważne').replace(' od zakupu', '');
+  const main = chosen?.lines.filter((l) => !l.startsWith('Ważny')) ?? [];
 
   const pay = async () => {
     if (!chosen) return;
-    setBusy(true);
     try {
       const res = await api<PurchaseResult>('/purchases', { method: 'POST', body: { productId: chosen.id, method, couponCode: coupon || undefined } });
-      if (goToCheckout(res)) return;
-      toast(res.message);
-      window.dispatchEvent(new Event('glam:passes-changed'));
-      onClose();
+      // Przekierowanie do Checkoutu (Apple/Google Pay): kręciołek zostaje do opuszczenia strony.
+      if (goToCheckout(res)) return new Promise<never>(() => {});
+      paid.current = res.message;
     } catch (e) {
       toast((e as ApiError).message, 'error');
-    } finally {
-      setBusy(false);
+      throw e;
     }
+  };
+  // Po rozwinięciu „Opłacone” chwila na nacieszenie oka, potem zamknięcie.
+  const finish = () => {
+    window.dispatchEvent(new Event('glam:passes-changed'));
+    setTimeout(() => {
+      toast(paid.current);
+      onClose();
+    }, 900);
   };
 
   return (
@@ -335,29 +345,49 @@ function PassList({ products, reason, highlight, onClose }: { products: Product[
           <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => setChosen(null)}>
             ← Wróć
           </button>
-          <h2>{chosen.name}</h2>
-          <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-            {chosen.lines.map((l) => (
-              <li key={l}>{l}</li>
-            ))}
-          </ul>
-          <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
-            <legend className="eyebrow">Płatność</legend>
-            <div className="chips" style={{ flexWrap: 'wrap' }}>
-              {availableMethods(METHODS).map((m) => (
-                <button key={m} type="button" className="chip" aria-pressed={method === m} onClick={() => setMethod(m)}>
-                  {PAYMENT_LABELS[m]}
-                </button>
+          {chosen.photoUrl ? (
+            // Jak „Najbliższe zajęcia” na Starcie: duże zdjęcie, nazwa i opis na nim.
+            <div className="pass-cover">
+              <ClassCover photoUrl={chosen.photoUrl} photoRatio={0.85} eyebrow={chosen.price} title={chosen.name} meta={main.join(' · ')} footer={validity} />
+            </div>
+          ) : (
+            <div className="pass-head-copy">
+              <h2>{chosen.name}</h2>
+              {main.map((l, i) => (
+                <p key={l} className="pass-head-line">
+                  {l}
+                  {i === 0 && validity && <small> · {validity}</small>}
+                </p>
               ))}
             </div>
-          </fieldset>
+          )}
           <input className="input" placeholder="Kod rabatowy (opcjonalnie)" value={coupon} onChange={(e) => setCoupon(e.target.value)} aria-label="Kod rabatowy" />
           <p className="tiny muted">Wersja demo: płatność jest symulowana. Nie przechowujemy danych kart.</p>
-          <button className="btn block" disabled={busy} onClick={pay}>
-            Kup raz · {chosen.price}
-          </button>
+          <SlideCommit label={`Przesuń, aby zapłacić ${chosen.price}`} onConfirm={pay} onDone={finish} holdMs={0} />
+          <MethodPicker method={method} onPick={setMethod} />
         </div>
       )}
     </Sheet>
+  );
+}
+
+/** Wybrana metoda drobnym tekstem i jeden cichy przycisk; reszta metod dopiero po kliknięciu. */
+function MethodPicker({ method, onPick }: { method: string; onPick: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="method-picker">
+      <button type="button" className="method-picker-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {PAYMENT_LABELS[method]} · <u>Inna metoda płatności</u>
+      </button>
+      {open && (
+        <div className="chips" role="group" aria-label="Metoda płatności">
+          {availableMethods(METHODS).map((m) => (
+            <button key={m} type="button" className="chip" aria-pressed={method === m} onClick={() => { onPick(m); setOpen(false); }}>
+              {PAYMENT_LABELS[m]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

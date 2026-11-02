@@ -56,7 +56,7 @@ export function ClassCover({
     <>
       {photoUrl && <img className="cover-img" src={photoUrl} alt="" loading="lazy" decoding="async" draggable={false} />}
       {(photoUrl || backdrop) && (
-        <div className="cover-blur" aria-hidden="true">
+        <div className="cover-blur" aria-hidden="true" style={photoUrl ? ({ '--cover-photo': `url("${photoUrl}")` } as CSSProperties) : undefined}>
           <i />
           <i />
           <i />

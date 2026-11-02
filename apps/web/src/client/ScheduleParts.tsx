@@ -20,10 +20,11 @@ export function useMorphSheet<T>(onOpen: (item: T) => void, onClose: () => void)
   const photoRef = useRef<HTMLElement | null>(null);
   const [morph, setMorph] = useState(false);
   const openFromTile = (item: T, tile: HTMLElement) => {
-    const photo = tile.querySelector<HTMLElement>('.cover-img');
+    // Leci cała karta (zdjęcie z napisami), nie samo zdjęcie – inaczej napisy znikają i wskakują osobno.
+    const photo = tile.matches('.cover.has-photo') ? tile : tile.querySelector<HTMLElement>('.cover.has-photo');
     photoRef.current = photo;
     if (!photo || !canMorph()) return (setMorph(false), onOpen(item));
-    // Przed zmianą nazwa przejścia jest na zdjęciu kafelka, po zmianie – na zdjęciu arkusza (.class-sheet.morph .sheet-hero > img).
+    // Przed zmianą nazwa przejścia jest na zdjęciu kafelka, po zmianie – na górze arkusza (.class-sheet.morph .sheet-hero).
     photo.style.viewTransitionName = 'class-photo';
     document.startViewTransition(() => {
       photo.style.viewTransitionName = '';

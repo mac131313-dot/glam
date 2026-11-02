@@ -290,7 +290,7 @@ export function Schedule() {
       {askFit && <ClassFitSheet initial={fit} onClose={() => setAskFit(false)} onSaved={() => (reload(), void reloadMe())} />}
 
       {detail && (
-        <Sheet onClose={closeDetail} label={detail.class_name} className={morph ? 'class-sheet morph' : 'class-sheet'}>
+        <Sheet onClose={closeDetail} instantClose={morph} label={detail.class_name} className={morph ? 'class-sheet morph' : 'class-sheet'}>
           <div className="stack">
             {/* Ze zdjęciem: zdjęcie na całą szerokość arkusza, data i nazwa leżą na nim. Bez zdjęcia – zwykły nagłówek. */}
             {detail.photo_url ? (
