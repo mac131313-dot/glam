@@ -1,13 +1,19 @@
 # ─────────────────────────────────────────────────────────── GLAMCORE.PL
 #
-# Strona platformy GLAM: same pliki statyczne z /srv/glam-www (katalog www/
-# z repozytorium, bez deploy/ i README.md). Bez procesu, bez portu i bez
-# dostępu do danych innych projektów. Caddy tylko czyta ten jeden katalog.
+# Strona platformy GLAM: pliki statyczne z /srv/glam-www (katalog www/
+# z repozytorium, bez deploy/, serwer/ i README.md) oraz zgłoszenia
+# z formularza, które przyjmuje usługa glam-zgloszenia (127.0.0.1:3500,
+# konto `glam`, dane w /opt/glam/dane). Nic z innych projektów.
 #
 # Plik leży w repozytorium GLAM (www/deploy/glam.caddy), a na serwerze
 # w /etc/caddy/glam.caddy. Główny Caddyfile ma tylko jedną linię
 # `import /etc/caddy/glam.caddy`. Zmiany wprowadzaj tutaj i wgrywaj przez
 # www/deploy/wdroz.sh, nie edytuj kopii na serwerze.
+#
+# Dwa pliki istnieją TYLKO na serwerze (nie w repozytorium, prawa 640 root:caddy):
+#  - glam-admin.hasla – login i skrót bcrypt hasła do /admin
+#                       (ustawia www/deploy/haslo-admina.sh),
+#  - glam-klucz.caddy – nagłówek z kluczem, który usługa sprawdza na trasach admina.
 #
 # Bloki nazwane mają pierwszeństwo przed `https://` (domeny klienckie
 # ResHouse), więc glamcore.pl nigdy nie trafi na aplikację stron.
@@ -18,7 +24,6 @@ glamcore.pl {
 		format console
 	}
 
-	root * /srv/glam-www
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
@@ -27,11 +32,45 @@ glamcore.pl {
 		X-Frame-Options "DENY"
 		-Server
 	}
-	# Nazwy plików nie mają wersji, więc krótki cache: po wdrożeniu nowa
-	# wersja dociera do odwiedzających najpóźniej po godzinie.
-	@assets path *.css *.js *.svg *.jpg *.png *.webp
-	header @assets Cache-Control "public, max-age=3600"
-	file_server
+
+	# Formularz „Umów pokaz”. Limit tempa i długości pól pilnuje usługa;
+	# tu tylko ucinamy za duże zapytania, zanim dojdą do Node.
+	handle /api/zgloszenie {
+		request_body {
+			max_size 8KB
+		}
+		reverse_proxy 127.0.0.1:3500 {
+			header_up X-Real-IP {client_ip}
+			header_up -X-Glam-Klucz
+		}
+	}
+
+	# Podgląd zgłoszeń – za hasłem. Klucz dokleja się dopiero po udanym
+	# logowaniu, więc bez hasła usługa i tak odmówi.
+	@admin path /admin /admin/* /api/admin/*
+	handle @admin {
+		basic_auth {
+			import /etc/caddy/glam-admin.hasla
+		}
+		header Cache-Control "no-store"
+		header X-Robots-Tag "noindex"
+		request_body {
+			max_size 8KB
+		}
+		reverse_proxy 127.0.0.1:3500 {
+			header_up X-Real-IP {client_ip}
+			import /etc/caddy/glam-klucz.caddy
+		}
+	}
+
+	handle {
+		root * /srv/glam-www
+		# Nazwy plików nie mają wersji, więc krótki cache: po wdrożeniu nowa
+		# wersja dociera do odwiedzających najpóźniej po godzinie.
+		@assets path *.css *.js *.svg *.jpg *.png *.webp
+		header @assets Cache-Control "public, max-age=3600"
+		file_server
+	}
 }
 
 www.glamcore.pl {

@@ -1,0 +1,50 @@
+# Zgłoszenia z formularza glamcore.pl i podgląd /admin (www/serwer/zgloszenia.mjs).
+# Osobne konto `glam`, kod tylko do odczytu (/opt/glam/app należy do roota),
+# zapis wyłącznie do /opt/glam/dane. Sieć tylko lokalna – Caddy jest jedynym klientem.
+# Źródło: repozytorium GLAM, www/deploy/glam-zgloszenia.service.
+
+[Unit]
+Description=GLAM – zgłoszenia ze strony glamcore.pl
+After=network.target
+
+[Service]
+User=glam
+Group=glam
+WorkingDirectory=/opt/glam/app
+EnvironmentFile=/opt/glam/glam.env
+Environment=NODE_ENV=production
+Environment=PORT=3500
+Environment=GLAM_DANE=/opt/glam/dane
+Environment=GLAM_ORIGIN=https://glamcore.pl
+ExecStart=/usr/bin/node /opt/glam/app/zgloszenia.mjs
+Restart=on-failure
+RestartSec=3
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadWritePaths=/opt/glam/dane
+InaccessiblePaths=-/opt/reshouse -/opt/woyld -/etc/caddy -/root
+UMask=0077
+MemoryMax=128M
+TasksMax=32
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

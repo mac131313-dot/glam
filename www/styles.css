@@ -230,6 +230,8 @@ h1 b { display: block; }
 .form [aria-invalid='true'] { border-color: #b4553f; }
 .form .btn { margin-top: 0.5rem; }
 .form-note { font-size: 0.85rem; color: var(--muted); min-height: 1.3em; }
+.form .trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.form .btn[disabled] { opacity: 0.6; cursor: progress; }
 
 .footer { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; margin-top: var(--gap-section); padding-top: 2rem; padding-bottom: 2.5rem; border-top: 1px solid var(--line); }
 .footer-links { display: flex; gap: 2rem; margin-left: auto; }

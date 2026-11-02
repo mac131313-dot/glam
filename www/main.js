@@ -1,8 +1,6 @@
 // GLAM – strona platformy. Bez zależności: zakładki funkcji, podgląd palet, kod QR zmieniający się
-// co minutę, aktywny link w menu i formularz kontaktowy (otwiera pocztę z gotową wiadomością).
-
-// Adres, na który trafiają zgłoszenia z formularza. Zmień przed publikacją.
-const CONTACT_EMAIL = 'kontakt@twojadomena.pl';
+// co minutę, aktywny link w menu i formularz kontaktowy (zgłoszenia lądują w glamcore.pl/admin,
+// usługa: www/serwer/zgloszenia.mjs).
 
 document.documentElement.classList.remove('no-js');
 
@@ -130,13 +128,11 @@ const tick = () => {
 tick();
 setInterval(tick, 1000);
 
-// ——— Formularz: walidacja i gotowa wiadomość w programie pocztowym ———
-const mailto = (subject, body = '') => `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-document.querySelector('[data-mail]').href = mailto('Pokaz GLAM');
-
+// ——— Formularz: walidacja i zapis zgłoszenia na serwerze ———
 const form = document.querySelector('[data-form]');
 const note = document.querySelector('[data-form-note]');
-form.addEventListener('submit', (e) => {
+const send = form.querySelector('button[type="submit"]');
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const missing = [...form.querySelectorAll('[required]')].filter((f) => !f.value.trim());
   form.querySelectorAll('[required]').forEach((f) => f.setAttribute('aria-invalid', String(missing.includes(f))));
@@ -145,9 +141,25 @@ form.addEventListener('submit', (e) => {
     missing[0].focus();
     return;
   }
-  const d = Object.fromEntries(new FormData(form));
-  window.location.href = mailto(`Pokaz GLAM – ${d.studio}`, `Imię: ${d.imie}\nStudio: ${d.studio}\nKontakt: ${d.kontakt}`);
-  note.textContent = 'Otwieramy Twój program pocztowy z gotową wiadomością.';
+  send.disabled = true;
+  note.textContent = 'Wysyłamy…';
+  try {
+    const r = await fetch('/api/zgloszenie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.fromEntries(new FormData(form))),
+    });
+    if (r.ok) {
+      form.reset();
+      note.textContent = 'Dziękujemy! Odezwiemy się, żeby umówić pokaz.';
+    } else {
+      note.textContent = (await r.json().catch(() => null))?.blad ?? 'Nie udało się wysłać. Spróbuj ponownie za chwilę.';
+    }
+  } catch {
+    note.textContent = 'Brak połączenia. Sprawdź internet i spróbuj ponownie.';
+  } finally {
+    send.disabled = false;
+  }
 });
 form.addEventListener('input', (e) => { if (e.target.value.trim()) e.target.removeAttribute('aria-invalid'); });
 

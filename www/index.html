@@ -297,7 +297,6 @@
           <div class="cta-copy">
             <h2>Zobacz GLAM <b>na żywo.</b></h2>
             <p class="lead">Zostaw kontakt, a umówimy 30-minutowy pokaz na danych przykładowego studia.</p>
-            <p class="small muted">Wolisz od razu? <a class="link" data-mail href="#">Napisz do nas</a></p>
           </div>
           <form class="form" data-form novalidate>
             <div class="form-row">
@@ -305,6 +304,8 @@
               <label>Nazwa studia<input name="studio" autocomplete="organization" required /></label>
             </div>
             <label>E-mail lub telefon<input name="kontakt" autocomplete="email" required /></label>
+            <!-- Pułapka na boty: niewidoczne pole, którego człowiek nie wypełni. -->
+            <label class="trap" aria-hidden="true">Strona WWW<input name="www" tabindex="-1" autocomplete="off" /></label>
             <button class="btn block" type="submit">Umów pokaz</button>
             <p class="form-note" data-form-note aria-live="polite"></p>
           </form>
