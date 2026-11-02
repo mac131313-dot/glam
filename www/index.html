@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="pl" class="no-js">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>GLAM – aplikacja i panel dla studia ruchu i wellness</title>
+    <meta name="description" content="GLAM to jeden system dla studia pilatesu, jogi i stretchingu: aplikacja z Twoim logo dla klientek, panel do grafiku, karnetów i marketingu, recepcja z kodem QR i strona WWW studia." />
+    <meta name="theme-color" content="#f3f0ea" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GLAM – studio, do którego się wraca" />
+    <meta property="og:description" content="Aplikacja z Twoim logo dla klientek i jeden panel do prowadzenia studia." />
+    <meta property="og:locale" content="pl_PL" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Rethink+Sans:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="main.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#tresc">Przejdź do treści</a>
+
+    <header class="nav" data-nav>
+      <div class="nav-inner wrap">
+        <a class="wordmark" href="#" aria-label="GLAM, strona główna">glam</a>
+        <nav class="nav-links" aria-label="Główna nawigacja">
+          <a href="#funkcje">Funkcje</a>
+          <a href="#dlaczego">Dlaczego GLAM</a>
+          <a href="#start">Jak zacząć</a>
+          <a href="#pytania">Pytania</a>
+        </nav>
+        <a class="btn sm" href="#kontakt">Umów pokaz</a>
+      </div>
+    </header>
+
+    <main id="tresc">
+      <!-- Hero -->
+      <section class="hero wrap">
+        <div class="hero-copy">
+          <p class="eyebrow">Dla studiów ruchu i wellness</p>
+          <h1>Studio, do którego <b>się wraca.</b></h1>
+          <p class="lead">Aplikacja z Twoim logo dla klientek i jeden panel do grafiku, karnetów i zespołu.</p>
+          <div class="row">
+            <a class="btn" href="#kontakt">Umów pokaz</a>
+            <a class="link" href="#funkcje">Zobacz, jak działa</a>
+          </div>
+          <ul class="facts" aria-label="W skrócie">
+            <li><b>8%</b><span>prowizji od sprzedaży</span></li>
+            <li><b>1</b><span>system zamiast kilku</span></li>
+            <li><b>60 s</b><span>i nowy kod wejścia</span></li>
+          </ul>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="phone">
+            <div class="ph-top">
+              <span class="ph-chip"><span class="ph-logo">f</span>Forma</span>
+              <span class="ph-avatar">M</span>
+            </div>
+            <div class="ph-body">
+              <p class="ph-hello">Dzień dobry, <b>Magda</b></p>
+              <div class="ph-card">
+                <div class="ph-label">Twój karnet</div>
+                <div class="ph-meter"><b>6</b><span>wejść</span><em>do 30.11</em></div>
+                <div class="ph-bar"><i style="width: 60%"></i></div>
+              </div>
+              <div class="ph-card">
+                <div class="ph-label">Dziś · 18:00</div>
+                <div class="ph-title">Pilates reformer</div>
+                <div class="ph-meta">Marzena · sala jasna · 3 miejsca</div>
+                <span class="ph-btn">Zapisz się</span>
+              </div>
+              <div class="ph-card soft ph-row">
+                <span class="ph-bloom"><i></i><i></i></span>
+                <div>
+                  <div class="ph-title sm">Oddech 4–6</div>
+                  <div class="ph-meta">3 minuty wyciszenia</div>
+                </div>
+              </div>
+            </div>
+            <div class="ph-tabbar">
+              <span class="on">Start</span><span>Grafik</span><span>Dla mnie</span><span>Sklep</span><span>Czat</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Funkcje: jedna sekcja z zakładkami zamiast czterech długich -->
+      <section class="section wrap" id="funkcje">
+        <div class="head">
+          <p class="eyebrow">Funkcje</p>
+          <h2>Jeden system, <b>cztery widoki.</b></h2>
+          <p class="lead">Zapis w aplikacji od razu widać w panelu, na recepcji i na stronie studia.</p>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Części systemu" data-tabs>
+          <span class="tabs-ind" aria-hidden="true" data-tabs-ind></span>
+          <button role="tab" id="t-klientki" aria-controls="p-klientki" aria-selected="true">Klientki</button>
+          <button role="tab" id="t-studio" aria-controls="p-studio" aria-selected="false" tabindex="-1">Studio</button>
+          <button role="tab" id="t-recepcja" aria-controls="p-recepcja" aria-selected="false" tabindex="-1">Recepcja</button>
+          <button role="tab" id="t-marka" aria-controls="p-marka" aria-selected="false" tabindex="-1">Marka</button>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-klientki" aria-labelledby="t-klientki">
+          <div class="panel-copy">
+            <h3>Aplikacja dla klientek</h3>
+            <ul class="list">
+              <li><b>Zapisy w kilka sekund.</b> Lista oczekujących sama wpisuje następną osobę.</li>
+              <li><b>Karnet w telefonie.</b> Stan wejść, przedłużenie jednym ruchem, przypomnienia.</li>
+              <li><b>Dla mnie.</b> Oddech, rozciąganie i cel tygodnia, bez rankingów.</li>
+              <li><b>Czat ze studiem.</b> Grupy z trenerką i prywatne wiadomości.</li>
+              <li><b>Wejściówka dla znajomej.</b> Klientka przyprowadza nową osobę.</li>
+            </ul>
+          </div>
+          <div class="panel-visual" aria-hidden="true">
+            <div class="mock stack">
+              <div class="m-label">Dopasowane do Ciebie</div>
+              <div class="m-row"><span>Stretching głęboki</span><small>wt · 19:30</small></div>
+              <div class="m-row"><span>Joga nidra</span><small>czw · 20:00</small></div>
+              <div class="m-row"><span>Barre flow</span><small>pt · 9:00</small></div>
+              <div class="m-label top">Przypomnienie</div>
+              <div class="chips"><span class="chip">dzień wcześniej</span><span class="chip on">2 h przed</span><span class="chip">30 min</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-studio" aria-labelledby="t-studio" hidden>
+          <div class="panel-copy">
+            <h3>Panel dla Ciebie i zespołu</h3>
+            <ul class="list">
+              <li><b>Grafik, który sam się uzupełnia.</b> Zajęcia cykliczne, sale, zastępstwa.</li>
+              <li><b>Karnety na Twoich zasadach.</b> Nowy cennik nie zmienia kupionych karnetów.</li>
+              <li><b>Pulpit.</b> Frekwencja, przychody i klientki, które przestały przychodzić.</li>
+              <li><b>Marketing.</b> Rabaty, lojalność, mailing i życzenia urodzinowe.</li>
+              <li><b>Role.</b> Trenerka i recepcja widzą tylko swoje rzeczy.</li>
+            </ul>
+          </div>
+          <div class="panel-visual" aria-hidden="true">
+            <div class="mock">
+              <div class="m-head">Dzień dobry, <b>Joanno</b></div>
+              <div class="kpis">
+                <div><small>Frekwencja</small><b>87%</b></div>
+                <div><small>Aktywne</small><b>214</b></div>
+                <div><small>Uśpione</small><b>9</b></div>
+              </div>
+              <div class="bars">
+                <i style="--h: 54%"></i><i style="--h: 72%"></i><i style="--h: 63%"></i><i style="--h: 88%"></i><i style="--h: 80%"></i><i class="on" style="--h: 95%"></i><i style="--h: 41%"></i>
+              </div>
+              <div class="bars-legend"><span>pn</span><span>wt</span><span>śr</span><span>czw</span><span>pt</span><span>sb</span><span>nd</span></div>
+              <p class="note">Dane przykładowe</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-recepcja" aria-labelledby="t-recepcja" hidden>
+          <div class="panel-copy">
+            <h3>Recepcja i wejście</h3>
+            <ul class="list">
+              <li><b>Kod QR co minutę.</b> Zrzut ekranu wysłany koleżance szybko przestaje działać.</li>
+              <li><b>Działa offline.</b> Wejście nie zależy od internetu w sali.</li>
+              <li><b>Kasa.</b> Karnety i wejściówki sprzedane na miejscu.</li>
+              <li><b>Dzisiejsze zapisy</b> w jednym widoku i notatka ze zmiany.</li>
+            </ul>
+          </div>
+          <div class="panel-visual" aria-hidden="true">
+            <div class="mock center">
+              <div class="qr" data-qr></div>
+              <div class="note"><span data-qr-sec>60</span> s do nowego kodu</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-marka" aria-labelledby="t-marka" hidden>
+          <div class="panel-copy">
+            <h3>Twoja marka i strona WWW</h3>
+            <ul class="list">
+              <li><b>Twoje barwy w aplikacji.</b> Logo, paleta, czcionki i zaokrąglenia.</li>
+              <li><b>Podgląd na żywo</b> podczas zmian w panelu.</li>
+              <li><b>Strona studia.</b> Grafik, trenerki, sklep i kursy, także pod Twoją domeną.</li>
+            </ul>
+            <div class="swatches" role="radiogroup" aria-label="Przykładowe palety" data-swatches>
+              <button type="button" role="radio" aria-checked="true" data-palette="isola" style="--c1: #f3f0ea; --c2: #9b8570" title="Kamień i taupe"><span class="sr">Kamień i taupe</span></button>
+              <button type="button" role="radio" aria-checked="false" data-palette="unbound" style="--c1: #efedea; --c2: #6d6968" title="Mgła i grafit"><span class="sr">Mgła i grafit</span></button>
+              <button type="button" role="radio" aria-checked="false" data-palette="sand" style="--c1: #f7f4ef; --c2: #c2ad93" title="Piasek i mleko"><span class="sr">Piasek i mleko</span></button>
+              <button type="button" role="radio" aria-checked="false" data-palette="blush" style="--c1: #faf5f3; --c2: #d4a5a5" title="Pudrowy róż"><span class="sr">Pudrowy róż</span></button>
+              <button type="button" role="radio" aria-checked="false" data-palette="biel" style="--c1: #ffffff; --c2: #18181b" title="Czysta biel"><span class="sr">Czysta biel</span></button>
+              <span class="note" data-palette-name>Kamień i taupe</span>
+            </div>
+          </div>
+          <div class="panel-visual" aria-hidden="true">
+            <div class="brand" data-brand>
+              <div class="b-hero">
+                <span class="b-logo">f</span>
+                <div class="b-name">Forma</div>
+                <div class="b-tag">ruch, który koi</div>
+              </div>
+              <div class="b-row">
+                <div class="b-card"><small>pon · 9:00</small><b>Pilates mat</b></div>
+                <div class="b-card"><small>pon · 18:00</small><b>Barre flow</b></div>
+              </div>
+              <span class="b-btn">Kup karnet</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dlaczego GLAM -->
+      <section class="section wrap" id="dlaczego">
+        <div class="head">
+          <p class="eyebrow">Dlaczego GLAM</p>
+          <h2>Prosto dla Ciebie, <b>spokojnie dla klientek.</b></h2>
+        </div>
+        <div class="grid">
+          <div class="item"><h3>Pieniądze prosto do studia</h3><p>Płatności idą przez Twoją bramkę. GLAM nie pośredniczy w pieniądzach klientek.</p></div>
+          <div class="item"><h3>Przejrzysta prowizja</h3><p>8% od sprzedaży karnetów, sklepu i wydarzeń. Bez ukrytych opłat.</p></div>
+          <div class="item"><h3>Zwroty i faktury</h3><p>Zwrot z panelu, faktury z VAT i eksport do Excela.</p></div>
+          <div class="item"><h3>Logowanie bez haseł</h3><p>Kod SMS albo Face ID. Klientka może wylogować inne urządzenia.</p></div>
+          <div class="item"><h3>Zgodnie z RODO</h3><p>Dane każdego studia są oddzielone. Klientka zarządza zgodami i pobiera swoje dane.</p></div>
+          <div class="item"><h3>Bez nachalności</h3><p>Cisza nocna 22–7, limity wiadomości i przycisk „Potrzebuję ciszy”.</p></div>
+        </div>
+      </section>
+
+      <!-- Jak zacząć -->
+      <section class="section wrap" id="start">
+        <div class="head">
+          <p class="eyebrow">Jak zacząć</p>
+          <h2>Cztery kroki <b>do startu.</b></h2>
+        </div>
+        <ol class="steps">
+          <li><span>1</span><b>Pokaz</b><p>Na danych przykładowego studia.</p></li>
+          <li><span>2</span><b>Ustawienie</b><p>Wygląd, grafik, karnety, zespół. Pomagamy przenieść dane.</p></li>
+          <li><span>3</span><b>Płatności</b><p>Podpinamy Twoją bramkę.</p></li>
+          <li><span>4</span><b>Start</b><p>Klientki logują się numerem telefonu.</p></li>
+        </ol>
+      </section>
+
+      <!-- Pytania -->
+      <section class="section wrap narrow" id="pytania">
+        <div class="head">
+          <p class="eyebrow">Pytania</p>
+          <h2>Zanim <b>zapytasz.</b></h2>
+        </div>
+        <div class="faq">
+          <details>
+            <summary>Ile to kosztuje?</summary>
+            <p>Stały miesięczny abonament zależny od wielkości studia. Podajemy go po krótkiej rozmowie, żeby nie płacić za funkcje, których nie potrzebujesz.</p>
+          </details>
+          <details>
+            <summary>Czy aplikacja jest w App Store i Google Play?</summary>
+            <p>Teraz działa jako aplikacja webowa: klientka dodaje ją do ekranu głównego jednym ruchem. Wersje w sklepach są w przygotowaniu.</p>
+          </details>
+          <details>
+            <summary>Jakie metody płatności obsługujecie?</summary>
+            <p>Dziś Stripe: karty, Apple Pay i Google Pay. Przelewy24 i BLIK są w przygotowaniu.</p>
+          </details>
+          <details>
+            <summary>Mam kilka sal albo lokalizacji.</summary>
+            <p>Grafik obsługuje wiele sal, a jedna klientka może korzystać z kilku studiów na jednym koncie.</p>
+          </details>
+          <details>
+            <summary>Czy trenerki muszą się uczyć nowego systemu?</summary>
+            <p>Trenerka widzi tylko swój dzień, swoje grupy i wiadomości. Wszystko działa też na telefonie.</p>
+          </details>
+        </div>
+      </section>
+
+      <!-- Kontakt -->
+      <section class="section wrap" id="kontakt">
+        <div class="cta">
+          <div class="cta-copy">
+            <h2>Zobacz GLAM <b>na żywo.</b></h2>
+            <p class="lead">Zostaw kontakt, a umówimy 30-minutowy pokaz na danych przykładowego studia.</p>
+            <p class="small muted">Wolisz od razu? <a class="link" data-mail href="#">Napisz do nas</a></p>
+          </div>
+          <form class="form" data-form novalidate>
+            <div class="form-row">
+              <label>Imię<input name="imie" autocomplete="given-name" required /></label>
+              <label>Nazwa studia<input name="studio" autocomplete="organization" required /></label>
+            </div>
+            <label>E-mail lub telefon<input name="kontakt" autocomplete="email" required /></label>
+            <button class="btn block" type="submit">Umów pokaz</button>
+            <p class="form-note" data-form-note aria-live="polite"></p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer wrap">
+      <span class="wordmark sm">glam</span>
+      <nav class="footer-links" aria-label="Stopka">
+        <a href="#funkcje">Funkcje</a>
+        <a href="#pytania">Pytania</a>
+        <a href="#kontakt">Kontakt</a>
+      </nav>
+      <span class="note">© <span data-year>2026</span> GLAM</span>
+    </footer>
+  </body>
+</html>
