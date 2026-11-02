@@ -40,7 +40,9 @@ const selectTab = (tab, focus) => {
     panel.classList.toggle('entering', on);
   });
   moveInd(tab);
-  if (focus) tab.focus();
+  // Na telefonie pasek zakładek się przewija – wybrana zakładka wjeżdża na środek.
+  tab.scrollIntoView({ block: 'nearest', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  if (focus) tab.focus({ preventScroll: true });
 };
 // Pierwsze ustawienie bez animacji, potem przy zmianie szerokości okna.
 tabsInd.style.transition = 'none';
@@ -125,8 +127,18 @@ const tick = () => {
   const minute = Math.floor(now / 60000);
   if (minute !== lastMinute) { lastMinute = minute; drawQr(minute); }
 };
-tick();
-setInterval(tick, 1000);
+// Licznik chodzi tylko, gdy kod widać na ekranie – na telefonie to mniej pracy w tle i mniej baterii.
+let qrTimer = 0;
+const runQr = (on) => {
+  clearInterval(qrTimer);
+  qrTimer = 0;
+  if (on && !document.hidden) { tick(); qrTimer = setInterval(tick, 1000); }
+};
+let qrVisible = true;
+if ('IntersectionObserver' in window) {
+  new IntersectionObserver(([e]) => runQr((qrVisible = e.isIntersecting))).observe(qr);
+} else runQr(true);
+document.addEventListener('visibilitychange', () => runQr(qrVisible));
 
 // ——— Formularz: walidacja i zapis zgłoszenia na serwerze ———
 const form = document.querySelector('[data-form]');

@@ -25,7 +25,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 5rem; -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 1rem; line-height: 1.6; letter-spacing: 0.002em; -webkit-font-smoothing: antialiased; overflow-x: clip; }
-a { color: inherit; }
+a { color: inherit; -webkit-tap-highlight-color: transparent; }
 p { margin: 0; text-wrap: pretty; }
 
 /* ——— Typografia: tracking i interlinia zależne od rozmiaru ——— */
@@ -48,7 +48,8 @@ h1 b { display: block; }
 .skip:focus { top: 12px; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 8px; }
 
-.wrap { width: min(var(--site-w), 100%); margin-inline: auto; padding-inline: var(--gutter); }
+/* viewport-fit=cover: w poziomie na iPhonie treść nie wchodzi pod wycięcie ekranu. */
+.wrap { width: min(var(--site-w), 100%); margin-inline: auto; padding-inline: max(var(--gutter), env(safe-area-inset-left)) max(var(--gutter), env(safe-area-inset-right)); }
 .narrow { width: min(820px, 100%); }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 1.75rem; }
 .wordmark { font-family: var(--font-head); font-weight: 600; font-size: 1.45rem; letter-spacing: -0.05em; line-height: 1; text-decoration: none; }
@@ -233,7 +234,7 @@ h1 b { display: block; }
 .form .trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 .form .btn[disabled] { opacity: 0.6; cursor: progress; }
 
-.footer { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; margin-top: var(--gap-section); padding-top: 2rem; padding-bottom: 2.5rem; border-top: 1px solid var(--line); }
+.footer { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; margin-top: var(--gap-section); padding-top: 2rem; padding-bottom: max(2.5rem, calc(env(safe-area-inset-bottom) + 1.5rem)); border-top: 1px solid var(--line); }
 .footer-links { display: flex; gap: 2rem; margin-left: auto; }
 .footer-links a { font-family: var(--font-head); font-size: 0.88rem; color: var(--muted); text-decoration: none; transition: color 0.25s; }
 .footer-links a:hover { color: var(--ink); }
@@ -263,13 +264,37 @@ h1 b { display: block; }
 }
 /* ——— Telefon ——— */
 @media (max-width: 560px) {
+  /* Mniej pustki między sekcjami: na wąskim ekranie 96 px wyglądało jak koniec strony. */
+  :root { --gap-section: 4.5rem; --gap-head: 2rem; }
+  .head { gap: 1.1rem; }
   .phone { width: 268px; height: 548px; }
   .ph-card.photo .ph-meta { font-size: 11px; }
   .facts li + li { padding-left: 1rem; }
-  .tabs { display: grid; width: 100%; }
-  .tabs button { padding: 0.65rem 0.25rem; font-size: 0.88rem; }
+  .facts span { letter-spacing: 0.1em; }
+
+  /* Zakładki: pasek przewijany palcem zamiast pięciu ściśniętych przycisków. Wskaźnik leży w środku
+     przewijanego paska, więc jedzie razem z nim. Krawędzie wygaszone, żeby było widać, że jest dalej. */
+  .tabs { display: grid; grid-auto-columns: max-content; width: calc(100% + 2 * var(--gutter)); margin-inline: calc(-1 * var(--gutter)); padding: 4px var(--gutter); border-radius: 0; background: none; overflow-x: auto; overscroll-behavior-x: contain; scroll-padding-inline: var(--gutter); scrollbar-width: none;
+    mask-image: linear-gradient(to right, transparent, #000 var(--gutter), #000 calc(100% - var(--gutter)), transparent); -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--gutter), #000 calc(100% - var(--gutter)), transparent); }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { min-height: 2.75rem; padding: 0.6rem 1.15rem; font-size: 0.92rem; background: color-mix(in srgb, var(--soft) 70%, var(--bg)); }
+  .tabs button + button { margin-left: 6px; }
+  .tabs button[aria-selected='true'] { background: transparent; }
+  .no-js .tabs button[aria-selected='true'] { background: var(--ink); }
+
   .panel-visual { min-height: 20rem; padding: 1.25rem; }
-  .grid, .steps, .form-row { grid-template-columns: 1fr; }
+  .grid, .form-row { grid-template-columns: 1fr; }
+  .grid { gap: 2rem; }
+
+  /* Kroki: lista z numerem z boku zamiast czterech wysokich kart (ok. połowa wysokości). */
+  .steps { grid-template-columns: 1fr; gap: 0; }
+  .steps li { grid-template-columns: 2.5rem minmax(0, 1fr); gap: 0.2rem 0.75rem; padding: 1.1rem 0; border-radius: 0; background: none; border-top: 1px solid var(--line); }
+  .steps li:last-child { border-bottom: 1px solid var(--line); }
+  .steps span { grid-row: span 2; margin: 0; font-size: 1.9rem; }
+
+  .faq summary { padding-block: 1.15rem; }
   .cta { padding: 2rem 1.25rem; }
   .footer-links { margin-left: 0; width: 100%; order: 3; gap: 1.5rem; }
+  /* Linki w stopce: cel dotyku min. 44 px wysokości. */
+  .footer-links a { padding-block: 0.75rem; }
 }

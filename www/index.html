@@ -65,7 +65,7 @@
                 <div class="ph-bar"><i style="width: 60%"></i></div>
               </div>
               <div class="ph-card photo">
-                <img class="ph-photo" src="img/pilates-reformer.jpg" alt="Sala z reformerami w studiu" width="736" height="1104">
+                <picture><source srcset="img/pilates-reformer.webp" type="image/webp" /><img class="ph-photo" src="img/pilates-reformer.jpg" alt="Sala z reformerami w studiu" width="736" height="1104" decoding="async"></picture>
                 <div class="ph-blur" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
                 <span class="ph-badge">zapisana</span>
                 <div class="ph-cover-body">
@@ -300,10 +300,10 @@
           </div>
           <form class="form" data-form novalidate>
             <div class="form-row">
-              <label>Imię<input name="imie" autocomplete="given-name" required /></label>
-              <label>Nazwa studia<input name="studio" autocomplete="organization" required /></label>
+              <label>Imię<input name="imie" autocomplete="given-name" autocapitalize="words" enterkeyhint="next" required /></label>
+              <label>Nazwa studia<input name="studio" autocomplete="organization" autocapitalize="words" enterkeyhint="next" required /></label>
             </div>
-            <label>E-mail lub telefon<input name="kontakt" autocomplete="email" required /></label>
+            <label>E-mail lub telefon<input name="kontakt" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send" required /></label>
             <!-- Pułapka na boty: niewidoczne pole, którego człowiek nie wypełni. -->
             <label class="trap" aria-hidden="true">Strona WWW<input name="www" tabindex="-1" autocomplete="off" /></label>
             <button class="btn block" type="submit">Umów pokaz</button>
