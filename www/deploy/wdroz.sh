@@ -5,8 +5,8 @@
 # Co robi:
 #  1. wgrywa same pliki strony do /srv/glam-www (bez deploy/, serwer/ i README.md),
 #  2. wgrywa usługę zgłoszeń do /opt/glam/app i jej unit systemd,
-#  3. przy pierwszym uruchomieniu zakłada konto `glam`, katalogi, klucz admina
-#     i tymczasowe, nieznane nikomu hasło do /admin (ustawisz je haslo-admina.sh),
+#  3. przy pierwszym uruchomieniu zakłada konto `glam`, katalogi i klucz admina
+#     (hasło do /admin ustawiasz osobno: haslo-admina.sh),
 #  4. sprawdza całą konfigurację Caddy i dopiero wtedy ją przeładowuje.
 # Jeśli walidacja się nie uda, przywraca poprzedni glam.caddy, a Caddy działa
 # dalej na starej konfiguracji. Innych projektów na serwerze nie dotyka.
@@ -20,7 +20,8 @@ rsync -rlt --delete \
   "$DIR/" "$HOST:/srv/glam-www/"
 
 scp -q "$DIR/deploy/glam.caddy" "$HOST:/etc/caddy/glam.caddy.new"
-scp -q "$DIR/serwer/zgloszenia.mjs" "$HOST:/tmp/glam-zgloszenia.mjs"
+ssh "$HOST" 'rm -rf /tmp/glam-app && mkdir -m 700 /tmp/glam-app'
+scp -q "$DIR/serwer/zgloszenia.mjs" "$DIR/serwer/admin.html" "$DIR/serwer/logowanie.html" "$DIR/serwer/admin.css" "$HOST:/tmp/glam-app/"
 scp -q "$DIR/deploy/glam-zgloszenia.service" "$HOST:/etc/systemd/system/glam-zgloszenia.service"
 
 ssh "$HOST" 'set -e
@@ -33,8 +34,8 @@ ssh "$HOST" 'set -e
   id glam >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin glam
   install -d -m 750 -o root -g glam /opt/glam /opt/glam/app
   install -d -m 700 -o glam -g glam /opt/glam/dane
-  install -m 644 -o root -g root /tmp/glam-zgloszenia.mjs /opt/glam/app/zgloszenia.mjs
-  rm -f /tmp/glam-zgloszenia.mjs
+  install -m 644 -o root -g root /tmp/glam-app/* /opt/glam/app/
+  rm -rf /tmp/glam-app
   chmod 644 /etc/systemd/system/glam-zgloszenia.service
 
   # Wspólny klucz Caddy ↔ usługa (tylko za pierwszym razem).
@@ -45,12 +46,6 @@ ssh "$HOST" 'set -e
   fi
   chown root:glam /opt/glam/glam.env && chmod 640 /opt/glam/glam.env
   chown root:caddy /etc/caddy/glam-klucz.caddy && chmod 640 /etc/caddy/glam-klucz.caddy
-
-  # Hasło do /admin: dopóki nie ustawisz własnego, jest losowe i nikt go nie zna.
-  if [ ! -s /etc/caddy/glam-admin.hasla ]; then
-    printf "admin %s\n" "$(caddy hash-password --plaintext "$(openssl rand -hex 24)")" > /etc/caddy/glam-admin.hasla
-  fi
-  chown root:caddy /etc/caddy/glam-admin.hasla && chmod 640 /etc/caddy/glam-admin.hasla
 
   systemctl daemon-reload
   systemctl enable --quiet glam-zgloszenia
@@ -65,7 +60,10 @@ ssh "$HOST" 'set -e
   # root założyłby je z właścicielem root i działający Caddy nie mógłby w nie pisać.
   if runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/tmp/glam-validate.log 2>&1; then
     systemctl reload caddy
+    # Stare hasło Basic Auth – nowa konfiguracja już go nie importuje.
+    rm -f /etc/caddy/glam-admin.hasla
     echo "OK: strona i zgłoszenia wgrane, Caddy przeładowany"
+    [ -s /opt/glam/admin.haslo ] || echo "UWAGA: hasło do /admin nie jest ustawione – uruchom www/deploy/haslo-admina.sh"
   else
     cat /tmp/glam-validate.log
     # Pusty plik zamiast usuniętego: Caddyfile go importuje, a brak pliku

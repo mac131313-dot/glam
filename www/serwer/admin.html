@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Zgłoszenia – GLAM</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Rethink+Sans:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+<header class="bar">
+  <div class="bar-in">
+    <a class="wordmark" href="/">glam</a>
+    <span class="muted">Panel</span>
+    <button class="link" type="button" id="wyloguj">Wyloguj</button>
+  </div>
+</header>
+<main>
+  <div class="head">
+    <p class="eyebrow">Formularz „Umów pokaz”</p>
+    <h1>Zgłoszenia <b>ze strony</b></h1>
+  </div>
+  <ul class="liczby" aria-label="Podsumowanie">
+    <li><b id="l-dzis">–</b><span>dziś</span></li>
+    <li><b id="l-tydzien">–</b><span>ostatnie 7 dni</span></li>
+    <li><b id="l-wszystkie">–</b><span>wszystkie</span></li>
+  </ul>
+  <input class="input szukaj" id="szukaj" type="search" placeholder="Szukaj po imieniu, studiu lub kontakcie" aria-label="Szukaj" hidden />
+  <div class="dni" id="dni" aria-live="polite"></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, tekst) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (tekst != null) e.textContent = tekst;
+  return e;
+};
+let wszystkie = [];
+let wczytane = false;
+
+const dzienKlucz = (d) => d.toLocaleDateString('sv-SE'); // RRRR-MM-DD w strefie przeglądarki
+const nazwaDnia = (d) => {
+  const dzis = new Date();
+  const wczoraj = new Date(Date.now() - 864e5);
+  if (dzienKlucz(d) === dzienKlucz(dzis)) return 'Dziś';
+  if (dzienKlucz(d) === dzienKlucz(wczoraj)) return 'Wczoraj';
+  return d.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === dzis.getFullYear() ? undefined : 'numeric' });
+};
+
+// Kontakt jako link: e-mail otwiera pocztę, numer – rozmowę. Inny tekst zostaje zwykłym tekstem.
+const kontaktLink = (k) => {
+  if (/^\S+@\S+\.\S+$/.test(k)) return 'mailto:' + k;
+  const cyfry = k.replace(/\D/g, '');
+  if (/^[+\d\s().-]+$/.test(k) && cyfry.length >= 9) return 'tel:' + (k.trim().startsWith('+') ? '+' : '') + cyfry;
+  return null;
+};
+
+function wiersz(z) {
+  const li = el('li', 'wiersz');
+  const ini = el('span', 'inicjal', z.imie.trim().charAt(0));
+  ini.setAttribute('aria-hidden', 'true');
+
+  const tresc = el('div', 'tresc');
+  const nazwa = el('b', null, z.imie);
+  nazwa.append(el('span', 'studio', ' · ' + z.studio));
+  const href = kontaktLink(z.kontakt);
+  const kontakt = el(href ? 'a' : 'span', 'kontakt', z.kontakt);
+  if (href) kontakt.href = href;
+  tresc.append(nazwa, kontakt);
+
+  const akcje = el('div', 'akcje');
+  const godz = el('time', 'godz', new Date(z.kiedy).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }));
+  godz.dateTime = z.kiedy;
+  const usun = el('button', 'link', 'Usuń');
+  usun.type = 'button';
+  // Usuwanie w dwóch krokach w samym wierszu zamiast systemowego okienka confirm().
+  usun.onclick = () => {
+    const pyt = el('span', 'potwierdz');
+    const tak = el('button', 'link tak', 'Usuń na stałe');
+    const nie = el('button', 'link', 'Anuluj');
+    tak.type = nie.type = 'button';
+    nie.onclick = () => { pyt.replaceWith(usun); usun.focus(); };
+    tak.onclick = async () => {
+      tak.disabled = nie.disabled = true;
+      const r = await fetch('/api/admin/zgloszenia/' + z.id + '/usun', { method: 'POST' });
+      if (r.status === 401) return location.reload();
+      if (!r.ok) { tak.textContent = 'Nie udało się'; tak.disabled = nie.disabled = false; return; }
+      li.classList.add('znika');
+      setTimeout(() => { wszystkie = wszystkie.filter((x) => x.id !== z.id); pokaz(); }, 350);
+    };
+    pyt.append(nie, tak);
+    usun.replaceWith(pyt);
+    nie.focus();
+  };
+  akcje.append(godz, usun);
+  li.append(ini, tresc, akcje);
+  return li;
+}
+
+function pokaz() {
+  const teraz = Date.now();
+  const dzis = dzienKlucz(new Date());
+  $('l-dzis').textContent = wszystkie.filter((z) => dzienKlucz(new Date(z.kiedy)) === dzis).length;
+  $('l-tydzien').textContent = wszystkie.filter((z) => teraz - new Date(z.kiedy) < 7 * 864e5).length;
+  $('l-wszystkie').textContent = wszystkie.length;
+  $('szukaj').hidden = wszystkie.length < 6;
+
+  const fraza = $('szukaj').value.trim().toLowerCase();
+  const widoczne = fraza ? wszystkie.filter((z) => [z.imie, z.studio, z.kontakt].join(' ').toLowerCase().includes(fraza)) : wszystkie;
+
+  if (!widoczne.length) {
+    const p = el('div', 'pusto');
+    p.append(
+      el('p', null, fraza ? 'Nic nie pasuje do „' + $('szukaj').value.trim() + '”.' : 'Na razie cisza.'),
+      el('p', 'muted', fraza ? 'Spróbuj innej frazy.' : 'Nowe zgłoszenia z formularza „Umów pokaz” pojawią się tutaj.'),
+    );
+    return $('dni').replaceChildren(p);
+  }
+
+  const grupy = new Map();
+  for (const z of widoczne) {
+    const d = new Date(z.kiedy);
+    const k = dzienKlucz(d);
+    if (!grupy.has(k)) grupy.set(k, { nazwa: nazwaDnia(d), lista: [] });
+    grupy.get(k).lista.push(z);
+  }
+  $('dni').replaceChildren(...[...grupy.values()].map((g) => {
+    const s = el('section', 'dzien');
+    const ul = el('ul', 'wiersze');
+    ul.append(...g.lista.map(wiersz));
+    s.append(el('h2', 'eyebrow', g.nazwa), ul);
+    return s;
+  }));
+}
+
+async function wczytaj() {
+  try {
+    const r = await fetch('/api/admin/zgloszenia', { cache: 'no-store' });
+    if (r.status === 401) return location.reload();
+    if (!r.ok) throw new Error();
+    const nowe = await r.json();
+    // Bez zmian nie przerysowujemy listy – otwarte „Usuń na stałe” zostaje na miejscu.
+    const ids = (l) => l.map((z) => z.id).join();
+    if (wczytane && ids(nowe) === ids(wszystkie)) return;
+    wczytane = true;
+    wszystkie = nowe;
+    pokaz();
+  } catch {
+    if (!wszystkie.length) $('dni').replaceChildren(el('p', 'muted', 'Nie udało się wczytać zgłoszeń. Odśwież stronę.'));
+  }
+}
+
+$('szukaj').addEventListener('input', pokaz);
+$('wyloguj').onclick = async () => {
+  await fetch('/api/admin/wyloguj', { method: 'POST' }).catch(() => {});
+  location.reload();
+};
+// Po powrocie do karty dociągamy nowe zgłoszenia – bez ręcznego odświeżania.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) wczytaj(); });
+wczytaj();
+</script>
+</body>
+</html>

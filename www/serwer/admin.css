@@ -1,0 +1,102 @@
+/* Panel zgłoszeń GLAM (/admin) – ten sam język co strona: dużo powietrza, cienkie linie zamiast kart,
+   bez cieni, jedna czarna pigułka na ekran. Cyfry w Outfit (nigdy w szeryfie). */
+:root {
+  --bg: #f3f0ea;
+  --surface: #fbfaf7;
+  --soft: #e9e4da;
+  --ink: #1b1715;
+  --muted: #6a6157;
+  --line: #e0dacf;
+  --danger: #a23b2c;
+  --font-head: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Rethink Sans', system-ui, sans-serif;
+  --spring: cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #171513; --surface: #211e1b; --soft: #2b2723; --ink: #f1ece5; --muted: #a39a90; --line: #34302b; --danger: #e08a7a; }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--ink); font: 1rem/1.55 var(--font-body); -webkit-font-smoothing: antialiased; }
+h1, h2 { font-family: var(--font-head); font-weight: 400; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.2rem); line-height: 1; letter-spacing: -0.045em; }
+h1 b { font-weight: inherit; color: var(--muted); }
+p { margin: 0; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 8px; }
+[hidden] { display: none !important; }
+
+.eyebrow { font-family: var(--font-head); font-size: 0.75rem; font-weight: 500; line-height: 1; text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted); }
+.muted { color: var(--muted); }
+.mark { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--ink); color: var(--bg); font: italic 1.4rem/1 Georgia, serif; }
+.wordmark { font-family: var(--font-head); font-weight: 600; font-size: 1.2rem; letter-spacing: -0.05em; text-decoration: none; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 3rem; padding: 0.75rem 1.6rem; border: 0; border-radius: 999px; background: var(--ink); color: var(--bg); font-family: var(--font-head); font-weight: 500; cursor: pointer; transition: transform 0.55s var(--spring), opacity 0.2s; }
+.btn:active { transform: scale(0.97); transition-duration: 80ms; }
+.btn:disabled { opacity: 0.35; cursor: default; }
+@media (hover: hover) { .btn:not(:disabled):hover { opacity: 0.86; } }
+.link { background: none; border: 0; padding: 0; cursor: pointer; font-family: var(--font-head); font-size: 0.9rem; color: var(--muted); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.link:hover { color: var(--ink); }
+
+.input { width: 100%; min-height: 3.25rem; padding: 0.85rem 1.1rem; border: 1px solid transparent; border-radius: 16px; background: var(--surface); color: var(--ink); font: inherit; transition: border-color 0.2s; }
+.input:focus { outline: none; border-color: var(--ink); }
+.input[aria-invalid='true'] { border-color: var(--danger); }
+
+/* ——— Logowanie ——— */
+.login { min-height: 100dvh; display: grid; grid-template-rows: auto 1fr auto; padding: 24px clamp(16px, 5vw, 48px); }
+.login-card { align-self: center; justify-self: center; width: min(380px, 100%); display: grid; gap: 2rem; padding-bottom: 8vh; animation: wejscie 0.7s var(--spring) both; }
+.login-card header { display: grid; gap: 1rem; }
+.login-card form { display: grid; gap: 0.75rem; }
+.login-card label { font-family: var(--font-head); font-size: 0.85rem; color: var(--muted); }
+.pole { position: relative; }
+.pole .input { padding-right: 5.5rem; }
+.pokaz { position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); padding: 0.4rem 0.7rem; border: 0; border-radius: 999px; background: var(--soft); font-family: var(--font-head); font-size: 0.8rem; color: var(--muted); cursor: pointer; }
+.blad { min-height: 1.4em; font-size: 0.88rem; color: var(--danger); }
+.login footer { text-align: center; font-size: 0.8rem; }
+.login-card.potrzasnij { animation: potrzasnij 0.4s var(--spring); }
+
+/* ——— Panel ——— */
+.bar { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6); }
+.bar-in, main { width: min(820px, 100%); margin-inline: auto; padding-inline: clamp(16px, 5vw, 32px); }
+.bar-in { height: 4rem; display: flex; align-items: center; gap: 0.75rem; }
+.bar-in .muted { font-family: var(--font-head); font-size: 0.9rem; }
+.bar-in .link { margin-left: auto; }
+main { display: grid; gap: 2.5rem; padding-top: clamp(1.5rem, 5vw, 3rem); padding-bottom: 5rem; }
+.head { display: grid; gap: 1rem; }
+
+.liczby { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid var(--line); }
+.liczby li { display: grid; gap: 0.35rem; padding: 1.25rem 0; }
+.liczby li + li { padding-left: 1.25rem; border-left: 1px solid var(--line); }
+.liczby b { font-family: var(--font-head); font-weight: 400; font-size: clamp(1.8rem, 5vw, 2.4rem); line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+.liczby span { font-size: 0.85rem; color: var(--muted); }
+
+.szukaj { max-width: 22rem; }
+.dni { display: grid; gap: 2rem; }
+.dzien { display: grid; gap: 0.25rem; }
+.dzien h2 { padding-bottom: 0.75rem; }
+.wiersze { list-style: none; margin: 0; padding: 0; }
+.wiersz { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: 1rem 0; border-top: 1px solid var(--line); transition: opacity 0.35s, transform 0.45s var(--spring); }
+.wiersz.znika { opacity: 0; transform: translateX(12px); }
+.inicjal { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: 50%; background: var(--soft); font-family: var(--font-head); font-weight: 500; text-transform: uppercase; }
+.tresc { display: grid; gap: 0.1rem; min-width: 0; }
+.tresc b { font-family: var(--font-head); font-weight: 500; letter-spacing: -0.01em; }
+.tresc .studio { color: var(--muted); font-weight: 400; }
+.kontakt { overflow-wrap: anywhere; font-size: 0.95rem; text-decoration-color: var(--line); text-underline-offset: 3px; }
+a.kontakt:hover { text-decoration-color: currentColor; }
+.akcje { display: grid; justify-items: end; gap: 0.3rem; }
+.godz { font-family: var(--font-head); font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.potwierdz { display: flex; gap: 0.75rem; font-size: 0.85rem; }
+.potwierdz .tak { color: var(--danger); }
+.pusto { padding: 3rem 0; border-top: 1px solid var(--line); display: grid; gap: 0.5rem; }
+.pusto p:first-child { font-family: var(--font-head); font-size: 1.15rem; }
+
+@media (max-width: 520px) {
+  .wiersz { grid-template-columns: minmax(0, 1fr) auto; }
+  .inicjal { display: none; }
+  .liczby li + li { padding-left: 0.9rem; }
+}
+
+@keyframes wejscie { from { opacity: 0; transform: translateY(10px); } }
+@keyframes potrzasnij { 25% { transform: translateX(-6px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

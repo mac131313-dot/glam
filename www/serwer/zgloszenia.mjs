@@ -2,24 +2,51 @@
 //
 // Usługa słucha tylko na 127.0.0.1 i stoi za Caddy (www/deploy/glam.caddy):
 // - POST /api/zgloszenie       – formularz „Umów pokaz”, publiczne,
-// - GET  /admin                – lista zgłoszeń,          za hasłem w Caddy,
-// - GET  /api/admin/zgloszenia – dane do listy,           za hasłem w Caddy,
-// - POST /api/admin/zgloszenia/:id/usun                   za hasłem w Caddy.
-// Trasy admina dodatkowo wymagają klucza X-Glam-Klucz, który dokleja tylko Caddy po udanym
-// logowaniu. Bez tego inny proces na tej maszynie mógłby czytać zgłoszenia prosto z portu.
+// - GET  /admin                – ekran logowania albo lista zgłoszeń (zależnie od sesji),
+// - GET  /admin/admin.css      – wygląd obu ekranów,
+// - POST /api/admin/zaloguj    – hasło → ciasteczko sesji,
+// - POST /api/admin/wyloguj,
+// - GET  /api/admin/zgloszenia – dane do listy,           tylko z sesją,
+// - POST /api/admin/zgloszenia/:id/usun                   tylko z sesją.
+// Trasy admina dodatkowo wymagają klucza X-Glam-Klucz, który dokleja tylko Caddy.
+// Bez tego inny proces na tej maszynie mógłby próbować haseł albo czytać zgłoszenia prosto z portu.
+//
+// Hasło: skrót scrypt w GLAM_HASLO (ustawia www/deploy/haslo-admina.sh przez
+// `node zgloszenia.mjs skrot-hasla`). Plik jest czytany przy każdym logowaniu,
+// więc zmiana hasła nie wymaga restartu. Sesje są w pamięci – restart wylogowuje.
 //
 // Dane: jeden plik JSON Lines w GLAM_DANE. Bez adresów IP – do odpowiedzi na zgłoszenie
 // wystarczą imię, studio i kontakt (RODO: minimum danych).
 
 import { createServer } from 'node:http';
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 import { appendFile, readFile, writeFile, rename, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
+const skrot = promisify(scrypt);
+
+// `node zgloszenia.mjs skrot-hasla` – czyta hasło ze stdin, wypisuje skrót do pliku GLAM_HASLO.
+// Hasło nie trafia do argumentów procesu (widocznych w `ps`) ani do historii powłoki.
+if (process.argv[2] === 'skrot-hasla') {
+  let haslo = '';
+  for await (const c of process.stdin) haslo += c;
+  haslo = haslo.replace(/\r?\n$/, '');
+  if (haslo.length < 10) {
+    console.error('Hasło musi mieć co najmniej 10 znaków.');
+    process.exit(1);
+  }
+  const sol = randomBytes(16);
+  console.log(`scrypt:${sol.toString('hex')}:${(await skrot(haslo, sol, 64)).toString('hex')}`);
+  process.exit(0);
+}
 
 const PORT = Number(process.env.PORT ?? 3500);
 const DANE = process.env.GLAM_DANE ?? './dane';
 const KLUCZ = process.env.GLAM_KLUCZ_ADMINA ?? '';
 const ORIGIN = process.env.GLAM_ORIGIN ?? 'https://glamcore.pl';
+const PLIK_HASLA = process.env.GLAM_HASLO ?? '/opt/glam/admin.haslo';
 const PLIK = join(DANE, 'zgloszenia.jsonl');
 
 if (KLUCZ.length < 32) {
@@ -28,19 +55,66 @@ if (KLUCZ.length < 32) {
 }
 await mkdir(DANE, { recursive: true });
 
+const TU = dirname(fileURLToPath(import.meta.url));
+const [STRONA_LOGOWANIA, STRONA_ADMINA, STYL_ADMINA] = await Promise.all(
+  ['logowanie.html', 'admin.html', 'admin.css'].map((p) => readFile(join(TU, p), 'utf8')),
+);
+
 const POLA = { imie: 80, studio: 120, kontakt: 160 };
 
-// Limit zgłoszeń z jednego adresu: 5 na 10 minut. W pamięci – po restarcie liczy od zera.
-const OKNO_MS = 10 * 60 * 1000;
-const LIMIT = 5;
-const proby = new Map();
-const zaDuzo = (ip) => {
+// Limit prób z jednego adresu w oknie czasu. W pamięci – po restarcie liczy od zera.
+const ogranicznik = (oknoMs, limit) => {
+  const proby = new Map();
+  return (ip) => {
+    const teraz = Date.now();
+    const swieze = (proby.get(ip) ?? []).filter((t) => teraz - t < oknoMs);
+    swieze.push(teraz);
+    proby.set(ip, swieze);
+    if (proby.size > 10_000) for (const [k, v] of proby) if (teraz - v.at(-1) > oknoMs) proby.delete(k);
+    return swieze.length > limit;
+  };
+};
+const zaDuzoZgloszen = ogranicznik(10 * 60 * 1000, 5);
+const zaDuzoLogowan = ogranicznik(15 * 60 * 1000, 8);
+
+// Sesje: losowy token w ciasteczku HttpOnly, ważny 7 dni od zalogowania.
+const SESJA_MS = 7 * 24 * 60 * 60 * 1000;
+const COOKIE = 'glam_sesja';
+const sesje = new Map();
+const nowaSesja = () => {
   const teraz = Date.now();
-  const swieze = (proby.get(ip) ?? []).filter((t) => teraz - t < OKNO_MS);
-  swieze.push(teraz);
-  proby.set(ip, swieze);
-  if (proby.size > 10_000) for (const [k, v] of proby) if (teraz - v.at(-1) > OKNO_MS) proby.delete(k);
-  return swieze.length > LIMIT;
+  for (const [t, wygasa] of sesje) if (wygasa < teraz) sesje.delete(t);
+  const token = randomBytes(32).toString('base64url');
+  sesje.set(token, teraz + SESJA_MS);
+  return token;
+};
+const tokenZ = (req) => {
+  for (const c of String(req.headers.cookie ?? '').split(';')) {
+    const [k, ...v] = c.trim().split('=');
+    if (k === COOKIE) return v.join('=');
+  }
+  return '';
+};
+const zalogowany = (req) => {
+  const wygasa = sesje.get(tokenZ(req));
+  return Boolean(wygasa && wygasa > Date.now());
+};
+const ciasteczko = (token, maxAge) =>
+  `${COOKIE}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Strict`;
+
+const dobreHaslo = async (haslo) => {
+  let zapis;
+  try {
+    zapis = (await readFile(PLIK_HASLA, 'utf8')).trim();
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+  const [rodzaj, sol, hash] = zapis.split(':');
+  if (rodzaj !== 'scrypt' || !sol || !hash) return null;
+  const wlasciwy = Buffer.from(hash, 'hex');
+  const podany = await skrot(String(haslo), Buffer.from(sol, 'hex'), wlasciwy.length);
+  return timingSafeEqual(podany, wlasciwy);
 };
 
 const wczytaj = async () => {
@@ -74,9 +148,14 @@ const czytajCialo = (req, max = 4096) =>
     req.on('error', zle);
   });
 
-const json = (res, status, dane) => {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+const json = (res, status, dane, naglowki = {}) => {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...naglowki });
   res.end(JSON.stringify(dane));
+};
+
+const strona = (res, typ, tresc) => {
+  res.writeHead(200, { 'Content-Type': `${typ}; charset=utf-8`, 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+  res.end(tresc);
 };
 
 const zgodnyKlucz = (req) => {
@@ -85,12 +164,13 @@ const zgodnyKlucz = (req) => {
   return podany.length === wlasciwy.length && timingSafeEqual(podany, wlasciwy);
 };
 
-// Zapytania zmieniające dane muszą przyjść z naszej strony (ochrona przed CSRF przy Basic Auth).
+// Zapytania zmieniające dane muszą przyjść z naszej strony (CSRF; ciasteczko ma też SameSite=Strict).
 const zNaszejStrony = (req) => req.headers.origin === ORIGIN;
+const ipZ = (req) => String(req.headers['x-real-ip'] ?? 'brak');
 
 async function przyjmijZgloszenie(req, res) {
   if (!zNaszejStrony(req)) return json(res, 403, { blad: 'Niedozwolone źródło.' });
-  if (zaDuzo(String(req.headers['x-real-ip'] ?? 'brak'))) return json(res, 429, { blad: 'Za dużo zgłoszeń. Spróbuj za kilka minut.' });
+  if (zaDuzoZgloszen(ipZ(req))) return json(res, 429, { blad: 'Za dużo zgłoszeń. Spróbuj za kilka minut.' });
 
   let dane;
   try {
@@ -111,6 +191,22 @@ async function przyjmijZgloszenie(req, res) {
   json(res, 201, { ok: true });
 }
 
+async function zaloguj(req, res) {
+  if (!zNaszejStrony(req)) return json(res, 403, { blad: 'Niedozwolone źródło.' });
+  if (zaDuzoLogowan(ipZ(req))) return json(res, 429, { blad: 'Za dużo prób. Spróbuj za kwadrans.' });
+  let haslo;
+  try {
+    haslo = JSON.parse(await czytajCialo(req, 1024))?.haslo;
+  } catch (e) {
+    return json(res, e.status ?? 400, { blad: 'Nieprawidłowe dane.' });
+  }
+  if (typeof haslo !== 'string' || !haslo) return json(res, 422, { blad: 'Wpisz hasło.' });
+  const wynik = await dobreHaslo(haslo);
+  if (wynik === null) return json(res, 503, { blad: 'Hasło nie jest jeszcze ustawione.' });
+  if (!wynik) return json(res, 401, { blad: 'To nie jest właściwe hasło.' });
+  json(res, 200, { ok: true }, { 'Set-Cookie': ciasteczko(nowaSesja(), SESJA_MS / 1000) });
+}
+
 const serwer = createServer(async (req, res) => {
   try {
     const { pathname } = new URL(req.url, 'http://localhost');
@@ -120,10 +216,17 @@ const serwer = createServer(async (req, res) => {
     if (pathname === '/admin' || pathname.startsWith('/admin/') || pathname.startsWith('/api/admin/')) {
       if (!zgodnyKlucz(req)) return json(res, 403, { blad: 'Brak dostępu.' });
 
-      if (pathname === '/admin' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
-        return res.end(STRONA_ADMINA);
+      if (pathname === '/admin' && req.method === 'GET') return strona(res, 'text/html', zalogowany(req) ? STRONA_ADMINA : STRONA_LOGOWANIA);
+      if (pathname === '/admin/admin.css' && req.method === 'GET') return strona(res, 'text/css', STYL_ADMINA);
+      if (pathname === '/api/admin/zaloguj' && req.method === 'POST') return await zaloguj(req, res);
+      if (pathname === '/api/admin/wyloguj' && req.method === 'POST') {
+        if (!zNaszejStrony(req)) return json(res, 403, { blad: 'Niedozwolone źródło.' });
+        sesje.delete(tokenZ(req));
+        return json(res, 200, { ok: true }, { 'Set-Cookie': ciasteczko('', 0) });
       }
+
+      if (pathname.startsWith('/api/admin/') && !zalogowany(req)) return json(res, 401, { blad: 'Zaloguj się ponownie.' });
+
       if (pathname === '/api/admin/zgloszenia' && req.method === 'GET') {
         return json(res, 200, (await wczytaj()).reverse());
       }
@@ -145,69 +248,3 @@ const serwer = createServer(async (req, res) => {
 });
 
 serwer.listen(PORT, '127.0.0.1', () => console.log(`zgłoszenia GLAM na 127.0.0.1:${PORT}`));
-
-const STRONA_ADMINA = `<!doctype html>
-<html lang="pl">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="robots" content="noindex" />
-<title>Zgłoszenia – GLAM</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-<style>
-  :root { --bg: #f3f0ea; --surface: #fbfaf7; --ink: #1d1a17; --muted: #77706a; --line: #e2ddd5; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #171513; --surface: #211e1b; --ink: #f1ece5; --muted: #a39a90; --line: #34302b; } }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
-  h1 { font-size: 28px; font-weight: 500; letter-spacing: -0.02em; margin: 0 0 4px; }
-  .muted { color: var(--muted); }
-  ul { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 8px; }
-  li { background: var(--surface); border-radius: 16px; padding: 16px; display: flex; gap: 16px; align-items: flex-start; }
-  li div { flex: 1; min-width: 0; }
-  b { font-weight: 500; }
-  .kontakt { overflow-wrap: anywhere; }
-  small { color: var(--muted); font-size: 13px; }
-  button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
-  button:hover { color: var(--ink); border-color: var(--ink); }
-  .pusto { margin-top: 32px; }
-</style>
-</head>
-<body>
-<main>
-  <h1>Zgłoszenia</h1>
-  <p class="muted" id="ile">Wczytuję…</p>
-  <ul id="lista"></ul>
-</main>
-<script>
-const lista = document.getElementById('lista');
-const ile = document.getElementById('ile');
-const kiedy = (iso) => new Date(iso).toLocaleString('pl-PL', { dateStyle: 'medium', timeStyle: 'short' });
-const tekst = (t) => document.createTextNode(t);
-
-async function wczytaj() {
-  const r = await fetch('/api/admin/zgloszenia', { cache: 'no-store' });
-  if (!r.ok) { ile.textContent = 'Nie udało się wczytać zgłoszeń.'; return; }
-  const dane = await r.json();
-  ile.textContent = dane.length ? 'Wszystkich: ' + dane.length + ', najnowsze na górze.' : 'Na razie nie ma żadnych zgłoszeń.';
-  lista.replaceChildren(...dane.map((z) => {
-    const li = document.createElement('li');
-    const d = document.createElement('div');
-    const g = document.createElement('b'); g.append(tekst(z.imie + ' · ' + z.studio));
-    const k = document.createElement('div'); k.className = 'kontakt'; k.append(tekst(z.kontakt));
-    const c = document.createElement('small'); c.append(tekst(kiedy(z.kiedy)));
-    d.append(g, k, c);
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Usuń';
-    b.onclick = async () => {
-      if (!confirm('Usunąć zgłoszenie od ' + z.imie + '? Tego nie da się cofnąć.')) return;
-      const r = await fetch('/api/admin/zgloszenia/' + z.id + '/usun', { method: 'POST' });
-      if (r.ok) wczytaj(); else alert('Nie udało się usunąć.');
-    };
-    li.append(d, b);
-    return li;
-  }));
-}
-wczytaj();
-</script>
-</body>
-</html>`;

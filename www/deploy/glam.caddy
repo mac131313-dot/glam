@@ -10,10 +10,9 @@
 # `import /etc/caddy/glam.caddy`. Zmiany wprowadzaj tutaj i wgrywaj przez
 # www/deploy/wdroz.sh, nie edytuj kopii na serwerze.
 #
-# Dwa pliki istnieją TYLKO na serwerze (nie w repozytorium, prawa 640 root:caddy):
-#  - glam-admin.hasla – login i skrót bcrypt hasła do /admin
-#                       (ustawia www/deploy/haslo-admina.sh),
-#  - glam-klucz.caddy – nagłówek z kluczem, który usługa sprawdza na trasach admina.
+# Plik glam-klucz.caddy istnieje TYLKO na serwerze (prawa 640 root:caddy): nagłówek
+# z kluczem, który usługa sprawdza na trasach admina. Logowanie do /admin (formularz,
+# sesja w ciasteczku, skrót hasła w /opt/glam/admin.haslo) obsługuje sama usługa.
 #
 # Bloki nazwane mają pierwszeństwo przed `https://` (domeny klienckie
 # ResHouse), więc glamcore.pl nigdy nie trafi na aplikację stron.
@@ -45,13 +44,10 @@ glamcore.pl {
 		}
 	}
 
-	# Podgląd zgłoszeń – za hasłem. Klucz dokleja się dopiero po udanym
-	# logowaniu, więc bez hasła usługa i tak odmówi.
+	# Panel zgłoszeń. Hasła i sesji pilnuje usługa; klucz mówi jej tylko, że
+	# zapytanie przyszło przez Caddy, a nie wprost z portu na tej maszynie.
 	@admin path /admin /admin/* /api/admin/*
 	handle @admin {
-		basic_auth {
-			import /etc/caddy/glam-admin.hasla
-		}
 		header Cache-Control "no-store"
 		header X-Robots-Tag "noindex"
 		request_body {

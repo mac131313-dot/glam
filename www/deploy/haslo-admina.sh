@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-# Ustawia hasło do https://glamcore.pl/admin (login: admin). Uruchamiaj w swoim terminalu:
+# Ustawia hasło do https://glamcore.pl/admin. Uruchamiaj w swoim terminalu:
 #   bash www/deploy/haslo-admina.sh
 #
-# Hasło wpisujesz dwa razy w okienku `caddy hash-password` na serwerze. Na serwer trafia
-# tylko jego skrót (bcrypt), samego hasła nie zapisuje nigdzie ani ten skrypt, ani Caddy.
+# Hasło wpisujesz dwa razy na serwerze (nic nie widać przy pisaniu). Na serwer trafia
+# tylko jego skrót (scrypt) w /opt/glam/admin.haslo, samego hasła nie zapisuje nigdzie
+# ani ten skrypt, ani usługa. Zmiana działa od razu, bez restartu; zalogowane już
+# urządzenia zostają zalogowane do restartu usługi.
 set -euo pipefail
 
 HOST="${GLAM_VPS:-root@185.193.112.243}"
 
 ssh -t "$HOST" 'set -e
-  echo "Nowe hasło do glamcore.pl/admin (login: admin). Wpisz je dwa razy:"
-  SKROT=$(caddy hash-password)
-  cp -p /etc/caddy/glam-admin.hasla /etc/caddy/glam-admin.hasla.prev
-  printf "admin %s\n" "$SKROT" > /etc/caddy/glam-admin.hasla
-  chown root:caddy /etc/caddy/glam-admin.hasla && chmod 640 /etc/caddy/glam-admin.hasla
-  if runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
-    systemctl reload caddy && rm -f /etc/caddy/glam-admin.hasla.prev
-    echo "Gotowe: hasło ustawione."
-  else
-    mv /etc/caddy/glam-admin.hasla.prev /etc/caddy/glam-admin.hasla
-    echo "BŁĄD: nie udało się zapisać hasła, zostało poprzednie." >&2
-    exit 1
-  fi'
+  read -rsp "Nowe hasło do glamcore.pl/admin (min. 10 znaków): " H1; echo
+  read -rsp "Powtórz hasło: " H2; echo
+  [ "$H1" = "$H2" ] || { echo "BŁĄD: hasła się różnią, nic nie zmieniono." >&2; exit 1; }
+  SKROT=$(printf "%s" "$H1" | node /opt/glam/app/zgloszenia.mjs skrot-hasla)
+  unset H1 H2
+  printf "%s\n" "$SKROT" > /opt/glam/admin.haslo.new
+  chown root:glam /opt/glam/admin.haslo.new && chmod 640 /opt/glam/admin.haslo.new
+  mv /opt/glam/admin.haslo.new /opt/glam/admin.haslo
+  echo "Gotowe: hasło ustawione."'
