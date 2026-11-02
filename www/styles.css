@@ -90,11 +90,31 @@ h1 b { display: block; }
 .ph-chip { display: inline-flex; align-items: center; gap: 8px; padding: 3px 12px 3px 3px; border-radius: 999px; background: var(--surface); font-family: var(--font-head); font-weight: 500; }
 .ph-logo, .ph-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; font-family: var(--font-head); font-weight: 500; font-size: 12px; }
 .ph-avatar { width: 30px; height: 30px; }
-.ph-body { padding: 8px 12px; display: grid; gap: 8px; }
+.ph-body { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 .ph-hello { font-family: var(--font-head); font-size: 21px; letter-spacing: -0.03em; margin: 2px 2px 6px; }
 .ph-hello b { font-weight: inherit; color: var(--muted); }
 .ph-card { background: var(--surface); border-radius: 20px; padding: 14px; }
 .ph-card.soft { background: var(--soft); }
+/* Jak ClassCover w aplikacji: zdjęcie na całą kartę, lekkie przyciemnienie, tekst na dole, status w rogu. */
+.ph-card.photo { position: relative; isolation: isolate; overflow: hidden; flex: 1; min-height: 0; padding: 0; color: #fff; background: #2a2420; }
+.ph-card.photo::before { content: ''; position: absolute; inset: 0; z-index: -1; background: rgb(18 14 12 / 0.36); }
+.ph-photo { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; object-fit: cover; object-position: center 62%; }
+/* Rozmycie zanikające ku górze, z aplikacji (.cover-blur): CSS nie zmienia siły blur w obrębie elementu, więc
+   warstwy o podwajanym rozmyciu leżą w zachodzących pasach maski. Karta nie może mieć mask/opacity/filter,
+   a warstwy mają własne zaokrąglenie, bo overflow: hidden nie przycina backdrop-filter. */
+.ph-blur { --blur: 16px; --fade: 0.5; position: absolute; inset: 45% 0 0; z-index: -1; pointer-events: none; border-radius: 0 0 20px 20px; background: linear-gradient(to top, rgb(18 14 12 / var(--fade)) 0%, rgb(18 14 12 / calc(var(--fade) * 0.72)) 25%, rgb(18 14 12 / calc(var(--fade) * 0.36)) 55%, rgb(18 14 12 / calc(var(--fade) * 0.1)) 80%, transparent); }
+.ph-blur > i { --step: 16.667%; position: absolute; inset: 0; border-radius: inherit; backdrop-filter: blur(calc(var(--blur) * var(--k))); -webkit-backdrop-filter: blur(calc(var(--blur) * var(--k))); mask-image: linear-gradient(to bottom, transparent calc(var(--n) * var(--step)), #000 calc((var(--n) + 1) * var(--step)), #000 calc((var(--n) + 2) * var(--step)), transparent calc((var(--n) + 3) * var(--step))); -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--n) * var(--step)), #000 calc((var(--n) + 1) * var(--step)), #000 calc((var(--n) + 2) * var(--step)), transparent calc((var(--n) + 3) * var(--step))); }
+.ph-blur > i:nth-child(1) { --n: 0; --k: 0.03125; }
+.ph-blur > i:nth-child(2) { --n: 1; --k: 0.0625; }
+.ph-blur > i:nth-child(3) { --n: 2; --k: 0.125; }
+.ph-blur > i:nth-child(4) { --n: 3; --k: 0.25; }
+.ph-blur > i:nth-child(5) { --n: 4; --k: 0.5; }
+.ph-blur > i:nth-child(6) { --n: 5; --k: 1; }
+.ph-badge { position: absolute; top: 10px; right: 10px; padding: 4px 10px; border-radius: 999px; background: var(--ink); color: #fff; font-family: var(--font-head); font-size: 10px; }
+.ph-cover-body { position: absolute; left: 16px; right: 16px; bottom: 16px; text-shadow: 0 1px 14px rgb(0 0 0 / 0.28); }
+.ph-card.photo .ph-label { color: inherit; opacity: 0.9; margin-bottom: 4px; }
+.ph-card.photo .ph-title { font-size: 23px; font-weight: 400; line-height: 1.08; letter-spacing: -0.02em; }
+.ph-card.photo .ph-meta { color: inherit; opacity: 0.92; font-size: 12px; margin-top: 5px; }
 .ph-label, .m-label { font-family: var(--font-head); font-size: 9.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted); margin-bottom: 6px; }
 .ph-meter { display: flex; align-items: baseline; gap: 6px; }
 .ph-meter b { font-family: var(--font-head); font-weight: 400; font-size: 32px; line-height: 1; letter-spacing: -0.04em; }
@@ -102,16 +122,10 @@ h1 b { display: block; }
 .ph-bar { height: 3px; border-radius: 3px; background: var(--soft); margin-top: 12px; overflow: hidden; }
 .ph-bar i { display: block; height: 100%; background: var(--ink); }
 .ph-title { font-family: var(--font-head); font-size: 17px; font-weight: 500; letter-spacing: -0.02em; }
-.ph-title.sm { font-size: 14px; }
 .ph-meta { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
-.ph-btn { display: inline-flex; margin-top: 10px; padding: 7px 16px; border-radius: 999px; background: var(--ink); color: var(--bg); font-family: var(--font-head); font-size: 12px; font-weight: 500; }
-.ph-row { display: flex; align-items: center; gap: 12px; }
-.ph-bloom { position: relative; width: 40px; height: 40px; flex: none; }
-.ph-bloom i { position: absolute; inset: 0; border-radius: 50%; background: color-mix(in srgb, var(--brand) 40%, transparent); animation: bloom 7s ease-in-out infinite; }
-.ph-bloom i + i { inset: 11px; background: var(--surface); animation-delay: 0.5s; }
-@keyframes bloom { 0%, 100% { transform: scale(0.8); } 45% { transform: scale(1.06); } }
-.ph-tabbar { margin: auto 10px 12px; display: grid; grid-template-columns: repeat(5, 1fr); padding: 5px; border-radius: 999px; background: var(--surface); font-family: var(--font-head); font-size: 9.5px; color: var(--muted); text-align: center; }
-.ph-tabbar span { padding: 10px 0; border-radius: 999px; }
+.ph-tabbar { margin: auto 10px 12px; display: grid; grid-template-columns: repeat(5, 1fr); padding: 4px; border-radius: 999px; background: var(--surface); font-family: var(--font-head); font-size: 8.5px; color: var(--muted); text-align: center; }
+.ph-tabbar span { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 0 6px; border-radius: 999px; font-weight: 500; }
+.ph-tabbar svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .ph-tabbar .on { background: var(--soft); color: var(--ink); }
 
 /* ——— Sekcje ——— */
@@ -225,7 +239,7 @@ h1 b { display: block; }
 /* ——— Dostępność: mniej ruchu, mniej przezroczystości, większy kontrast ——— */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .ph-bloom i, .panel.entering { animation: none; }
+  .panel.entering { animation: none; }
   .tabs-ind { transition: none; }
 }
 @media (prefers-reduced-transparency: reduce) {
@@ -248,6 +262,7 @@ h1 b { display: block; }
 /* ——— Telefon ——— */
 @media (max-width: 560px) {
   .phone { width: 268px; height: 548px; }
+  .ph-card.photo .ph-meta { font-size: 11px; }
   .facts li + li { padding-left: 1rem; }
   .tabs { display: grid; width: 100%; }
   .tabs button { padding: 0.65rem 0.25rem; font-size: 0.88rem; }
