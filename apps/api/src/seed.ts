@@ -183,7 +183,7 @@ export function seed(db: Db, now = new Date()) {
       { ct: classTypeId, max: iso(new Date(now.getTime() - minDaysAgo * DAY)), min: iso(new Date(now.getTime() - maxDaysAgo * DAY)) },
     );
     for (const s of past.slice(0, count)) {
-      const pass = loadPass(scope, passId)!;
+      const pass = loadPass(scope, passId, now)!;
       const poolId = Object.keys(pass.balances)[0] ?? null;
       scope.run(
         "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, $pool, 'attended', $t, $t)",

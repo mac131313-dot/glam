@@ -251,7 +251,7 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
       { ct: visited, now: iso(new Date(now.getTime() - lastVisitDaysAgo * DAY)), from: iso(new Date(now.getTime() - 11 * DAY)) },
     );
     for (const s of past) {
-      const pass = loadPass(scope, passId)!;
+      const pass = loadPass(scope, passId, now)!;
       const bookingId = crypto.randomUUID();
       scope.run(
         "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'attended', $t, $t)",
@@ -296,7 +296,7 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
       "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'booked', $t, $t)",
       { id: crypto.randomUUID(), s: s.id, u: userId, p: passId, t: iso(now) },
     );
-    consumeEntry(scope, loadPass(scope, passId)!, 'main');
+    consumeEntry(scope, loadPass(scope, passId, now)!, 'main');
   };
   bookToday(aleksandra.id, aleksandra.passId, 'ss_ua');
   bookToday(michalina.id, buy(S, michalina.id, 'ss_girly4', 2), 'ss_girly');
@@ -350,7 +350,7 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
         "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'booked', $t, $t)",
         { id: crypto.randomUUID(), s: lastToday.id, u: userId, p: passId, t: iso(now) },
       );
-      consumeEntry(scope, loadPass(scope, passId)!, 'main');
+      consumeEntry(scope, loadPass(scope, passId, now)!, 'main');
     }
 
   // ——— Grupy (Razem → Grupy): dwie wokół zajęć studia, każda z trenerką-opiekunką i rozmową na czacie ———

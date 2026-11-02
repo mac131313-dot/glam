@@ -45,13 +45,19 @@ export function passRows(scope: StudioScope, userId: string): PassRow[] {
   return scope.all<PassRow>('SELECT * FROM passes WHERE studio_id = $studio AND user_id = $user ORDER BY created_at DESC', { user: userId });
 }
 
-export function loadPass(scope: StudioScope, passId: string): Pass | undefined {
+export function loadPass(scope: StudioScope, passId: string, now = new Date()): Pass | undefined {
   const row = scope.get<PassRow>('SELECT * FROM passes WHERE studio_id = $studio AND id = $id', { id: passId });
-  return row && toPass(row);
+  return row && toPass(row, now);
 }
 
 function saveBalances(scope: StudioScope, pass: Pass) {
-  const status: PassStatus = pass.status === 'active' || pass.status === 'used' ? (isUsedUp(pass) ? 'used' : 'active') : pass.status;
+  // Status z toPass() bywa wyliczony („expired” po dacie, „frozen” z „pending”) – takiego nie zapisujemy,
+  // zmieniamy tylko active ↔ used. Wygasanie w bazie ustawia zadanie w jobs.ts.
+  if (pass.status !== 'active' && pass.status !== 'used') {
+    scope.run('UPDATE passes SET balances_json = $b WHERE studio_id = $studio AND id = $id', { b: JSON.stringify(pass.balances), id: pass.id });
+    return;
+  }
+  const status: PassStatus = isUsedUp(pass) ? 'used' : 'active';
   scope.run('UPDATE passes SET balances_json = $b, status = $s WHERE studio_id = $studio AND id = $id', {
     b: JSON.stringify(pass.balances),
     s: status,
