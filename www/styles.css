@@ -270,7 +270,12 @@ h1 b { display: block; }
   .phone { width: 268px; height: 548px; }
   .ph-card.photo .ph-meta { font-size: 11px; }
   .facts li + li { padding-left: 1rem; }
-  .facts span { letter-spacing: 0.1em; }
+  /* Mniej treści naraz: na telefonie zostaje to, co najważniejsze, reszta jest na komputerze.
+     Liczby z hero powtarzają „Dlaczego GLAM”, w zakładkach trzy pierwsze punkty,
+     a w „Dlaczego GLAM” same tytuły – mówią same za siebie. */
+  .facts { display: none; }
+  .panel .list li:nth-child(n + 4) { display: none; }
+  .panel .list li:nth-child(3) { border-bottom: 1px solid var(--line); }
 
   /* Zakładki: pasek przewijany palcem zamiast pięciu ściśniętych przycisków. Wskaźnik leży w środku
      przewijanego paska, więc jedzie razem z nim. Krawędzie wygaszone, żeby było widać, że jest dalej. */
@@ -283,8 +288,11 @@ h1 b { display: block; }
   .no-js .tabs button[aria-selected='true'] { background: var(--ink); }
 
   .panel-visual { min-height: 20rem; padding: 1.25rem; }
-  .grid, .form-row { grid-template-columns: 1fr; }
-  .grid { gap: 2rem; }
+  .form-row { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: 1fr; gap: 0; }
+  .item { padding: 1rem 0; }
+  .item:last-child { border-bottom: 1px solid var(--line); }
+  .item p { display: none; }
 
   /* Kroki: lista z numerem z boku zamiast czterech wysokich kart (ok. połowa wysokości). */
   .steps { grid-template-columns: 1fr; gap: 0; }
