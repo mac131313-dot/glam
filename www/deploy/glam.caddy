@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────── GLAMCORE.PL
+#
+# Strona platformy GLAM: same pliki statyczne z /srv/glam-www (katalog www/
+# z repozytorium, bez deploy/ i README.md). Bez procesu, bez portu i bez
+# dostępu do danych innych projektów. Caddy tylko czyta ten jeden katalog.
+#
+# Plik leży w repozytorium GLAM (www/deploy/glam.caddy), a na serwerze
+# w /etc/caddy/glam.caddy. Główny Caddyfile ma tylko jedną linię
+# `import /etc/caddy/glam.caddy`. Zmiany wprowadzaj tutaj i wgrywaj przez
+# www/deploy/wdroz.sh, nie edytuj kopii na serwerze.
+#
+# Bloki nazwane mają pierwszeństwo przed `https://` (domeny klienckie
+# ResHouse), więc glamcore.pl nigdy nie trafi na aplikację stron.
+
+glamcore.pl {
+	log {
+		output file /var/log/caddy/glam.log
+		format console
+	}
+
+	root * /srv/glam-www
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+	# Nazwy plików nie mają wersji, więc krótki cache: po wdrożeniu nowa
+	# wersja dociera do odwiedzających najpóźniej po godzinie.
+	@assets path *.css *.js *.svg *.jpg *.png *.webp
+	header @assets Cache-Control "public, max-age=3600"
+	file_server
+}
+
+www.glamcore.pl {
+	log {
+		output file /var/log/caddy/glam.log
+		format console
+	}
+	redir https://glamcore.pl{uri} permanent
+}
