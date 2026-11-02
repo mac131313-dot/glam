@@ -61,9 +61,22 @@ glamcore.pl {
 
 	handle {
 		root * /srv/glam-www
-		# Nazwy plików nie mają wersji, więc krótki cache: po wdrożeniu nowa
-		# wersja dociera do odwiedzających najpóźniej po godzinie.
-		@assets path *.css *.js *.svg *.jpg *.png *.webp
+		# Strona HTML: przeglądarka zawsze pyta serwer, czy jest nowsza wersja
+		# (bez zmian odpowiedź to krótkie 304), więc nowe wdrożenie widać od razu.
+		@html path / *.html
+		header @html Cache-Control "no-cache"
+		# CSS i JS mają w index.html ?v=<skrót> (dopisuje wdroz.sh) – nowa treść
+		# to nowy adres, więc można je trzymać długo.
+		@wersja {
+			path *.css *.js
+			query v=*
+		}
+		header @wersja Cache-Control "public, max-age=31536000, immutable"
+		# Obrazki i reszta bez wersji: krótki cache, nowa wersja najpóźniej po godzinie.
+		@assets {
+			path *.css *.js *.svg *.jpg *.png *.webp
+			not query v=*
+		}
 		header @assets Cache-Control "public, max-age=3600"
 		file_server
 	}

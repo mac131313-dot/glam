@@ -15,9 +15,22 @@ set -euo pipefail
 HOST="${GLAM_VPS:-root@185.193.112.243}"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-rsync -rlt --delete \
+# Kopia robocza strony: w index.html adresy CSS i JS dostają ?v=<skrót zawartości>.
+# Zmieniony plik ma nowy adres, więc przeglądarki (zwłaszcza na telefonach) nie pokażą
+# starej wersji z pamięci podręcznej. Pliki w repozytorium zostają bez zmian.
+ETAP="$(mktemp -d)"
+trap 'rm -rf "$ETAP"' EXIT
+rsync -rlt \
   --exclude 'deploy/' --exclude 'serwer/' --exclude 'README.md' --exclude '.*' \
-  "$DIR/" "$HOST:/srv/glam-www/"
+  "$DIR/" "$ETAP/"
+for PLIK_ZASOBU in styles.css main.js; do
+  V=$(shasum -a 256 "$ETAP/$PLIK_ZASOBU" | cut -c1-10)
+  sed -i.bak "s|\"$PLIK_ZASOBU\"|\"$PLIK_ZASOBU?v=$V\"|" "$ETAP/index.html"
+done
+rm -f "$ETAP/index.html.bak"
+grep -q 'styles.css?v=' "$ETAP/index.html" && grep -q 'main.js?v=' "$ETAP/index.html" || { echo "BŁĄD: nie udało się dopisać wersji do index.html" >&2; exit 1; }
+
+rsync -rlt --delete "$ETAP/" "$HOST:/srv/glam-www/"
 
 scp -q "$DIR/deploy/glam.caddy" "$HOST:/etc/caddy/glam.caddy.new"
 ssh "$HOST" 'rm -rf /tmp/glam-app && mkdir -m 700 /tmp/glam-app'
