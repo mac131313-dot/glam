@@ -110,8 +110,20 @@ type Arrival = { id: string; userId: string; name: string; at: string; what: str
 /** `phone`: telefon recepcji w ręce – domyślnie tylna kamera (skanuje ekran klientki), wybór pamiętany osobno od tabletu. */
 export function CheckinPanel({ onDone, big = false, scanner = false, phone = false }: { onDone: () => void; big?: boolean; scanner?: boolean; phone?: boolean }) {
   const [value, setValue] = useState('');
-  // Tryb skanera (zakładka Wejściówki): kamera włączona od razu, domyślnie przednia – tablet stoi przodem do klientek.
-  const [camera, setCamera] = useState(scanner);
+  // Tryb skanera (zakładka Wejściówki): domyślnie przednia kamera – tablet stoi przodem do klientek. Kamera rusza sama
+  // tylko wtedy, gdy przeglądarka ma już zgodę; za pierwszym razem pyta dopiero po „Włącz skaner”, a nie przy wejściu na ekran.
+  const [camera, setCamera] = useState(false);
+  useEffect(() => {
+    if (!scanner || !navigator.permissions?.query) return;
+    let alive = true;
+    navigator.permissions
+      .query({ name: 'camera' as PermissionName })
+      .then((p) => alive && p.state === 'granted' && setCamera(true))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [scanner]);
   const facingKey = phone ? 'glam:scan-facing-phone' : 'glam:scan-facing';
   const [facing, setFacing] = useState<'environment' | 'user'>(() => {
     try {
@@ -235,7 +247,7 @@ export function CheckinPanel({ onDone, big = false, scanner = false, phone = fal
         <input
           ref={field}
           className={`input ${big ? 'scan-input' : ''}`}
-          placeholder="Zeskanuj kod, wpisz 6 liter albo telefon"
+          placeholder="Kod QR, 6 liter albo telefon"
           aria-label="Kod z aplikacji, kod wejściówki albo numer telefonu"
           value={value}
           autoFocus={big && !scanner}

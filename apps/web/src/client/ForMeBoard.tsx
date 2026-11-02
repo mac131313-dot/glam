@@ -76,16 +76,18 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
   const ratio = (done = 0, goal = 0) => (goal > 0 ? Math.min(1, done / goal) : done > 0 ? 1 : 0);
 
   const rings = [
-    { id: 'move', label: `Ruch${goalExtra(week?.done.trainings ?? 0, week?.goal.trainings ?? 0)}`, value: ratio(week?.done.trainings, week?.goal.trainings), text: week ? goalCount(week.done.trainings, week.goal.trainings) : '–', onClick: () => open('goal') },
-    { id: 'breath', label: `Oddech${goalExtra(week?.done.mindful ?? 0, week?.goal.mindful ?? 0)}`, value: ratio(week?.done.mindful, week?.goal.mindful), text: week ? goalCount(week.done.mindful, week.goal.mindful) : '–', onClick: () => open('goal') },
+    { id: 'move', label: `Ruch${goalExtra(week?.done.trainings ?? 0, week?.goal.trainings ?? 0)}`, hint: 'treningi', value: ratio(week?.done.trainings, week?.goal.trainings), text: week ? goalCount(week.done.trainings, week.goal.trainings) : '–', onClick: () => open('goal') },
+    { id: 'breath', label: `Oddech${goalExtra(week?.done.mindful ?? 0, week?.goal.mindful ?? 0)}`, hint: 'chwile', value: ratio(week?.done.mindful, week?.goal.mindful), text: week ? goalCount(week.done.mindful, week.goal.mindful) : '–', onClick: () => open('goal') },
     {
       id: 'mood',
       label: 'Samopoczucie',
+      hint: 'dziś',
       value: todayEntry ? wellbeingScore(todayEntry) / 100 : 0,
       text: todayEntry ? `${wellbeingScore(todayEntry)}%` : 'Zapisz',
       onClick: () => open('journal'),
     },
   ].map((r) => ({ ...r, tone: ringTone(r.value) }));
+  const streak = ritual?.streak ?? 0;
 
   const todayClasses = (home?.upcoming ?? []).filter((u) => isoDay(new Date(u.starts_at)) === today);
   const evening = new Date().getHours() >= 18;
@@ -110,41 +112,52 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
         )}
       </div>
 
-      {/* Trzy pierścienie: ruch i oddech wobec celu tygodnia, samopoczucie z dzisiejszego wpisu. */}
-      <div ref={ringsRef} className="board-rings" role="group" aria-label="Twój tydzień">
-        {rings.map((r) => (
-          <button key={r.id} className="board-ring" onClick={r.onClick} aria-label={`${r.label}: ${r.text}, ${TONE_LABEL[r.tone]}`}>
-            <Ring value={r.value} tone={r.tone} size={84} stroke={4}>
-              <span className={r.text === 'Zapisz' ? 'board-ring-cta' : 'board-ring-num'}>{r.text}</span>
-            </Ring>
-            <span className="board-ring-label">{r.label}</span>
-          </button>
-        ))}
-      </div>
+      {/* Trzy pierścienie: ruch i oddech wobec celu tygodnia, samopoczucie z dzisiejszego wpisu.
+          Pod nazwą krótko, co liczymy – żeby „2/3” nie trzeba było zgadywać. */}
+      <section className="stack gap-3">
+        <div className="sec-head">
+          <div className="eyebrow">Twój tydzień</div>
+        </div>
+        <div ref={ringsRef} className="board-rings" role="group" aria-label="Twój tydzień">
+          {rings.map((r) => (
+            <button key={r.id} className="board-ring" onClick={r.onClick} aria-label={`${r.label}: ${r.text}, ${TONE_LABEL[r.tone]}`}>
+              <Ring value={r.value} tone={r.tone} size={84} stroke={5}>
+                <span className={r.text === 'Zapisz' ? 'board-ring-cta' : 'board-ring-num'}>{r.text}</span>
+              </Ring>
+              <span className="board-ring-label">
+                {r.label}
+                <span>{r.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
 
-      {/* Mój dzień tuż pod pierścieniami: dzisiejszy oddech jako pierwsza pozycja planu dnia (zamiast przycisku
-          w nagłówku), potem zajęcia. Po oddechu wiersz zamienia się w ✓ – plan dnia sam się odhacza. */}
-      <section className="forme-list">
-        <h2 className="forme-h">Mój dzień</h2>
-        <div className="card board-day">
+      {/* Mój dzień: dzisiejszy oddech jako pierwsza pozycja planu dnia, potem zajęcia – każda pozycja to jeden kafelek.
+          Po oddechu kafelek zamienia się w ✓ – plan dnia sam się odhacza. */}
+      <section className="stack gap-3">
+        <div className="sec-head">
+          <div className="eyebrow">Mój dzień</div>
+        </div>
+        <div className="nudges">
           {ritual?.today ? (
-            <div className="board-act is-soft is-done">
-              <span className="board-act-time">
-                <Icon name="check" size={14} />
+            <div className="nudge is-done">
+              <span className="nudge-icon">
+                <Icon name="check" size={20} />
               </span>
               <span className="grow">
-                <span className="session-title">Oddech</span>
-                <span className="session-meta"> · dziś już był</span>
+                <span className="nudge-title">Oddech zrobiony</span>
+                <span className="small muted">Dziś już oddychałaś – pięknie</span>
               </span>
             </div>
           ) : (
-            <button className="board-act is-breath" onClick={() => openBreath(breath)} aria-label={`Zacznij oddech, ${breath.minutes} min`}>
-              <span className="board-act-time board-act-play">
-                <Icon name="play" size={14} />
+            <button className="nudge is-primary" onClick={() => openBreath(breath)} aria-label={`Zacznij oddech, ${breath.minutes} min`}>
+              <span className="nudge-icon">
+                <Icon name="play" size={18} />
               </span>
               <span className="grow">
-                <span className="session-title">{evening ? 'Oddech na wieczór' : new Date().getHours() < 12 ? 'Poranny oddech' : 'Chwila oddechu'}</span>
-                <span className="session-meta">
+                <span className="nudge-title">{evening ? 'Oddech na wieczór' : new Date().getHours() < 12 ? 'Poranny oddech' : 'Chwila oddechu'}</span>
+                <span className="small muted">
                   {breath.minutes} min · {patternById(breath.patternId).label.toLowerCase()}
                 </span>
               </span>
@@ -152,45 +165,71 @@ export function ForMeBoard({ breath }: { breath: BreathChoice }) {
             </button>
           )}
           {todayClasses.map((c) => (
-            <button key={c.booking_id} className={`board-act${c.status === 'waitlist' ? ' is-soft' : ''}`} onClick={() => go('start')}>
-              <span className="board-act-time">{fmtTime(c.starts_at)}</span>
+            <button key={c.booking_id} className="nudge" onClick={() => go('start')}>
+              <span className="nudge-icon nudge-time">{fmtTime(c.starts_at)}</span>
               <span className="grow">
-                <span className="session-title">{c.class_name}</span>
-                <span className="session-meta"> · {c.status === 'waitlist' ? 'jesteś na liście oczekujących' : `prowadzi ${c.trainer_name}`}</span>
+                <span className="nudge-title">{c.class_name}</span>
+                <span className="small muted">{c.status === 'waitlist' ? 'Jesteś na liście oczekujących' : `Prowadzi ${c.trainer_name}`}</span>
               </span>
+              <Icon name="chevron" size={18} />
             </button>
           ))}
           {!todayClasses.length && (
-            <p className="small muted board-empty">
-              Bez zajęć na dziś – to też jest plan.{' '}
-              <button className="link" onClick={() => go('schedule')}>
-                Zobacz grafik
-              </button>
-            </p>
+            <button className="nudge" onClick={() => go('schedule')}>
+              <span className="nudge-icon">
+                <Icon name="calendar" size={20} />
+              </span>
+              <span className="grow">
+                <span className="nudge-title">Bez zajęć na dziś</span>
+                <span className="small muted">To też jest plan</span>
+              </span>
+              <Icon name="chevron" size={18} />
+            </button>
           )}
         </div>
       </section>
 
-      <div className="board-tiles">
-        <button className="card board-tile" onClick={() => open('calm7')}>
-          <span className="eyebrow">Seria oddechu</span>
-          <span className="board-tile-row">
-            <span className="board-badge">{ritual?.streak ?? 0}</span>
-            <span className="small">{ritual?.today ? 'Dziś już oddychałaś' : (ritual?.streak ?? 0) > 0 ? 'Podtrzymaj ją dziś' : 'Zacznij dziś'}</span>
-          </span>
-        </button>
-        <button className="card board-tile" onClick={() => open('journal')}>
-          <span className="eyebrow">Dziennik</span>
-          <span className="board-tile-row">
-            <span className="board-badge">{entries.length}/7</span>
-            <span className="small">{todayEntry ? `Dziś: ${MOOD_LABELS[todayEntry.mood]}` : 'Jak się dziś czujesz?'}</span>
-          </span>
-        </button>
-      </div>
+      {/* Nawyki: duża liczba i jedno zdanie, co znaczy – zamiast małej plakietki obok etykiety. */}
+      <section className="stack gap-3">
+        <div className="sec-head">
+          <div className="eyebrow">Nawyki</div>
+        </div>
+        <div className="goal-grid">
+          <button className="goal-stat habit" onClick={() => open('calm7')}>
+            <span className="habit-top">
+              <span className="nudge-icon">
+                <Icon name="leaf" size={18} />
+              </span>
+              <Icon name="chevron" size={16} />
+            </span>
+            <span className="goal-stat-value">
+              {streak} <span className="habit-unit">{streak === 1 ? 'dzień' : 'dni'}</span>
+            </span>
+            <span className="nudge-title">Seria oddechu</span>
+            <span className="small muted">{ritual?.today ? 'Dziś już oddychałaś' : streak > 0 ? 'Podtrzymaj ją dziś' : 'Zacznij dziś'}</span>
+          </button>
+          <button className="goal-stat habit" onClick={() => open('journal')}>
+            <span className="habit-top">
+              <span className="nudge-icon">
+                <Icon name="pen" size={18} />
+              </span>
+              <Icon name="chevron" size={16} />
+            </span>
+            <span className="goal-stat-value">
+              {entries.length}
+              <span className="habit-unit">/7</span>
+            </span>
+            <span className="nudge-title">Dziennik</span>
+            <span className="small muted">{todayEntry ? `Dziś: ${MOOD_LABELS[todayEntry.mood]}` : 'Jak się dziś czujesz?'}</span>
+          </button>
+        </div>
+      </section>
 
       {/* Dwie sesje na teraz – odpowiednik „zwiększ relaks / zwiększ czujność”. */}
-      <section className="forme-list">
-        <h2 className="forme-h">Sesje na teraz</h2>
+      <section className="stack gap-3">
+        <div className="sec-head">
+          <h2 className="eyebrow">Sesje na teraz</h2>
+        </div>
         <div className="board-sessions">
           {[
             { s: calm, tone: 'calm', kicker: 'Wycisz się' },

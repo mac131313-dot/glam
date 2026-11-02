@@ -103,17 +103,17 @@ export function Feed({ group }: { group?: string | null }) {
             {p.event_at && <div className="small">📅 {fmtLongDay(p.event_at)}, {fmtTime(p.event_at)}</div>}
             {p.mediaUrl && <AuthImg src={p.mediaUrl} alt="" style={{ width: '100%', borderRadius: 16, objectFit: 'cover', maxHeight: 360 }} />}
             <div className="row small">
-              <button className="link" onClick={() => run(() => api(`/posts/${p.id}/like`, { method: 'POST' }).then(feed.reload))}>
+              <button className="text-btn" onClick={() => run(() => api(`/posts/${p.id}/like`, { method: 'POST' }).then(feed.reload))}>
                 {p.liked ? '♥' : '♡'} {p.likes}
               </button>
               <span className="muted">{p.comments} komentarzy</span>
               <span className="grow" />
               {p.mine ? (
-                <button className="link tiny" onClick={() => run(() => api(`/posts/${p.id}`, { method: 'DELETE' }).then(feed.reload), 'Usunięte')}>
+                <button className="text-btn tiny" onClick={() => run(() => api(`/posts/${p.id}`, { method: 'DELETE' }).then(feed.reload), 'Usunięte')}>
                   usuń
                 </button>
               ) : (
-                <button className="link tiny" onClick={() => setReport({ kind: 'post', id: p.id })}>
+                <button className="text-btn tiny" onClick={() => setReport({ kind: 'post', id: p.id })}>
                   zgłoś
                 </button>
               )}
@@ -122,7 +122,7 @@ export function Feed({ group }: { group?: string | null }) {
               <div key={c.id} className="small" style={{ paddingLeft: 'var(--space-3)', borderLeft: '2px solid var(--line)' }}>
                 <b>{c.author.name}</b> {c.body}
                 {!c.mine && (
-                  <button className="link tiny" style={{ marginLeft: 'var(--space-2)' }} onClick={() => setReport({ kind: 'comment', id: c.id })}>
+                  <button className="text-btn tiny" style={{ marginLeft: 'var(--space-2)' }} onClick={() => setReport({ kind: 'comment', id: c.id })}>
                     zgłoś
                   </button>
                 )}
@@ -221,12 +221,12 @@ function Groups() {
                   </span>
                 </span>
                 {g.requested ? (
-                  <button className="link small muted" title="Kliknij, żeby wycofać prośbę" onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(groups.reload), 'Prośba wycofana')}>
+                  <button className="text-btn small muted" title="Kliknij, żeby wycofać prośbę" onClick={() => run(() => api(`/groups/${g.id}/leave`, { method: 'POST' }).then(groups.reload), 'Prośba wycofana')}>
                     Prośba wysłana
                   </button>
                 ) : (
                   <button
-                    className="link small"
+                    className="text-btn small"
                     onClick={() =>
                       run(
                         () => api<{ requested?: boolean; message?: string }>(`/groups/${g.id}/join`, { method: 'POST' }).then((r) => (groups.reload(), r)),
@@ -287,7 +287,7 @@ function Challenges({ focus }: { focus: string | null }) {
                   </button>
                 )}
                 {c.metric !== 'checkins' && !c.completed_at && (
-                  <button className="link tiny" onClick={() => run(() => api(`/challenges/${c.id}/refresh`, { method: 'POST' }).then(list.reload))}>
+                  <button className="text-btn tiny" onClick={() => run(() => api(`/challenges/${c.id}/refresh`, { method: 'POST' }).then(list.reload))}>
                     odśwież
                   </button>
                 )}

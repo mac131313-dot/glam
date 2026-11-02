@@ -2,7 +2,7 @@
 import { useEffect } from 'react';
 import { api, ApiError, DEMO_MODE, fmtPhone, useApi } from '../api.ts';
 import { preparePhoto } from '../staff/logoUpload.ts';
-import { Avatar, Empty, ListRow, Pending, useAction, useToast } from '../ui.tsx';
+import { Avatar, Empty, ListRow, MoreLink, Pending, rememberOrigin, useAction, useToast } from '../ui.tsx';
 import { hasFeature, useClient } from './ClientApp.tsx';
 import { PassMeter, type Meter } from './PassMeter.tsx';
 
@@ -41,24 +41,22 @@ export function Profile() {
           <input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={busy} onChange={(e) => (e.target.files?.[0] && pickPhoto(e.target.files[0]), (e.target.value = ''))} />
         </label>
         <div className="stack gap-1">
-          <h1 className="serif" style={{ margin: 0, fontSize: '2.2rem' }}>{me.user.name ?? 'Twój profil'}</h1>
+          <h1 className="profile-name">{me.user.name ?? 'Twój profil'}</h1>
           <div className="muted small">{fmtPhone(me.user.phone)}</div>
           {!me.user.avatarUrl && <span className="tiny muted">Dotknij kółka, żeby dodać zdjęcie</span>}
         </div>
       </section>
 
-      <section className="stack">
-        <div className="row between">
-          <h2 style={{ margin: 0 }}>Karnety</h2>
-          <button className="link small" onClick={() => openShop()}>
-            Kup karnet
-          </button>
+      <section className="stack gap-3">
+        <div className="sec-head">
+          <div className="eyebrow">Karnety</div>
+          <MoreLink label="Kup karnet" onClick={() => openShop()} />
         </div>
         {!passes.data && <Pending error={passes.error} reload={passes.reload} />}
         {passes.data?.length === 0 && <Empty icon="🎟️">Nie masz jeszcze karnetu w tym studiu.</Empty>}
         {passes.data?.map((p) => (
-          <div key={p.id} className={`card ${p.status === 'active' ? 'soft' : 'flat'}`}>
-            {/* Aktywny karnet: duża cyfra wejść; plakietka tylko, gdy karnet nie jest aktywny. */}
+          // Ta sama karta co „Mój karnet” na Starcie; nieaktywny karnet przygaszony, z plakietką.
+          <div key={p.id} className={`home-pass${p.status === 'active' ? '' : ' is-inactive'}`}>
             <div className="row between" style={{ alignItems: 'flex-start' }}>
               <PassMeter name={p.productName} summary={p.summary} meter={p.meter} />
               {p.status !== 'active' && (
@@ -66,10 +64,10 @@ export function Profile() {
               )}
             </div>
             {p.autoRenew && p.status === 'active' && (
-              <div className="row between" style={{ marginTop: 10 }}>
-                <span className="tiny muted">Odnawia się samo</span>
-                <button
-                  className="link tiny"
+              <div className="row between">
+                <span className="small muted">Odnawia się samo</span>
+                <MoreLink
+                  label="Anuluj odnowienie"
                   onClick={async () => {
                     try {
                       const res = await api<{ message: string }>(`/my/passes/${p.id}/cancel-renewal`, { method: 'POST' });
@@ -79,9 +77,7 @@ export function Profile() {
                       toast((e as ApiError).message, 'error');
                     }
                   }}
-                >
-                  Anuluj odnowienie
-                </button>
+                />
               </div>
             )}
           </div>
@@ -94,12 +90,19 @@ export function Profile() {
         )}
       </section>
 
-      {/* Trzy krótkie grupy zamiast jednej długiej listy. Powiadomienia są w Ustawieniach. */}
+      {/* Trzy krótkie grupy zamiast jednej długiej listy. Wiadomości i powiadomienia są w zakładce Czat, ich ustawienia – w Ustawieniach. */}
       <section>
         <div className="eyebrow">Na co dzień</div>
-        <ListRow title="Mój kod wejścia" hint="Pokaż na recepcji" onClick={() => open('checkin')} />
+        <ListRow
+          title="Mój kod wejścia"
+          hint="Pokaż na recepcji"
+          onClick={(e) => {
+            // Strona kodu rośnie z klikniętego wiersza – tak samo jak z przycisku na Starcie.
+            rememberOrigin(e.currentTarget);
+            open('checkin');
+          }}
+        />
         <ListRow title="Mój plan" hint="Od Twojej trenerki" onClick={() => open('plan')} />
-        <ListRow title="Wiadomości" hint="Wszystkie powiadomienia od studia" onClick={() => open('inbox')} />
       </section>
 
       <section>

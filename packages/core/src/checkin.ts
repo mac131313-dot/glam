@@ -1,19 +1,28 @@
-// Kod wejścia na żywo: QR zmienia się co 30 s, więc zrzut ekranu wysłany znajomej przestaje działać po chwili.
+// Kod wejścia na żywo: QR zmienia się co minutę, więc zrzut ekranu wysłany znajomej przestaje działać po chwili.
 // Telefon dostaje z serwera dzienny sekret i sam liczy kolejne kody (działa też offline); recepcja liczy to samo.
 // SHA-256 w czystym TS zamiast crypto.subtle – subtle działa tylko na HTTPS, a demo na telefonie idzie po http w Wi-Fi.
 
 /** Co tyle zmienia się kod QR. */
-export const CHECKIN_STEP_MS = 30_000;
+export const CHECKIN_STEP_MS = 60_000;
 
 /** Dzienny sekret do kodu wejścia (z /api/my/checkin-code i z listy najbliższych zajęć). */
 export type LiveCheckin = { user: string; date: string; seed: string };
 
 export const checkinStep = (at = Date.now()) => Math.floor(at / CHECKIN_STEP_MS);
 
-/** Kod do QR na dane okno 30 s. Serwer sprawdza go tą samą funkcją. */
+/** Kod do QR na dane okno 60 s. Serwer sprawdza go tą samą funkcją. */
 export function liveCheckinCode({ user, date, seed }: LiveCheckin, step: number): string {
   const sig = hmacSha256Hex(seed, `${user}.${date}.${step}`).slice(0, 16);
   return `GLAM2.${user}.${date}.${step}.${sig}`;
+}
+
+/** Litery bez łatwych do pomylenia (I/L, O/Q) – kod czyta się na głos albo przepisuje z ekranu. */
+export const CHECKIN_LETTERS = 'ABCDEFGHJKMNPRSTUVWXYZ';
+
+/** Zapasowy kod z 6 liter na dane okno – zmienia się razem z QR. Telefon i recepcja liczą go tą samą funkcją. */
+export function liveShortCode({ user, date, seed }: LiveCheckin, step: number): string {
+  const hex = hmacSha256Hex(seed, `short.${user}.${date}.${step}`);
+  return Array.from({ length: 6 }, (_, i) => CHECKIN_LETTERS[parseInt(hex.slice(i * 2, i * 2 + 2), 16) % CHECKIN_LETTERS.length]).join('');
 }
 
 /**
@@ -21,7 +30,7 @@ export function liveCheckinCode({ user, date, seed }: LiveCheckin, step: number)
  * albo zegar telefonu spieszy się o kilka sekund; za luźno – zrzut ekranu zdąży dojść do znajomej.
  */
 export function acceptCheckinStep(codeStep: number, nowStep: number): boolean {
-  // Bieżące okno ± jedno: kod ważny 30–90 s.
+  // Bieżące okno ± jedno: kod ważny 1–3 min.
   return Math.abs(codeStep - nowStep) <= 1;
 }
 

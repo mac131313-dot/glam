@@ -1,11 +1,18 @@
 import { SURFACE, useAuthedUrl } from './api.ts';
 import { useLayer } from './back.ts';
-import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnimationEvent, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { Component, createContext, lazy, Suspense, useCallback, type ComponentType, type LazyExoticComponent, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnimationEvent, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from 'react';
+import { project, rubberband, Spring, SPRING_FLICK, SPRING_SMOOTH, SPRING_SNAPPY, VelocityTracker } from './spring.ts';
 import { createPortal } from 'react-dom';
 import { CHECKIN_STEP_MS, checkinStep, liveCheckinCode, type LiveCheckin } from '@glam/core';
 
-type Toast = { text: string; kind: 'ok' | 'error' } | null;
-const ToastCtx = createContext<(text: string, kind?: 'ok' | 'error') => void>(() => {});
+/** Akcja w komunikacie, np. „Cofnij” – pomyłkę naprawia się jednym stuknięciem zamiast okna z pytaniem przed każdą czynnością. */
+export type ToastAction = { label: string; run: () => void };
+type Toast = { text: string; kind: 'ok' | 'error'; action?: ToastAction; leaving?: boolean } | null;
+/** Wyjście komunikatu – zgodnie z `toast-out` w styles.css. */
+const TOAST_EXIT_MS = 220;
+/** Komunikat z akcją wisi dłużej – tyle, ile jest czasu na cofnięcie. */
+export const UNDO_MS = 5000;
+const ToastCtx = createContext<(text: string, kind?: 'ok' | 'error', action?: ToastAction) => void>(() => {});
 
 const ThanksCtx = createContext<() => void>(() => {});
 
@@ -13,11 +20,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast>(null);
   const [thanks, setThanks] = useState(0);
   const timer = useRef<number | undefined>(undefined);
-  const show = useCallback((text: string, kind: 'ok' | 'error' = 'ok') => {
-    setToast({ text, kind });
+  const hide = useCallback(() => {
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setToast(null), 3800);
+    // Komunikat schodzi tą samą drogą, którą przyszedł, i dopiero wtedy znika.
+    setToast((t) => t && { ...t, leaving: true });
+    timer.current = window.setTimeout(() => setToast(null), TOAST_EXIT_MS);
   }, []);
+  const show = useCallback(
+    (text: string, kind: 'ok' | 'error' = 'ok', action?: ToastAction) => {
+      setToast({ text, kind, action });
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(hide, action ? UNDO_MS : 3800);
+    },
+    [hide],
+  );
   // Licznik zamiast true/false: druga opinia pod rząd montuje ekran od nowa i animacja serca rusza ponownie.
   const showThanks = useCallback(() => setThanks((n) => n + 1), []);
   const hideThanks = useCallback(() => setThanks(0), []);
@@ -28,8 +44,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {thanks > 0 && <ThanksScreen key={thanks} onClose={hideThanks} />}
       </ThanksCtx.Provider>
       {toast && (
-        <div className={`toast ${toast.kind === 'error' ? 'error' : ''}`} role="status" aria-live="polite">
+        <div className={`toast ${toast.kind === 'error' ? 'error' : ''} ${toast.leaving ? 'is-leaving' : ''}`} role="status" aria-live="polite">
           {toast.text}
+          {toast.action && (
+            <button
+              type="button"
+              className="toast-action"
+              onClick={() => {
+                toast.action?.run();
+                hide();
+              }}
+            >
+              {toast.action.label}
+            </button>
+          )}
         </div>
       )}
     </ToastCtx.Provider>
@@ -114,147 +142,163 @@ export function Fold({ title, meta, defaultOpen = false, lazy = false, children 
   );
 }
 
-/** Ile trwa wyjście okna – zgodnie z `sheet-down` / `sheet-out` / `scrim-out` w styles.css. */
+/** Ile trwa wyjście okna bez sprężyny (okno na środku, wyłączone animacje) – zgodnie z `sheet-out` / `fade-out` w styles.css. */
 const SHEET_EXIT_MS = 200;
 
-/** Gdzie zatrzymałby się rzut przy danej prędkości (px/s) – to samo wygaszanie co przewijanie w iOS. */
-const project = (velocity: number, rate = 0.998) => ((velocity / 1000) * rate) / (1 - rate);
+/** Elementy, które same obsługują przeciąganie – arkusz ich nie przejmuje. */
+const NO_SHEET_DRAG = 'input, textarea, select, [contenteditable], .chips, .scroll-row, [data-no-drag]';
 
-/** Miękki opór za krawędzią: im dalej, tym mniej okno idzie za palcem. */
-const rubberband = (over: number, size: number, c = 0.55) => (over * size * c) / (size + c * Math.abs(over));
-
-/**
- * Okno od dołu, które zamyka się gestem: palec ciągnie je 1:1 w dół (tylko gdy treść jest przewinięta na samą
- * górę), w górę stawia miękki opór. Po puszczeniu liczy się, gdzie okno by dojechało z rozpędu, a nie gdzie
- * jest teraz – krótki szybki ruch zamyka tak samo jak długi powolny. Złapane w trakcie powrotu rusza z miejsca,
- * w którym akurat jest. Na szerokim ekranie w panelu okno stoi na środku i gestu nie ma (uchwyt jest ukryty).
- */
-function useSheetDrag(sheetRef: RefObject<HTMLDivElement | null>, overlayRef: RefObject<HTMLDivElement | null>, onThrow: () => void, onClose: () => void) {
-  const throwRef = useRef(onThrow);
-  const closeRef = useRef(onClose);
-  throwRef.current = onThrow;
-  closeRef.current = onClose;
-  useEffect(() => {
-    const sheet = sheetRef.current;
-    const overlay = overlayRef.current;
-    if (!sheet || !overlay) return;
-    let startY = 0;
-    let base = 0;
-    let dy = 0;
-    let dragging = false;
-    let tracking = false;
-    let justDragged = false;
-    let samples: { y: number; t: number }[] = [];
-
-    const set = (y: number, animate: boolean) => {
-      const ease = animate ? `${reducedMotion() ? 0 : 380}ms var(--ease-spring)` : '0s';
-      sheet.style.transition = `transform ${ease}`;
-      overlay.style.transition = `background-color ${ease}`;
-      sheet.style.transform = y ? `translateY(${y}px)` : '';
-      // Rozjaśnia się tylko tło pod oknem – opacity na nakładce prześwietliłaby też samo okno.
-      const scrim = Math.round(30 * Math.max(0, 1 - y / sheet.offsetHeight));
-      overlay.style.backgroundColor = y > 0 ? `color-mix(in srgb, var(--ink) ${scrim}%, transparent)` : '';
-    };
-    // Wartość „na ekranie”, nie docelowa – żeby złapanie w trakcie powrotu nie dawało skoku.
-    const current = () => new DOMMatrixReadOnly(getComputedStyle(sheet).transform).m42;
-
-    const start = (y: number, target: EventTarget | null) => {
-      if (getComputedStyle(sheet.querySelector('.sheet-handle') ?? sheet).display === 'none') return;
-      if ((target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable], .scroll-row')) return;
-      tracking = true;
-      dragging = false;
-      startY = y;
-      base = current();
-      samples = [{ y, t: performance.now() }];
-    };
-    const move = (y: number, e: Event) => {
-      if (!tracking) return;
-      if (!dragging) {
-        // Próg ~8 px w dół i treść na samej górze – inaczej to zwykłe przewijanie albo stuknięcie.
-        if (Math.abs(y - startY) < 8) return;
-        if (y < startY || sheet.scrollTop > 0) { tracking = false; return; }
-        dragging = true;
-        startY = y;
-        // Złapane w trakcie wjazdu: animacja CSS przykryłaby palec, więc ją zdejmujemy i ruszamy z bieżącej pozycji.
-        base = current();
-        sheet.getAnimations().forEach((a) => a.cancel());
-      }
-      if (e.cancelable) e.preventDefault();
-      const d = y - startY + base;
-      dy = d < 0 ? -rubberband(-d, sheet.offsetHeight) : d;
-      set(dy, false);
-      samples.push({ y, t: performance.now() });
-      if (samples.length > 5) samples.shift();
-    };
-    const end = () => {
-      if (!tracking) return;
-      tracking = false;
-      if (!dragging) return;
-      dragging = false;
-      justDragged = true;
-      window.setTimeout(() => { justDragged = false; }, 0);
-      const first = samples[0];
-      const last = samples[samples.length - 1];
-      const dt = last.t - first.t;
-      const velocity = dt > 0 ? ((last.y - first.y) / dt) * 1000 : 0;
-      const landing = dy + project(velocity);
-      if (velocity > -50 && landing > sheet.offsetHeight * 0.5) {
-        if (reducedMotion()) { closeRef.current(); return; }
-        // Odjazd w dół z prędkością palca: im szybszy rzut, tym krócej (granice, żeby nie mignęło ani nie wlekło).
-        const rest = sheet.offsetHeight - dy;
-        const ms = Math.min(320, Math.max(160, velocity > 0 ? (rest / velocity) * 1000 * 2 : 280));
-        sheet.classList.add('is-thrown');
-        sheet.style.transition = `transform ${ms}ms cubic-bezier(0.2, 0.6, 0.35, 1)`;
-        sheet.style.transform = `translateY(${sheet.offsetHeight}px)`;
-        throwRef.current();
-      } else {
-        set(0, true);
-      }
-    };
-
-    const onTouchStart = (e: TouchEvent) => start(e.touches[0].clientY, e.target);
-    const onTouchMove = (e: TouchEvent) => move(e.touches[0].clientY, e);
-    const onMouseDown = (e: MouseEvent) => { if (e.button === 0) start(e.clientY, e.target); };
-    const onMouseMove = (e: MouseEvent) => move(e.clientY, e);
-    // Kliknięcie kończące przeciąganie myszą nie może zamknąć okna przez tło ani nacisnąć przycisku pod kursorem.
-    const onClickCapture = (e: MouseEvent) => { if (justDragged) e.stopPropagation(); };
-    sheet.addEventListener('touchstart', onTouchStart, { passive: true });
-    sheet.addEventListener('touchmove', onTouchMove, { passive: false });
-    sheet.addEventListener('touchend', end);
-    sheet.addEventListener('touchcancel', end);
-    sheet.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', end);
-    overlay.addEventListener('click', onClickCapture, true);
-    return () => {
-      sheet.removeEventListener('touchstart', onTouchStart);
-      sheet.removeEventListener('touchmove', onTouchMove);
-      sheet.removeEventListener('touchend', end);
-      sheet.removeEventListener('touchcancel', end);
-      sheet.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', end);
-      overlay.removeEventListener('click', onClickCapture, true);
-    };
-  }, [sheetRef, overlayRef]);
+/** Czy coś między palcem a arkuszem jest przewinięte w dół – wtedy gest w dół przewija treść, a nie zamyka arkusz. */
+function scrolledAbove(target: EventTarget | null, sheet: HTMLElement) {
+  for (let el = target as HTMLElement | null; el; el = el.parentElement) {
+    if (el.scrollTop > 0) return true;
+    if (el === sheet) return false;
+  }
+  return false;
 }
 
-export function Sheet({ onClose, children, label, className, instantClose }: { onClose: () => void; children: ReactNode; label: string; className?: string; /** zamknięcie robi wywołujący (np. przelot zdjęcia do kafelka) – bez własnego zjazdu w dół */ instantClose?: boolean }) {
-  // Okno odchodzi tą samą drogą, którą przyszło, i dopiero wtedy znika z drzewa. Tło przestaje łapać
-  // kliknięcia od razu, więc nie trzeba czekać na koniec animacji.
+/**
+ * Arkusz przyklejony do dołu ekranu jedzie za palcem 1:1 (od miejsca chwycenia), w górę opiera się miękko,
+ * a po puszczeniu rozpęd decyduje: rzut końcowej pozycji ponad połowę wysokości zamyka, inaczej wraca.
+ * Sprężyna przejmuje prędkość palca, więc między przeciąganiem a animacją nie ma szwu, a arkusz w ruchu
+ * – także wjeżdżający albo zamykany – da się złapać i zawrócić. Okno na środku ekranu się nie przeciąga.
+ */
+function useSheetDrag(overlayRef: RefObject<HTMLDivElement | null>, sheetRef: RefObject<HTMLDivElement | null>, onDismissed: () => void, enabled: boolean) {
+  const dismissRef = useRef<(() => void) | null>(null);
+  const doneRef = useRef(onDismissed);
+  doneRef.current = onDismissed;
+  useLayoutEffect(() => {
+    const overlay = overlayRef.current;
+    const sheet = sheetRef.current;
+    if (!enabled || !overlay || !sheet || reducedMotion()) return;
+    if (sheet.getBoundingClientRect().bottom < overlay.getBoundingClientRect().bottom - 1) return;
+
+    const height = () => sheet.offsetHeight + 16;
+    const render = (y: number) => {
+      sheet.style.transform = Math.abs(y) < 0.5 ? '' : `translate3d(0, ${y}px, 0)`;
+      overlay.style.setProperty('--scrim', String(Math.min(1, Math.max(0, 1 - y / height()))));
+    };
+    overlay.dataset.live = '';
+    const spring = new Spring(height(), render);
+    render(spring.value);
+    spring.to(0, SPRING_SMOOTH);
+
+    const dismiss = (velocity?: number) => {
+      spring.to(height(), SPRING_SNAPPY, velocity, () => doneRef.current());
+    };
+    dismissRef.current = () => dismiss();
+
+    const vt = new VelocityTracker();
+    let drag: { from: number; start: number } | null = null;
+    const begin = (y: number) => {
+      // Start z tego, co widać na ekranie (wartość sprężyny), a nie z celu – inaczej arkusz by skoczył.
+      spring.stop();
+      drag = { from: spring.value, start: y };
+      vt.reset();
+      vt.add(y);
+      sheet.style.userSelect = 'none';
+    };
+    const move = (y: number) => {
+      if (!drag) return;
+      vt.add(y);
+      const raw = drag.from + (y - drag.start);
+      spring.set(raw < 0 ? rubberband(raw, height()) : raw);
+    };
+    const end = () => {
+      if (!drag) return;
+      drag = null;
+      sheet.style.userSelect = '';
+      const v = vt.velocity;
+      if (spring.value + project(v) > height() * 0.45) dismiss(v);
+      else spring.to(0, Math.abs(v) > 300 ? SPRING_FLICK : SPRING_SMOOTH, v);
+    };
+
+    // Dotyk: kierunek rozstrzyga pierwszy ruch. W dół przy treści na górze – arkusz; w górę albo w bok – przewijanie.
+    let touch: { x: number; y: number; target: EventTarget | null } | null = null;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1 || (e.target as Element).closest?.(NO_SHEET_DRAG)) return (touch = null);
+      const t = e.touches[0];
+      touch = { x: t.clientX, y: t.clientY, target: e.target };
+      if (spring.moving) begin(t.clientY);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!drag && touch) {
+        const dy = t.clientY - touch.y;
+        const dx = t.clientX - touch.x;
+        if (dy === 0 && dx === 0) return;
+        const down = dy > 0 && Math.abs(dy) >= Math.abs(dx) && !scrolledAbove(touch.target, sheet);
+        touch = null;
+        if (!down) return;
+        begin(t.clientY);
+      }
+      if (!drag) return;
+      e.preventDefault();
+      move(t.clientY);
+    };
+    const onTouchEnd = () => {
+      touch = null;
+      end();
+    };
+    // Myszka: tylko za uchwyt albo zdjęcie u góry – w treści przeciąganie zaznacza tekst.
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      const el = e.target as Element;
+      if (!el.closest('.sheet-handle, .sheet-hero') || el.closest('button, a')) return;
+      try {
+        sheet.setPointerCapture(e.pointerId);
+      } catch {}
+      begin(e.clientY);
+    };
+    const onPointerMove = (e: PointerEvent) => e.pointerType === 'mouse' && move(e.clientY);
+    const onPointerUp = (e: PointerEvent) => e.pointerType === 'mouse' && end();
+
+    sheet.addEventListener('touchstart', onTouchStart, { passive: true });
+    sheet.addEventListener('touchmove', onTouchMove, { passive: false });
+    sheet.addEventListener('touchend', onTouchEnd);
+    sheet.addEventListener('touchcancel', onTouchEnd);
+    sheet.addEventListener('pointerdown', onPointerDown);
+    sheet.addEventListener('pointermove', onPointerMove);
+    sheet.addEventListener('pointerup', onPointerUp);
+    sheet.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      spring.stop();
+      dismissRef.current = null;
+      sheet.removeEventListener('touchstart', onTouchStart);
+      sheet.removeEventListener('touchmove', onTouchMove);
+      sheet.removeEventListener('touchend', onTouchEnd);
+      sheet.removeEventListener('touchcancel', onTouchEnd);
+      sheet.removeEventListener('pointerdown', onPointerDown);
+      sheet.removeEventListener('pointermove', onPointerMove);
+      sheet.removeEventListener('pointerup', onPointerUp);
+      sheet.removeEventListener('pointercancel', onPointerUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return dismissRef;
+}
+
+export function Sheet({ onClose, children, label, className }: { onClose: () => void; children: ReactNode; label: string; className?: string }) {
+  // Okno odchodzi tą samą drogą, którą przyszło, i dopiero wtedy znika z drzewa: arkusz z dołu – sprężyną w dół,
+  // okno na środku – pomniejszeniem. Zdjęcie zajęć w aplikacji wraca do kafelka przejściem widoku (morph), więc tam bez wyjścia.
   const [closing, setClosing] = useState(false);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  const close = reducedMotion() || instantClose ? onClose : () => setClosing(true);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const ref = useDialogFocus();
+  const morph = !!className?.split(' ').includes('morph');
+  const dismiss = useSheetDrag(overlayRef, ref, () => closeRef.current(), !morph);
+  const close = () => {
+    if (dismiss.current) dismiss.current();
+    else if (morph && SURFACE !== 'panel') closeRef.current();
+    else setClosing(true);
+  };
   useEffect(() => {
     if (!closing) return;
     const t = window.setTimeout(() => closeRef.current(), SHEET_EXIT_MS);
     return () => window.clearTimeout(t);
   }, [closing]);
   useLayer(close);
-  const ref = useDialogFocus();
-  const overlayRef = useRef<HTMLDivElement>(null);
-  useSheetDrag(ref, overlayRef, instantClose ? onClose : () => setClosing(true), onClose);
   return (
     <div ref={overlayRef} className={closing ? 'overlay is-closing' : 'overlay'} onClick={close}>
       <div ref={ref} tabIndex={-1} className={className ? `sheet ${className}` : 'sheet'} role="dialog" aria-modal="true" aria-label={label} onClick={(e) => e.stopPropagation()}>
@@ -421,7 +465,55 @@ export function Page({ title, onBack, children, actions, bodyClass, className, s
 }
 
 /** Wiersz menu (Profil, ustawienia): tytuł, podpowiedź, znacznik, strzałka. */
-export function ListRow({ title, hint, badge, onClick, icon }: { title: ReactNode; hint?: ReactNode; badge?: ReactNode; onClick: () => void; icon?: ReactNode }) {
+type ConfirmAsk = { title: string; body?: string; ok?: string; danger?: boolean };
+
+/**
+ * Potwierdzenie w stylu aplikacji zamiast szarego window.confirm: `const { confirm, dialog } = useConfirm()`,
+ * `if (await confirm({ title, body, ok, danger })) …`, a `{dialog}` wstawiamy w drzewo komponentu.
+ * Zamknięcie arkusza (tło, Esc, gest) liczy się jako „Anuluj”.
+ */
+export function useConfirm() {
+  const [ask, setAsk] = useState<(ConfirmAsk & { resolve: (ok: boolean) => void }) | null>(null);
+  const confirm = useCallback((o: ConfirmAsk) => new Promise<boolean>((resolve) => setAsk({ ...o, resolve })), []);
+  const done = (ok: boolean) => {
+    ask?.resolve(ok);
+    setAsk(null);
+  };
+  const dialog = ask && (
+    <Sheet onClose={() => done(false)} label={ask.title}>
+      <div className="stack">
+        <h2 style={{ margin: 0 }}>{ask.title}</h2>
+        {ask.body && <p className="muted" style={{ margin: 0 }}>{ask.body}</p>}
+        <div className="row gap-2">
+          <button className="btn ghost grow" onClick={() => done(false)}>
+            Anuluj
+          </button>
+          <button className={`btn grow${ask.danger ? ' danger' : ''}`} onClick={() => done(true)}>
+            {ask.ok ?? 'Tak'}
+          </button>
+        </div>
+      </div>
+    </Sheet>
+  );
+  return { confirm, dialog };
+}
+
+/**
+ * „Szczegóły ›” – cichy przycisk obok nagłówka sekcji albo pod treścią, zamiast podkreślonego linku, który mieszał się
+ * z tekstem. Jeden wzór w całej aplikacji klientki i recepcji.
+ */
+export function MoreLink({ label, onClick, disabled }: { label: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button type="button" className="more-link" onClick={onClick} disabled={disabled}>
+      {label}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden>
+        <path d="m9 6 6 6-6 6" />
+      </svg>
+    </button>
+  );
+}
+
+export function ListRow({ title, hint, badge, onClick, icon }: { title: ReactNode; hint?: ReactNode; badge?: ReactNode; onClick: (e: ReactMouseEvent<HTMLButtonElement>) => void; icon?: ReactNode }) {
   return (
     <button className="list-row" onClick={onClick}>
       {icon && <span className="list-row-icon">{icon}</span>}
@@ -747,11 +839,11 @@ export function QrCode({ text, size = 200, label }: { text: string; size?: numbe
 }
 
 /**
- * Kod wejścia na żywo: QR liczony w telefonie co 30 s z dziennego sekretu (działa też offline), pod nim kreska
- * odliczająca do zmiany i zegar z sekundami. Przeglądarka nie pozwala zablokować zrzutu ekranu – zrzut za to szybko
+ * Kod wejścia na żywo: QR liczony w telefonie co minutę z dziennego sekretu (działa też offline), pod nim kreska
+ * odliczająca do zmiany i licznik sekund (59 → 0). Przeglądarka nie pozwala zablokować zrzutu ekranu – zrzut za to szybko
  * wygasa, a recepcja od razu widzi, czy ekran żyje (ważne przy kodzie z liter, który zostaje dzienny).
  */
-export function LiveCheckinQr({ checkin, size, label }: { checkin: LiveCheckin; size: number; label: string }) {
+export function LiveCheckinQr({ checkin, size, label, below }: { checkin: LiveCheckin; size: number; label: string; below?: (step: number) => ReactNode }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     // Tykamy równo z pełną sekundą – zegar nie odstaje od zegarka na ręce, a kod zmienia się dokładnie na granicy okna.
@@ -767,7 +859,7 @@ export function LiveCheckinQr({ checkin, size, label }: { checkin: LiveCheckin; 
   const { user, date, seed } = checkin;
   const code = useMemo(() => liveCheckinCode({ user, date, seed }, step), [user, date, seed, step]);
   return (
-    <div className="live-qr" title="Kod zmienia się co 30 sekund">
+    <div className="live-qr" title="Kod zmienia się co minutę">
       <QrCode text={code} size={size} label={label} />
       {/* key={step}: nowa kreska w każdym oknie, więc powrót do pełnej długości nie animuje się wstecz. */}
       <span className="live-qr-bar" aria-hidden="true">
@@ -775,8 +867,11 @@ export function LiveCheckinQr({ checkin, size, label }: { checkin: LiveCheckin; 
       </span>
       <span className="live-qr-clock" aria-hidden="true">
         <i />
-        {new Date(now).toLocaleTimeString('pl-PL')}
+        {/* Sekundy do nowego kodu: 59 → 0, potem kod się zmienia i liczymy od nowa. */}
+        nowy kod za {59 - Math.floor((now % CHECKIN_STEP_MS) / 1000)} s
       </span>
+      {/* Np. kod z liter – w tym samym oknie co QR, więc zmienia się razem z nim. */}
+      {below?.(step)}
     </div>
   );
 }

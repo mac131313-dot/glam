@@ -19,7 +19,7 @@ export function BreathActivityPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <Page title="Klientki" onBack={onBack}>
+    <Page title="Oddech klientek" onBack={onBack}>
       {!list.data ? (
         <Pending error={list.error} reload={list.reload} />
       ) : days.length === 0 ? (

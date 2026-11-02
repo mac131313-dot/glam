@@ -52,7 +52,7 @@ export function ReceptionProfile({ me }: { me: Me }) {
       <section className="row">
         <Avatar name={me.user.name} />
         <div>
-          <h1 className="serif" style={{ margin: 0, fontSize: '2.2rem' }}>{me.user.name ?? 'Recepcja'}</h1>
+          <h1 className="profile-name">{me.user.name ?? 'Recepcja'}</h1>
           <div className="muted small">konto firmowe · {fmtPhone(me.user.phone)}</div>
         </div>
       </section>
@@ -78,7 +78,7 @@ export function ReceptionProfile({ me }: { me: Me }) {
         <ListRow title="Kod studia" hint="Nowa klientka skanuje i dołącza w aplikacji" onClick={() => setInvite(true)} />
         <ListRow title="Historia płatności" hint="Wpłaty w studiu z ostatnich 30 dni" onClick={() => setPage('payments')} />
         {studio?.features.includes('shop') && <ListRow title="Sklep i zamówienia" hint="Odbiory w recepcji i wysyłki" onClick={() => setPage('shop')} />}
-        <ListRow title="Klientki" hint="Najnowsze treningi oddechowe w aplikacji" onClick={() => setPage('clients')} />
+        <ListRow title="Oddech klientek" hint="Kto ostatnio ćwiczył oddech w aplikacji" onClick={() => setPage('clients')} />
       </section>
 
       {pushSupported() && push !== null && (

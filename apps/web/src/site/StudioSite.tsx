@@ -4,6 +4,7 @@
 // Kontrakt z edytorem: każda sekcja to bezpośrednie dziecko <main> z id i data-section-name (most szuka `main > section[id]`).
 //   ?podglad=1 – szkic zamiast wersji publicznej (wymaga sesji panelu), ?edytor=1 – most do edytora w ramce.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { isNewClass, menuItems, siteImageUrl, siteLook, sitePages, specOf, type FieldValue, type Look, type MenuItem, type SiteDoc, type SitePage, type SiteSection } from '@glam/core';
 import { applyLook } from '../look.ts';
 import { Icon } from '../icons.tsx';
@@ -89,6 +90,17 @@ async function loadStudio(slug: string): Promise<PublicStudio> {
   return data as PublicStudio;
 }
 
+/**
+ * Zmiana zakładki jako jedno płynne przejście (View Transitions): stara treść odpływa w górę i rozmywa się, nowa
+ * wyłania się spod spodu – jak materiał, a nie przeskok slajdu. Menu u góry stoi w miejscu, kreska pod zakładką
+ * przesuwa się sama. Bez wsparcia przeglądarki albo przy ograniczonym ruchu – zwykła zmiana bez animacji.
+ */
+function withPageTransition(update: () => void) {
+  const vt = (document as Document & { startViewTransition?: (cb: () => void) => unknown }).startViewTransition;
+  if (!vt || IN_EDITOR || matchMedia('(prefers-reduced-motion: reduce)').matches) return update();
+  vt.call(document, () => flushSync(update));
+}
+
 export function StudioSite({ slug }: { slug: string }) {
   const [studio, setStudio] = useState<PublicStudio | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,15 +108,18 @@ export function StudioSite({ slug }: { slug: string }) {
   // Podstrona = jedna zakładka menu pod własnym adresem. Przejścia bez przeładowania; Wstecz w przeglądarce działa.
   const [path, setPath] = useState(pathFromUrl);
   useEffect(() => {
-    const sync = () => setPath(pathFromUrl());
+    const sync = () => withPageTransition(() => setPath(pathFromUrl()));
     window.addEventListener('popstate', sync);
     return () => window.removeEventListener('popstate', sync);
   }, []);
   const navigate = useCallback(
     (next: string | null) => {
       if (next !== path) history.pushState(null, '', pageHref(slug, next));
-      setPath(next);
-      window.scrollTo({ top: 0 });
+      if (next === path) return window.scrollTo({ top: 0, behavior: 'smooth' });
+      withPageTransition(() => {
+        setPath(next);
+        window.scrollTo({ top: 0 });
+      });
     },
     [path, slug],
   );
@@ -164,7 +179,7 @@ export function StudioSite({ slug }: { slug: string }) {
           doc.sections
             .filter((s) => s.key === page.key)
             .map((s) => (
-              <PageView key={s.key} studio={studio} section={s} page={page} news={news} onNavigate={navigate} />
+              <PageView key={s.key} studio={studio} section={s} page={page} news={news} />
             ))
         ) : (
           <>
@@ -435,18 +450,17 @@ function Hero({ studio, news }: { studio: PublicStudio; news: Set<string> }) {
 
 /**
  * Podstrona = jedna zakładka menu: duży nagłówek strony (tytuł sekcji, wstęp, szerokie zdjęcie), pod nim treść sekcji
- * w pełnej wersji (siatka zamiast karuzeli, galeria sal…) i na dole przejście do następnej zakładki.
+ * w pełnej wersji (siatka zamiast karuzeli, galeria sal…). Bez „Dalej → następna zakładka” na dole – strona to nie
+ * prezentacja; między zakładkami prowadzi menu u góry.
  * Tytuł sekcji jest już w nagłówku strony, więc sekcja dostaje wartości bez własnego tytułu.
  */
-function PageView({ studio, section, page, news, onNavigate }: { studio: PublicStudio; section: SiteSection; page: SitePage; news: Set<string>; onNavigate: (path: string | null) => void }) {
+function PageView({ studio, section, page, news }: { studio: PublicStudio; section: SiteSection; page: SitePage; news: Set<string> }) {
   const v = section.values;
   const photo = img(v, 'pageImage');
-  const pages = pagesOf(studio);
-  const next = pages[(pages.findIndex((p) => p.key === page.key) + 1) % pages.length];
   const bare = { ...section, values: { ...v, title: '', serif: '', eyebrow: '' } };
   return (
     <>
-      <header className={`site-page-head${photo ? ' has-photo' : ''}`}>
+      <header className={`site-page-head is-${section.type}${photo ? ' has-photo' : ''}`}>
         <SplitHeading as="h1" className="site-page-title" title={s(v, 'title') || page.label} serif={s(v, 'serif')} immediate />
         {s(v, 'pageIntro') && (
           <Reveal delay={0.25}>
@@ -460,31 +474,16 @@ function PageView({ studio, section, page, news, onNavigate }: { studio: PublicS
         )}
       </header>
       <SectionView studio={studio} section={bare} news={news} subpage />
-      {next && next.key !== page.key && (
-        <nav className="site-page-next" aria-label="Następna zakładka">
-          <a
-            href={pageHref(studio.slug, next.path)}
-            onClick={(e) => {
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-              e.preventDefault();
-              onNavigate(next.path);
-            }}
-          >
-            <span className="site-eyebrow">Dalej</span>
-            <span className="site-page-next-name">
-              {next.label} <span aria-hidden="true">→</span>
-            </span>
-          </a>
-        </nav>
-      )}
     </>
   );
 }
 
 function SectionView({ studio, section, news, subpage = false }: { studio: PublicStudio; section: SiteSection; news: Set<string>; subpage?: boolean }) {
   const label = section.type === 'article' ? s(section.values, 'title') || 'Sekcja z tekstem' : section.type === 'gallery' ? s(section.values, 'title') || 'Galeria' : specOf(section.type).label;
-  // .site-menu to już okno menu nawigacji na telefonie – sekcja menu baru dostaje klasę .site-bar.
-  const attrs = { id: section.key, 'data-section-name': label, className: `site-section site-${section.type === 'menu' ? 'bar' : section.type}` };
+  // .site-menu to już okno menu nawigacji na telefonie – sekcja menu baru dostaje klasę .site-bar;
+  // .site-contact to blok godzin w „O studiu” – zakładka Kontakt dostaje .site-reach.
+  const cls = section.type === 'menu' ? 'bar' : section.type === 'contact' ? 'reach' : section.type;
+  const attrs = { id: section.key, 'data-section-name': label, className: `site-section site-${cls}` };
   switch (section.type) {
     case 'about':
       return <About studio={studio} v={section.values} attrs={attrs} subpage={subpage} />;
@@ -497,7 +496,9 @@ function SectionView({ studio, section, news, subpage = false }: { studio: Publi
     case 'shop':
       return <ShopSection studio={studio} v={section.values} attrs={attrs} />;
     case 'menu':
-      return <MenuSection v={section.values} attrs={attrs} subpage={subpage} />;
+      return <MenuSection slug={studio.slug} v={section.values} attrs={attrs} subpage={subpage} />;
+    case 'contact':
+      return <ContactSection studio={studio} v={section.values} attrs={attrs} />;
     case 'more':
       return <MoreSection studio={studio} v={section.values} attrs={attrs} />;
     case 'article':
@@ -606,6 +607,117 @@ function Contact({ studio, label }: { studio: PublicStudio; label: string }) {
         {studio.email && <a href={`mailto:${studio.email}`}>{studio.email}</a>}
       </div>
     </div>
+  );
+}
+
+/** „@ssg.studio”, „instagram.com/ssg.studio/” → „ssg.studio”. */
+const instagramHandle = (raw: string) =>
+  raw
+    .trim()
+    .replace(/^https?:\/\/(www\.)?instagram\.com\//i, '')
+    .replace(/^@/, '')
+    .replace(/[/?#].*$/, '');
+
+/**
+ * Kontakt: gdzie jest studio i jak dojechać (przyciski otwierają trasę w mapach – bez osadzonej mapy, która śledzi
+ * odwiedzających), jak się skontaktować, kiedy działa recepcja (cały tydzień, dziś wyróżnione, wolne dni nazwane
+ * wprost) i jak dołączyć w aplikacji. Telefon, e-mail, adres i godziny – z ustawień studia, pola sekcji tylko uzupełniają.
+ */
+function ContactSection({ studio, v, attrs }: { studio: PublicStudio; v: Values; attrs: Attrs }) {
+  const address = s(v, 'address') || studio.address || '';
+  const email = s(v, 'email') || studio.email || '';
+  const ig = instagramHandle(s(v, 'instagram'));
+  const directions = s(v, 'directions');
+  const hours = new Map<number, string[]>();
+  for (const h of studio.hours) hours.set(h.weekday, [...(hours.get(h.weekday) ?? []), `${h.from}–${h.to}`]);
+  const today = new Date().getDay();
+  const week = [1, 2, 3, 4, 5, 6, 0];
+  const dest = encodeURIComponent([studio.name, address].filter(Boolean).join(', '));
+  const lines = [
+    studio.phone && { label: 'Telefon', value: studio.phone, href: `tel:${studio.phone.replace(/\s/g, '')}` },
+    email && { label: 'E-mail', value: email, href: `mailto:${email}` },
+    ig && { label: 'Instagram', value: `@${ig}`, href: `https://instagram.com/${ig}` },
+  ].filter(Boolean) as { label: string; value: string; href: string }[];
+
+  return (
+    <section {...attrs}>
+      <Head v={v} />
+      <div className="site-contact-page">
+        <div className="site-contact-main">
+          {address ? (
+            <Reveal className="site-contact-block">
+              <div className="site-eyebrow">Adres</div>
+              <address className="site-contact-address">{address}</address>
+              {directions && <p className="site-contact-note">{directions}</p>}
+              {b(v, 'showMapLinks') && (
+                <div className="site-contact-maps">
+                  <a className="btn ghost sm" href={`https://www.google.com/maps/dir/?api=1&destination=${dest}`} target="_blank" rel="noopener noreferrer">
+                    Mapy Google
+                  </a>
+                  <a className="btn ghost sm" href={`https://maps.apple.com/?daddr=${dest}`} target="_blank" rel="noopener noreferrer">
+                    Mapy Apple
+                  </a>
+                </div>
+              )}
+            </Reveal>
+          ) : (
+            IN_EDITOR && <p className="site-quiet">Dodaj adres w panelu po prawej albo w Ustawienia → Studio.</p>
+          )}
+          {lines.length > 0 && (
+            <Reveal className="site-contact-block" delay={0.08}>
+              <dl className="site-contact-list">
+                {lines.map((l) => (
+                  <div key={l.label}>
+                    <dt>{l.label}</dt>
+                    <dd>
+                      <a href={l.href} {...(l.href.startsWith('http') ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
+                        {l.value}
+                      </a>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </Reveal>
+          )}
+        </div>
+        <div className="site-contact-side">
+          {b(v, 'showHours') && hours.size > 0 && (
+            <Reveal className="site-contact-block" delay={0.12}>
+              <div className="site-eyebrow">Recepcja</div>
+              <dl className="site-contact-hours">
+                {week.map((d) => (
+                  <div key={d} className={d === today ? 'is-today' : undefined} aria-current={d === today ? 'date' : undefined}>
+                    <dt>{WEEKDAYS[d]}</dt>
+                    <dd>{hours.get(d)?.join(', ') ?? 'zamknięte'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </Reveal>
+          )}
+          {b(v, 'showJoin') && studio.joinCode && (
+            <Reveal className="site-contact-block" delay={0.16}>
+              <div className="site-eyebrow">Aplikacja</div>
+              <p className="site-contact-note">
+                Zapisy, karnety i wiadomości do recepcji są w aplikacji. Dołączasz kodem <b className="site-contact-code">{studio.joinCode}</b>.
+              </p>
+              <a className="btn sm" href={APP_URL}>
+                Otwórz aplikację
+              </a>
+            </Reveal>
+          )}
+        </div>
+      </div>
+      {b(v, 'showFaq') && studio.faq.length > 0 && (
+        <div className="site-faq">
+          {studio.faq.map((f) => (
+            <details key={f.q}>
+              <summary>{f.q}</summary>
+              <p>{f.a}</p>
+            </details>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -749,7 +861,7 @@ function SessionDialog({ studio, v, x, isNew, onClose }: { studio: PublicStudio;
         {photo ? (
           <Photo src={photo} className="tall" alt={x.className} />
         ) : (
-          <div className="site-photo tall empty" style={{ background: c?.color }} aria-hidden="true">
+          <div className="site-photo tall empty" style={{ '--tint': c?.color } as CSSProperties} aria-hidden="true">
             <span className="serif">{x.className.charAt(0)}</span>
           </div>
         )}
@@ -825,6 +937,8 @@ function ClassesSection({ studio, v, attrs, news, subpage }: { studio: PublicStu
   const trainersOf = (id: string) => studio.trainers.filter((t) => t.classes.includes(id)).map((t) => t.name);
   const label = newsLabel(studio);
   const photos = b(v, 'showPhotos');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = studio.classes.find((c) => c.id === openId) ?? null;
   return (
     <section {...attrs}>
       <Head v={v} />
@@ -845,12 +959,13 @@ function ClassesSection({ studio, v, attrs, news, subpage }: { studio: PublicStu
         {list.map((c) => {
           const who = trainersOf(c.id);
           const photo = photos ? classPhoto(studio, c) : null;
+          // Karta otwiera okno zajęć: opis, prowadzące i najbliższe terminy z zapisem – wcześniej była ślepą uliczką.
           return (
-            <article key={c.id} className="site-item">
+            <button key={c.id} type="button" aria-haspopup="dialog" className="site-item site-class" onClick={() => setOpenId(c.id)}>
               {photo ? (
                 <Photo src={photo} className="card" />
               ) : (
-                <div className="site-photo card empty" style={{ background: c.color }} aria-hidden="true">
+                <div className="site-photo card empty" style={{ '--tint': c.color } as CSSProperties} aria-hidden="true">
                   <span className="serif">{c.name.charAt(0)}</span>
                 </div>
               )}
@@ -861,11 +976,87 @@ function ClassesSection({ studio, v, attrs, news, subpage }: { studio: PublicStu
               {c.level && <p className="site-quiet">{c.level}</p>}
               {b(v, 'showDescription') && c.description && <p className="site-desc">{c.description}</p>}
               {b(v, 'showTrainers') && who.length > 0 && <p className="site-quiet">prowadzi {who.join(', ')}</p>}
-            </article>
+              <span className="site-person-more">terminy</span>
+            </button>
           );
         })}
       </Cards>
+      {open && <ClassDialog key={open.id} studio={studio} c={open} trainers={trainersOf(open.id)} photo={photos ? classPhoto(studio, open) : null} onClose={() => setOpenId(null)} />}
     </section>
+  );
+}
+
+/**
+ * Okno zajęć (jak okno trenerki – natywny <dialog>): opis, poziom, sala, kto prowadzi i najbliższe terminy z tego
+ * tygodnia z wolnymi miejscami. Każdy termin prowadzi do zapisu w aplikacji; bez terminów – grafik albo telefon
+ * (lekcje indywidualne ustala się z recepcją).
+ */
+function ClassDialog({ studio, c, trainers, photo, onClose }: { studio: PublicStudio; c: PublicClass; trainers: string[]; photo: string | null; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  const fmt = useFormatters(studio.timezone);
+  const now = Date.now();
+  const upcoming = studio.schedule.sessions.filter((x) => x.classTypeId === c.id && new Date(x.startsAt).getTime() > now).slice(0, 5);
+  const titleId = `class-${c.id}-name`;
+  const facts = [c.level, c.zone, trainers.length ? `prowadzi ${trainers.join(', ')}` : null].filter(Boolean).join(' · ');
+  return (
+    <dialog ref={ref} className="site-dialog" aria-labelledby={titleId} onClose={onClose} onClick={(e) => e.target === e.currentTarget && ref.current?.close()}>
+      <button type="button" className="site-dialog-close" onClick={() => ref.current?.close()} aria-label="Zamknij">
+        <Icon name="close" size={18} />
+      </button>
+      <div className="site-trainer">
+        {photo ? (
+          <Photo src={photo} className="tall" alt={c.name} />
+        ) : (
+          <div className="site-photo tall empty" style={{ '--tint': c.color } as CSSProperties} aria-hidden="true">
+            <span className="serif">{c.name.charAt(0)}</span>
+          </div>
+        )}
+        <div className="site-trainer-text">
+          <h3 id={titleId} className="site-trainer-name serif">{c.name}</h3>
+          {facts && <p className="site-quiet">{facts}</p>}
+          {c.description && <p className="site-lead">{c.description}</p>}
+          {upcoming.length > 0 ? (
+            <>
+              <div className="site-eyebrow">Najbliższe terminy</div>
+              <ul className="site-class-dates">
+                {upcoming.map((x) => {
+                  const spots = spotsLabel(x.spotsLeft);
+                  return (
+                    <li key={x.id}>
+                      <span className="site-class-when">
+                        <b>{fmt.time(x.startsAt)}</b> {fmt.dayLong(x.startsAt)}
+                      </span>
+                      <span className={`site-class-spots tone-${spots.tone}`}>{spots.text}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <a className="btn" href={APP_URL}>
+                Zapisz się w aplikacji
+              </a>
+            </>
+          ) : (
+            <>
+              {/* Lekcje indywidualne same mówią w opisie, że termin ustala recepcja – zostaje tylko telefon. */}
+              {c.level !== 'indywidualnie' && <p className="site-prose">W tym tygodniu nie ma jeszcze terminów – nowe pojawiają się w grafiku.</p>}
+              {studio.phone ? (
+                <a className="btn" href={`tel:${studio.phone.replace(/\s/g, '')}`}>
+                  Zadzwoń: {studio.phone}
+                </a>
+              ) : (
+                <a className="btn" href={APP_URL}>
+                  Otwórz aplikację
+                </a>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </dialog>
   );
 }
 
@@ -1136,16 +1327,64 @@ function Lightbox({ ids, start, label, onClose }: { ids: string[]; start: number
   );
 }
 
+/** Pozycja menu ze zdjęciem już jako adres – napoje baru ze sklepu mają gotowy URL, nie id pliku strony. */
+type BarItem = MenuItem & { src?: string | null };
+type BarProduct = { id: string; category: string; name: string; description: string | null; price: string; status: string; sizeName: string | null; photoUrl: string | null; featured: boolean; nutrition: { serving?: string; kcal?: number; protein?: number; caffeine?: number } | null };
+
+/** Krótka linijka faktów jak w aplikacji klientki: porcja, kalorie, białko, kofeina. */
+const barFacts = (p: BarProduct) => {
+  const n = p.nutrition;
+  return [n?.serving ?? p.sizeName, n?.kcal != null && `${n.kcal} kcal`, n?.protein ? `${n.protein} g białka` : null, n?.caffeine ? `${n.caffeine} mg kofeiny` : null].filter(Boolean).join(' · ');
+};
+
+/**
+ * Gdy studio nie wpisało własnych pozycji menu, strona pokazuje napoje baru ze sklepu – te same, które klientka
+ * zamawia w aplikacji (Sklep → Bar). Jedno źródło: zmiana ceny w sklepie od razu jest i na stronie.
+ */
+function useBarProducts(slug: string, enabled: boolean): BarItem[] | null {
+  const [items, setItems] = useState<BarItem[] | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    fetch(`/api/public/studios/${encodeURIComponent(slug)}/shop`)
+      .then((r) => (r.ok ? r.json() : { products: [] }))
+      .then((body: { products?: BarProduct[] }) => {
+        if (!alive) return;
+        const drinks = (body.products ?? []).filter((p) => p.category === 'drink' && p.status !== 'hidden');
+        setItems(
+          drinks.map((p) => ({
+            id: p.id,
+            category: '',
+            name: p.name,
+            price: p.price,
+            text: [p.description, barFacts(p)].filter(Boolean).join('\n'),
+            tag: p.featured ? 'polecamy' : '',
+            image: '',
+            src: p.photoUrl,
+          })),
+        );
+      })
+      .catch(() => alive && setItems([]));
+    return () => {
+      alive = false;
+    };
+  }, [slug, enabled]);
+  return items;
+}
+
 /**
  * Menu baru: pozycje z edytora strony, pogrupowane w kategorie. Przy kilku kategoriach – zakładki nad listą.
+ * Bez własnych pozycji – napoje baru ze sklepu studia (useBarProducts).
  * Wiersz jak w karcie kawiarni: nazwa, kropki prowadzące wzrok do ceny, pod spodem opis drobnym drukiem.
  */
-function MenuSection({ v, attrs, subpage }: { v: Values; attrs: Attrs; subpage: boolean }) {
-  const items = menuItems(v);
+function MenuSection({ slug, v, attrs, subpage }: { slug: string; v: Values; attrs: Attrs; subpage: boolean }) {
+  const own = menuItems(v);
+  const bar = useBarProducts(slug, own.length === 0);
+  const items: BarItem[] = own.length ? own : bar ?? [];
   const [cat, setCat] = useState<string | null>(null);
   // Na stronie głównej pusta sekcja znika; na własnej zakładce mówi, że menu dopiero się pojawi.
   if (items.length === 0 && !IN_EDITOR && !subpage) return null;
-  const groups = new Map<string, MenuItem[]>();
+  const groups = new Map<string, BarItem[]>();
   for (const x of items) groups.set(x.category.trim(), [...(groups.get(x.category.trim()) ?? []), x]);
   const cats = [...groups.keys()];
   const tabs = b(v, 'showTabs') && cats.length > 1;
@@ -1168,7 +1407,7 @@ function MenuSection({ v, attrs, subpage }: { v: Values; attrs: Attrs; subpage: 
           ))}
         </div>
       )}
-      {items.length === 0 ? (
+      {items.length === 0 && own.length === 0 && bar === null ? null : items.length === 0 ? (
         <p className="site-empty serif">{IN_EDITOR ? 'Dodaj pozycje menu w panelu po prawej' : 'Menu wkrótce – zajrzyj do baru po zajęciach'}</p>
       ) : (
         <div key={cat ?? 'all'}>
@@ -1177,10 +1416,10 @@ function MenuSection({ v, attrs, subpage }: { v: Values; attrs: Attrs; subpage: 
               {c && (!tabs || cat === null) && <h3 className="site-bar-cat serif">{c}</h3>}
               <ul className="site-bar-list">
                 {list.map((x, i) => (
-                  <li key={x.id} className={photos && x.image ? 'with-photo' : undefined} style={{ '--i': i } as CSSProperties}>
-                    {photos && x.image && (
+                  <li key={x.id} className={photos && (x.src || x.image) ? 'with-photo' : undefined} style={{ '--i': i } as CSSProperties}>
+                    {photos && (x.src || x.image) && (
                       <span className="site-bar-thumb">
-                        <img src={siteImageUrl(x.image)} alt="" loading="lazy" decoding="async" />
+                        <img src={x.src || siteImageUrl(x.image)} alt="" loading="lazy" decoding="async" />
                       </span>
                     )}
                     <span className="site-bar-line">

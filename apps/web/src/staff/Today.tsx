@@ -144,12 +144,14 @@ export function Today({ roles }: { roles: Role[] }) {
   );
 }
 
-function AddParticipant({ session, onClose, onDone }: { session: Session; onClose: () => void; onDone: () => void }) {
+/** Dopisanie klientki do zajęć – w panelu (Dziś) i w aplikacji recepcji (arkusz zajęć). */
+export function AddParticipant({ session, onClose, onDone }: { session: Pick<Session, 'id' | 'starts_at' | 'class_name'>; onClose: () => void; onDone: () => void }) {
   const [q, setQ] = useState('');
   const clients = useApi<{ id: string; name: string | null; phone?: string; hasActivePass: boolean }[]>(`/staff/clients?q=${encodeURIComponent(q)}`, [q]);
   const [payAtDesk, setPayAtDesk] = useState(false);
   const [guest, setGuest] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const { run, busy } = useAction();
   const addUser = (userId: string) =>
@@ -178,11 +180,12 @@ function AddParticipant({ session, onClose, onDone }: { session: Session; onClos
           <div className="stack" style={{ marginTop: 8 }}>
             <input className="input" placeholder="Imię" value={newName} onChange={(e) => setNewName(e.target.value)} />
             <input className="input" inputMode="tel" placeholder="Telefon" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+            <input className="input" type="email" inputMode="email" autoComplete="off" placeholder="E-mail (opcjonalnie)" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
             <button
               className="btn ghost"
               disabled={!newName || !newPhone || busy}
               onClick={() => run(async () => {
-                const r = await api<{ id: string }>('/staff/clients', { method: 'POST', body: { name: newName, phone: newPhone } });
+                const r = await api<{ id: string }>('/staff/clients', { method: 'POST', body: { name: newName, phone: newPhone, email: newEmail } });
                 await addUser(r.id);
               })}
             >

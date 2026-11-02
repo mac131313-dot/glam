@@ -1,7 +1,7 @@
 // Tryb demo: dwie powierzchnie pod jednym serwerem, bez ekranu logowania.
-//   /panel – panel studia (domyślnie właścicielka Joanna, ma dostęp do wszystkiego)
+//   /panel – panel studia (właścicielka SS&G, ma dostęp do wszystkiego)
 //   /app   – aplikacja mobilna klientki (domyślnie Julia); ?jako=recepcja – konto firmowe recepcji
-// Inne konto demo: ?jako=marzena, ?jako=kasia, ?jako=ania … (lista w PERSONAS).
+// Konta demo: lista w PERSONAS (demo.ts).
 // Ekran logowania SMS (screens/Login.tsx) wraca po wyłączeniu DEMO_MODE.
 import { useCallback, useEffect, useState } from 'react';
 import { can, type Look } from '@glam/core';

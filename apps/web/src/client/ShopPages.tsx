@@ -299,7 +299,7 @@ function Orders() {
               {fmtDay(o.created_at)} · {o.total} {o.expires_at && ['reserved', 'ready'].includes(o.status) && `· odbiór do ${o.expires_at.split('-').reverse().join('.')}`}
             </span>
             {['reserved', 'ready'].includes(o.status) && o.kind === 'pickup' && (
-              <button type="button" className="link tiny" onClick={() => run(() => api(`/my/orders/${o.id}/cancel`, { method: 'POST' }).then((r) => (orders.reload(), r)))}>
+              <button type="button" className="text-btn tiny" onClick={() => run(() => api(`/my/orders/${o.id}/cancel`, { method: 'POST' }).then((r) => (orders.reload(), r)))}>
                 anuluj
               </button>
             )}

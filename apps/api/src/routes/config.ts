@@ -17,6 +17,7 @@ import {
   validateRules,
   validEmail,
   validNip,
+  weeklyTermin,
   zonedToUtc,
   type BookingPolicy,
   type Look,
@@ -29,6 +30,7 @@ import { seal, unseal } from '../crypto.ts';
 import { id, nowIso } from '../db.ts';
 import { badRequest, conflict, notFound } from '../errors.ts';
 import { audit } from '../services/audit.ts';
+import { announceNewClass } from '../services/mailing.ts';
 import { issuePass } from '../services/passes.ts';
 import { addException, createSlots, fillSchedule, removeSlot, updateSlot, type SlotPatch } from '../services/schedule.ts';
 import { applyPreset } from '../services/presets.ts';
@@ -167,7 +169,8 @@ export function configRoutes(app: FastifyInstance, deps: Deps) {
     const b = req.body ?? ({} as never);
     const res = createSlots(scope, studio, { ...b, weekdays: Array.isArray(b.weekdays) ? b.weekdays : [] });
     audit(scope, { actorId: user.id, action: 'template.created', entity: 'template', details: { weekdays: b.weekdays, startTime: b.startTime } });
-    return res;
+    const mailed = announceNewClass(scope, studio, { classTypeId: b.classTypeId, trainerId: b.trainerId, termin: weeklyTermin(b.weekdays, b.startTime), actorId: user.id });
+    return { ...res, mailed };
   });
 
   app.put<{ Params: { id: string }; Body: SlotPatch }>('/api/owner/templates/:id', scheduleEdit, async (req) => {

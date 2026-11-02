@@ -5,6 +5,7 @@ import { openDb } from '../src/db.ts';
 import { StudioScope, TenantViolation } from '../src/scope.ts';
 import { DEMO, seed } from '../src/seed.ts';
 import { SSG, SSG_STUDIO } from '../src/seed-ssg.ts';
+import { injectHead, parseSitePath } from '../src/routes/siteSeo.ts';
 import { ConsoleSmsGateway, MockPaymentProvider } from '../src/sms.ts';
 import { jpegHeader } from './fixtures.ts';
 
@@ -474,6 +475,39 @@ test('publiczna strona studia: grafik, zajęcia i trenerki bez logowania, bez da
   db.prepare("UPDATE studios SET published = 0 WHERE id = ?").run(K);
   assert.equal((await app.inject({ method: 'GET', url: '/api/public/studios/flow-pilates' })).statusCode, 404);
   db.prepare("UPDATE studios SET published = 1 WHERE id = ?").run(K);
+});
+
+test('strona studia dla wyszukiwarek: <head> podstrony z danymi firmy, robots.txt, mapa strony; nieopublikowana – brak', async () => {
+  const head = await app.inject({ method: 'GET', url: '/api/public/site-head/ssg?path=kontakt' });
+  assert.equal(head.statusCode, 200, head.body);
+  assert.match(head.body, /<title>Kontakt – SS&amp;G<\/title>/);
+  assert.match(head.body, /<link rel="canonical" href="[^"]+\/s\/ssg\/kontakt" \/>/);
+  assert.match(head.body, /property="og:title"/);
+  const ld = JSON.parse(head.body.match(/<script type="application\/ld\+json">(.*)<\/script>/)![1]);
+  assert.equal(ld['@type'], 'ExerciseGym');
+  assert.equal(ld.name, 'SS&G');
+  assert.equal(ld.address.postalCode, '35-328');
+  assert.ok(ld.openingHoursSpecification.length > 0);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/site-head/nie-ma-takiego' })).statusCode, 404);
+  // Ikona platformy to SVG z „>” w środku – po podmianie nie może zostać z niej żaden kawałek w <body>.
+  const index = `<head><title>GLAM</title><link rel="icon" href="data:image/svg+xml,<svg viewBox='0 0 1 1'><text>g</text></svg>" /></head><body></body>`;
+  const html = injectHead(index, head.body);
+  assert.doesNotMatch(html, /GLAM|<text>g/);
+  assert.equal(html.match(/rel="icon"/g)?.length, 1);
+  assert.deepEqual(parseSitePath('/s/ssg/grafik'), { slug: 'ssg', path: 'grafik' });
+  assert.deepEqual(parseSitePath('/s/ssg'), { slug: 'ssg', path: null });
+  assert.equal(parseSitePath('/app'), null);
+
+  const robots = await app.inject({ method: 'GET', url: '/api/public/robots.txt' });
+  assert.match(robots.body, /Disallow: \/panel/);
+  assert.match(robots.body, /Sitemap: .*\/sitemap\.xml/);
+  const map = await app.inject({ method: 'GET', url: '/api/public/sitemap.xml' });
+  assert.match(map.body, /<loc>[^<]+\/s\/ssg\/grafik<\/loc>/);
+
+  db.prepare('UPDATE studios SET published = 0 WHERE id = ?').run(K);
+  assert.equal((await app.inject({ method: 'GET', url: '/api/public/site-head/flow-pilates' })).statusCode, 404);
+  assert.doesNotMatch((await app.inject({ method: 'GET', url: '/api/public/sitemap.xml' })).body, /flow-pilates/);
+  db.prepare('UPDATE studios SET published = 1 WHERE id = ?').run(K);
 });
 
 test('edytor strony: autozapis szkicu, publikacja, podgląd tylko dla właścicielki', async () => {

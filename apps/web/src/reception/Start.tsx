@@ -1,17 +1,53 @@
 // Start recepcji: zapisy na dzisiejsze zajęcia, zajęcia teraz / za chwilę i to, co czeka na reakcję.
 // Pełna lista dnia jest w Grafiku, skanowanie w Wejściu, rozmowy w Wiadomościach.
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { plural } from '@glam/core';
 import { fmtLongDay, fmtTime, useApi } from '../api.ts';
-import { Icon } from '../icons.tsx';
-import { Empty, ListRow, Pending } from '../ui.tsx';
+import { Icon, type IconName } from '../icons.tsx';
+import { Empty, Pending } from '../ui.tsx';
+import { ShiftNoteComposer } from './ShiftNote.tsx';
+import { SessionSheet } from './Schedule.tsx';
 
-type Session = { id: string; starts_at: string; ends_at: string; class_name: string; trainer_name: string; zone_name: string; capacity: number; status: string; participants: { status: string }[] };
+type Participant = { status: string; user_id: string; name: string; visits: number; guest_name: string | null; birthday: string | null; pass_until: string | null };
+type Session = { id: string; starts_at: string; ends_at: string; class_name: string; trainer_name: string; zone_name: string; capacity: number; status: string; participants: Participant[] };
+type GreetWhy = 'first' | 'birthday' | 'pass';
+
+const GREET: Record<GreetWhy, { icon: IconName; label: string }> = {
+  first: { icon: 'flower', label: 'Pierwszy raz' },
+  birthday: { icon: 'gift', label: 'Urodziny' },
+  pass: { icon: 'pass', label: 'Kończy się karnet' },
+};
+/** Karnet „kończy się”, gdy jest ważny jeszcze najwyżej tydzień – tak samo jak u klientki na Starcie. */
+const PASS_SOON_MS = 7 * 86_400_000;
+const fmtShortDate = (iso: string) => new Date(iso).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' });
+
+/**
+ * Zapisane na dzisiejsze dalsze zajęcia, przy których recepcja ma powód podejść: pierwsza wizyta, urodziny (MM-DD z profilu)
+ * albo karnet kończący się w tym tygodniu. Każda osoba raz – przy swoich najbliższych zajęciach. Najwyżej pięć.
+ */
+function whomToGreet(ahead: Session[], date: string, now: number) {
+  const seen = new Set<string>();
+  const out: { p: Participant; s: Session; why: GreetWhy[] }[] = [];
+  for (const s of ahead) {
+    for (const p of s.participants) {
+      if (p.guest_name || seen.has(p.user_id) || (p.status !== 'booked' && p.status !== 'attended')) continue;
+      const why: GreetWhy[] = [];
+      if (p.visits === 0) why.push('first');
+      if (p.birthday === date.slice(5)) why.push('birthday');
+      if (p.pass_until && Date.parse(p.pass_until) - now < PASS_SOON_MS) why.push('pass');
+      if (!why.length) continue;
+      seen.add(p.user_id);
+      out.push({ p, s, why });
+    }
+  }
+  return out.slice(0, 5);
+}
 type Day = { date: string; sessions: Session[] };
 type Thread = { client_id: string; unread: number };
-export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'messages') => void }) {
+export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'messages', sub?: 'inbox') => void }) {
   const day = useApi<Day>('/staff/day');
   const chats = useApi<Thread[]>('/staff/chats');
+  const [open, setOpen] = useState<Session | null>(null);
 
   // Telefon leży na ladzie cały dzień: co minutę (i po powrocie do aplikacji) świeże zapisy i „Za chwilę”.
   const refresh = () => (day.reload(), chats.reload());
@@ -33,27 +69,21 @@ export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'me
   const next = ahead[0];
   const live = next && Date.parse(next.starts_at) <= now;
   const unread = (chats.data ?? []).filter((t) => t.unread > 0).length;
+  const greet = whomToGreet(ahead, day.data.date, now);
 
   return (
     <div className="stack-lg">
       <section style={{ paddingTop: 8 }}>
         <p className="eyebrow">{fmtLongDay(new Date().toISOString())}</p>
-        <h1 style={{ fontSize: '2.4rem', lineHeight: 1.05 }}>
+        <h1 className="hello" style={{ color: 'var(--ink)', fontWeight: 500 }}>
           Dzień dobry
         </h1>
-        <p className="serif muted" style={{ fontSize: '1.35rem', margin: '6px 0 0' }}>
+        <p className="hello-sub">
           Eat. Sleep. Pilates. Repeat.
         </p>
       </section>
 
-      {sessions.length > 0 && (
-        <section className="stack gap-2" aria-label="Klientki na dzisiejszych zajęciach">
-          <div className="eyebrow" style={{ margin: 0 }}>Dziś na zajęciach</div>
-          {sessions.map((s) => (
-            <ClassStat key={s.id} session={s} booked={booked(s)} done={Date.parse(s.ends_at) <= now} />
-          ))}
-        </section>
-      )}
+      {sessions.length > 0 && <DayList sessions={sessions} ahead={ahead} booked={booked} now={now} />}
 
       <section className="stack gap-3">
         <div className="eyebrow" style={{ margin: 0 }}>{live ? 'Teraz' : 'Za chwilę'}</div>
@@ -74,9 +104,16 @@ export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'me
               </span>
             </div>
             {waiting(next) > 0 && <span className="small muted">Na liście oczekujących: {waiting(next)}</span>}
-            <button className="btn" onClick={() => go('entrance')}>
-              Zapisz wejście
-            </button>
+            {/* Wejście na te zajęcia: lista zapisanych z obecnością tu, na miejscu – bez gubienia, o które zajęcia chodzi. */}
+            <div className="row gap-2">
+              <button className="btn grow" onClick={() => setOpen(next)}>
+                Zapisz wejście
+              </button>
+              <button className="btn ghost" onClick={() => go('entrance')}>
+                <Icon name="qr" size={18} />
+                Skanuj
+              </button>
+            </div>
           </div>
         ) : (
           <div className="card">
@@ -100,31 +137,89 @@ export function ReceptionStart({ go }: { go: (tab: 'schedule' | 'entrance' | 'me
         </button>
       )}
 
-      {ahead.length > 1 && (
-        <section className="list-rows">
-          <ListRow title="Dalej dziś" hint={ahead.slice(1, 4).map((s) => `${fmtTime(s.starts_at)} ${s.class_name}`).join(' · ')} onClick={() => go('schedule')} />
+      {/* Kogo dziś przywitać: zapisane na dalsze zajęcia, przy których warto podejść – pierwszy raz w studiu, urodziny,
+          kończący się karnet. Dotknięcie otwiera listę zapisanych na te zajęcia. */}
+      {greet.length > 0 && (
+        <section className="stack gap-3">
+          <div className="eyebrow" style={{ margin: 0 }}>Kogo dziś przywitać</div>
+          <div className="nudges">
+            {greet.map(({ p, s, why }) => (
+              <button key={`${p.user_id}-${s.id}`} className="nudge" onClick={() => setOpen(s)}>
+                <span className="nudge-icon">
+                  <Icon name={GREET[why[0]].icon} size={20} />
+                </span>
+                <span className="grow">
+                  <span className="nudge-title">{p.name}</span>
+                  <span className="small muted">
+                    <b className="greet-why">{why.map((w) => (w === 'pass' && p.pass_until ? `Karnet do ${fmtShortDate(p.pass_until)}` : GREET[w].label)).join(' · ')}</b> · {fmtTime(s.starts_at)} {s.class_name}
+                  </span>
+                </span>
+                <Icon name="chevron" size={18} />
+              </button>
+            ))}
+          </div>
         </section>
       )}
+      <ShiftNoteComposer onOpenList={() => go('messages', 'inbox')} />
+      {open && <SessionSheet s={open} morph={false} onClose={() => setOpen(null)} onChanged={day.reload} />}
     </div>
   );
 }
 
-/** Jedne zajęcia dnia: godzina, nazwa, zapisane / miejsca i cienki pasek zapełnienia; zakończone przygaszone. */
+/**
+ * Dzisiejsze zajęcia: trzy najbliższe zawsze widoczne, reszta (dalsze i zakończone) rozwija się w dół.
+ * Gdy wszystko już się skończyło, widać trzy pierwsze z dnia.
+ */
+function DayList({ sessions, ahead, booked, now }: { sessions: Session[]; ahead: Session[]; booked: (s: Session) => number; now: number }) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const main = ahead.length ? ahead : sessions;
+  const ended = ahead.length ? sessions.filter((s) => Date.parse(s.ends_at) <= now) : [];
+  const later = main.slice(3);
+  const hidden = later.length + ended.length;
+  const row = (s: Session) => <ClassStat key={s.id} session={s} booked={booked(s)} done={Date.parse(s.ends_at) <= now} />;
+  return (
+    <section className="stack gap-2" aria-label="Klientki na dzisiejszych zajęciach">
+      <div className="row between" style={{ alignItems: 'baseline' }}>
+        <div className="eyebrow" style={{ margin: 0 }}>Dziś na zajęciach</div>
+        <span className="small muted" style={{ fontVariantNumeric: 'tabular-nums' }}>
+          {sessions.reduce((n, s) => n + booked(s), 0)} / {sessions.reduce((n, s) => n + s.capacity, 0)}
+        </span>
+      </div>
+      <div className="day-list">
+        {main.slice(0, 3).map(row)}
+        {hidden > 0 && (
+          <div className={open ? 'day-more is-open' : 'day-more'} id={bodyId} inert={!open}>
+            <div className="day-list">
+              {later.map(row)}
+              {ended.length > 0 && <div className="day-list-label">Zakończone</div>}
+              {ended.map(row)}
+            </div>
+          </div>
+        )}
+      </div>
+      {hidden > 0 && (
+        <button type="button" className="day-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(!open)}>
+          {open ? 'Zwiń' : `Pokaż jeszcze ${hidden}`}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+      )}
+    </section>
+  );
+}
+
+/** Jeden wiersz rozwijanej listy dnia: godzina, nazwa, zapisane / miejsca; pełne wyraźne, zakończone przygaszone. */
 function ClassStat({ session: s, booked, done }: { session: Session; booked: number; done: boolean }) {
   const full = booked >= s.capacity;
   return (
-    <div className="stack gap-1" style={{ opacity: done ? 0.6 : 1 }}>
-      <div className="row" style={{ gap: 10, color: 'var(--ink)', fontWeight: 600 }}>
-        <span style={{ fontVariantNumeric: 'tabular-nums', width: 46, flex: 'none' }}>{fmtTime(s.starts_at)}</span>
-        <span className="grow" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.class_name}</span>
-        <span style={{ fontVariantNumeric: 'tabular-nums', flex: 'none' }}>
-          {booked}
-          <span style={{ fontWeight: 400 }}> / {s.capacity}</span>
-        </span>
-      </div>
-      <div style={{ marginLeft: 56, height: 3, borderRadius: 2, background: 'var(--soft)', overflow: 'hidden' }}>
-        <div style={{ width: `${Math.min(100, (booked / Math.max(1, s.capacity)) * 100)}%`, height: '100%', background: full ? 'var(--ink)' : 'var(--brand)' }} />
-      </div>
+    <div className={done ? 'day-row is-done' : 'day-row'}>
+      <span className="day-row-time">{fmtTime(s.starts_at)}</span>
+      <span className="day-row-name">{s.class_name}</span>
+      <span className={full ? 'day-row-count is-full' : 'day-row-count'}>
+        {booked}/{s.capacity}
+      </span>
     </div>
   );
 }

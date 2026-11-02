@@ -34,7 +34,7 @@ export function InviteCard({ invite: i, onChange, showTrainer = true, onTrainer 
       </p>
       <div className="row between gap-2" style={{ alignItems: 'center' }}>
         {showTrainer ? (
-          <button className="link small" onClick={onTrainer}>
+          <button className="text-btn small" onClick={onTrainer}>
             — {i.trainerName}
           </button>
         ) : (

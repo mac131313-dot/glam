@@ -24,8 +24,10 @@ FROM deps AS api
 COPY tsconfig.base.json ./
 COPY packages/core packages/core
 COPY apps/api apps/api
+# index.html frontu – API wstawia do niego <head> strony studia (tytuł, podgląd linku, dane firmy) dla /s/:slug.
+COPY --from=web-build /app/apps/web/dist /app/web-dist
 WORKDIR /app/apps/api
-ENV HOST=0.0.0.0 PORT=3001 GLAM_DATA_DIR=/data
+ENV HOST=0.0.0.0 PORT=3001 GLAM_DATA_DIR=/data GLAM_WEB_DIST=/app/web-dist
 VOLUME /data
 EXPOSE 3001
 # seed.ts nie rusza bazy, w której już są dane – przy pierwszym starcie wgrywa demo.

@@ -559,7 +559,8 @@ const SYSTEM_NOTES: Partial<Record<SiteSection['type'], string>> = {
   about: 'Godziny recepcji, kontakt i pytania – z Ustawień studia.',
   shop: 'Produkty, ceny i zdjęcia – z panelu: Sklep → Produkty i stany. Sekcja pokazuje się, gdy sklep jest włączony.',
   more: 'Kafelki pokazują się tylko dla modułów włączonych w studiu.',
-  menu: 'Menu baru wpisujesz tutaj. Zakładka „Menu” pojawia się na stronie, gdy dodasz pierwszą pozycję.',
+  menu: 'Menu baru wpisujesz tutaj. Dopóki lista jest pusta, strona pokazuje napoje z Baru w sklepie studia.',
+  contact: 'Telefon, e-mail, adres i godziny recepcji – z Ustawień studia. Tu dopiszesz adres, dojazd i Instagram.',
 };
 
 function SystemNote({ type }: { type: SiteSection['type'] }) {

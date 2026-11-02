@@ -18,6 +18,7 @@ import { ClassTypesAdmin, ScheduleAdmin } from './ScheduleAdmin.tsx';
 import { Today } from './Today.tsx';
 import { Welcomes } from './Welcomes.tsx';
 import { SiteOverview } from './site-editor/SiteOverview.tsx';
+import { ShiftNotePopup } from '../reception/ShiftNote.tsx';
 
 const Analytics = lazy(() => import('./Analytics.tsx'));
 const Clients = lazy(() => import('./Clients.tsx'));
@@ -188,6 +189,8 @@ export function StaffApp(props: { me: Me; studio: MeStudio; persona?: string; re
   return (
     <div className="staff with-watermark">
       <Watermark src={props.studio.look.watermark} />
+      {/* Notatka zmiany od recepcji („zrobić faktury za kwiecień”) – dla ról, które widzą cały dzień studia. */}
+      {allowed(['day.all']) && <ShiftNotePopup />}
       <aside className="side" aria-label="Menu panelu">
         <div style={{ padding: '4px 12px 14px' }}>
           <div className="cobrand" aria-label={`glam × ${props.studio.name}`}>

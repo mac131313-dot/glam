@@ -233,16 +233,25 @@ export function accountRoutes(app: FastifyInstance, deps: Deps) {
   });
 
   // Onboarding (3): cel, preferencje czasowe, zgody, urodziny (dobrowolnie, bez roku).
-  app.post<{ Body: { name?: string; goal?: string; timePrefs?: string[]; classFit?: unknown; birthday?: string | null; consents?: Record<string, boolean>; studioId?: string } }>('/api/me/onboarding', auth, async (req) => {
+  app.post<{ Body: { name?: string; email?: string | null; goal?: string; timePrefs?: string[]; classFit?: unknown; birthday?: string | null; consents?: Record<string, boolean>; studioId?: string } }>('/api/me/onboarding', auth, async (req) => {
     const u = me(req);
     const b = req.body ?? {};
     if (b.name && (b.name.trim().length < 2 || b.name.length > 60)) throw badRequest('Imię powinno mieć od 2 do 60 znaków.');
+    const email = b.email?.trim().toLowerCase() || null;
+    if (email && !validEmail(email)) throw badRequest('Sprawdź adres e-mail.');
     if (b.birthday && !/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(b.birthday)) throw badRequest('Data urodzin w formacie MM-DD.');
     if (!b.consents?.terms) throw badRequest('Aby korzystać z aplikacji, zaakceptuj regulamin.');
     tx(db, () => {
       const prefs: UserPrefs = { ...prefsOf(u), goal: b.goal?.slice(0, 120), timePrefs: b.timePrefs?.slice(0, 5), classFit: cleanFit(b.classFit) ?? prefsOf(u).classFit };
-      db.prepare('UPDATE users SET name = COALESCE(?, name), birthday = COALESCE(?, birthday), prefs_json = ?, onboarded_at = ? WHERE id = ?').run(b.name?.trim() ?? null, b.birthday ?? null, JSON.stringify(prefs), nowIso(), u.id);
-      for (const [kind, granted] of Object.entries(b.consents ?? {})) setConsent(u.id, kind, granted, kind === 'marketing' ? (b.studioId ?? '') : '');
+      db.prepare('UPDATE users SET name = COALESCE(?, name), email = COALESCE(?, email), birthday = COALESCE(?, birthday), prefs_json = ?, onboarded_at = ? WHERE id = ?').run(
+        b.name?.trim() ?? null,
+        email,
+        b.birthday ?? null,
+        JSON.stringify(prefs),
+        nowIso(),
+        u.id,
+      );
+      for (const [kind, granted] of Object.entries(b.consents ?? {})) setConsent(u.id, kind, granted, kind.startsWith('marketing') ? (b.studioId ?? '') : '');
       if (b.goal && b.studioId) db.prepare("UPDATE memberships SET goal = ? WHERE studio_id = ? AND user_id = ? AND role = 'client'").run(b.goal.slice(0, 120), b.studioId, u.id);
     });
     return { user: publicUser(reloadUser(u.id)) };

@@ -433,10 +433,10 @@ function Health() {
               {fmtDay(`${x.date}T12:00:00Z`)} · {[x.weight && `${x.weight} kg`, x.waist && `talia ${x.waist}`, x.hips && `biodra ${x.hips}`, x.wellbeing && `samopoczucie ${x.wellbeing}/5`].filter(Boolean).join(' · ')}
             </span>
             <span className="row">
-              <button className="link tiny" onClick={() => run(() => api(`/my/measurements/${x.id}`, { method: 'PATCH', body: { share: !x.shared } }).then(reload))}>
+              <button className="text-btn tiny" onClick={() => run(() => api(`/my/measurements/${x.id}`, { method: 'PATCH', body: { share: !x.shared } }).then(reload))}>
                 {x.shared ? 'udostępnione' : 'udostępnij trenerce'}
               </button>
-              <button className="link tiny" onClick={() => run(() => api(`/my/measurements/${x.id}`, { method: 'DELETE' }).then(reload))}>
+              <button className="text-btn tiny" onClick={() => run(() => api(`/my/measurements/${x.id}`, { method: 'DELETE' }).then(reload))}>
                 usuń
               </button>
             </span>
@@ -482,10 +482,10 @@ function Health() {
               {data.photos?.map((ph) => (
                 <div key={ph.id} className="stack gap-1">
                   <AuthImg src={ph.url} alt={`Zdjęcie z ${ph.taken_on}`} style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', borderRadius: 12 }} />
-                  <button className="link tiny" onClick={() => run(() => api(`/my/photos/${ph.id}`, { method: 'PATCH', body: { share: !ph.shared } }).then(reload))}>
+                  <button className="text-btn tiny" onClick={() => run(() => api(`/my/photos/${ph.id}`, { method: 'PATCH', body: { share: !ph.shared } }).then(reload))}>
                     {ph.shared ? 'widzi trenerka' : 'tylko ja'}
                   </button>
-                  <button className="link tiny" onClick={() => run(() => api(`/my/photos/${ph.id}`, { method: 'DELETE' }).then(reload), 'Usunięte')}>
+                  <button className="text-btn tiny" onClick={() => run(() => api(`/my/photos/${ph.id}`, { method: 'DELETE' }).then(reload), 'Usunięte')}>
                     usuń
                   </button>
                 </div>

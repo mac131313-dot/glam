@@ -99,7 +99,7 @@ export default function Clients({ roles }: { roles: Role[] }) {
 }
 
 function NewClient({ roles, onDone }: { roles: Role[]; onDone: (id: string) => void }) {
-  const [f, setF] = useState({ name: '', phone: '', goal: '', note: '' });
+  const [f, setF] = useState({ name: '', phone: '', email: '', goal: '', note: '' });
   const { run, busy } = useAction();
   const trainer = !can(roles, 'clients.view');
   return (
@@ -114,6 +114,9 @@ function NewClient({ roles, onDone }: { roles: Role[]; onDone: (id: string) => v
       </Field>
       <Field label="Telefon">
         <input className="input" inputMode="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="Np. 600 100 200" />
+      </Field>
+      <Field label="E-mail (opcjonalnie)" hint="Klientka zobaczy go w aplikacji przy pierwszym logowaniu i tylko potwierdzi.">
+        <input className="input" type="email" inputMode="email" autoComplete="off" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="Np. karolina@poczta.pl" />
       </Field>
       <Field label="Cel (opcjonalnie)">
         <input className="input" value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })} placeholder="Np. Mocniejsze plecy i lepsza postawa" />

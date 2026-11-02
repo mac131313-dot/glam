@@ -49,8 +49,8 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
   const run = (sql: string, ...p: (string | number | null)[]) => db.prepare(sql).run(...p);
 
   run(
-    `INSERT INTO studios (id, name, slug, invite_code, tagline, accent, look_json, logo, phone, policy_json, settings_json, guest_pass_price, welcome_approval, plan_id, status, catalog_visible, regulations, created_at)
-     VALUES (?, 'SS&G', 'ssg', 'SSG2026', 'Pilates reformer, zajęcia grupowe i siłownia', '#b9cfe0', ?, 'S', '+48 530 333 554', ?, ?, 8000, 0, 'studio', 'active', 1, ?, ?)`,
+    `INSERT INTO studios (id, name, slug, invite_code, tagline, accent, look_json, logo, phone, city, address, policy_json, settings_json, guest_pass_price, welcome_approval, plan_id, status, catalog_visible, regulations, created_at)
+     VALUES (?, 'SS&G', 'ssg', 'SSG2026', 'Pilates reformer, zajęcia grupowe i siłownia', '#b9cfe0', ?, 'S', '+48 533 585 544', 'Rzeszów', 'Geodetów 3, 35-328 Rzeszów', ?, ?, 8000, 0, 'studio', 'active', 1, ?, ?)`,
     S,
     JSON.stringify({ palette: 'sand', fonts: { display: 'playfair', head: 'urbanist', body: 'jakarta', label: 'urbanist' }, softness: 'softer', watermark: '/brand/ssg-watermark.svg' }),
     JSON.stringify({ opensDaysAhead: 14, closesMinutesBefore: 120, cancelMinutesBefore: 120, waitlist: true }),
@@ -68,7 +68,7 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
             { weekday: 6, from: '08:30', to: '11:15' },
           ],
         },
-        autoReply: 'Dzięki za wiadomość! Recepcja odpisze, gdy tylko będzie w studiu. W razie pytań: +48 530 333 554.',
+        autoReply: 'Dzięki za wiadomość! Recepcja odpisze, gdy tylko będzie w studiu. W razie pytań: +48 533 585 544.',
       },
       guestPass: { validityDays: 60, variants: [{ id: 'single', label: 'Jedne zajęcia grupowe', priceGrosze: 8000, entries: 1, classTypeIds: ['ss_split', 'ss_aerial_stretch', 'ss_barre_glow', 'ss_aerial_pilates', 'ss_girly', 'ss_burn', 'ss_yoga_stretch'] }] },
     }),
@@ -337,6 +337,22 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
     iso(zonedToUtc(today, '17:00', studio.timezone)),
   );
 
+  // ——— Kogo dziś przywitać (Start recepcji): Magdalena pierwszy raz w studiu, Karolina ma dziś urodziny ———
+  // Obie na ostatnich dzisiejszych zajęciach, żeby były „dalej dziś” niezależnie od godziny wgrania danych.
+  run('UPDATE users SET birthday = ? WHERE id = ?', today.slice(5), karolina.id);
+  const lastToday = scope.get<{ id: string }>(
+    "SELECT id FROM class_sessions WHERE studio_id = $studio AND status = 'scheduled' AND starts_at > $now AND starts_at < $to ORDER BY starts_at DESC LIMIT 1",
+    { now: iso(now), to: zonedToUtc(today, '23:59', studio.timezone).toISOString() },
+  );
+  if (lastToday)
+    for (const [userId, passId] of [[magdalena, buy(S, magdalena, 'ss_single', 0)], [karolina.id, karolina.passId]] as const) {
+      scope.run(
+        "INSERT INTO bookings (id, studio_id, session_id, user_id, pass_id, pool_id, status, created_at, updated_at) VALUES ($id, $studio, $s, $u, $p, 'main', 'booked', $t, $t)",
+        { id: crypto.randomUUID(), s: lastToday.id, u: userId, p: passId, t: iso(now) },
+      );
+      consumeEntry(scope, loadPass(scope, passId)!, 'main');
+    }
+
   // ——— Grupy (Razem → Grupy): dwie wokół zajęć studia, każda z trenerką-opiekunką i rozmową na czacie ———
   const group = (id: string, name: string, description: string, trainer: string, members: string[], chat: [string, string, number][]) => {
     run('INSERT INTO groups (id, studio_id, name, description, approval, trainer_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)', id, S, name, description, trainer, iso(new Date(now.getTime() - 20 * DAY)));
@@ -417,6 +433,17 @@ export function seedSsg(db: Db, now: Date, { user, member, product, buy }: Helpe
   shopItem('ss_sp_socks', 'accessory', 'Skarpety antypoślizgowe', 4900, 'Do pilatesu, reformerów i stretchingu.', 1);
   shopItem('ss_sp_matcha', 'drink', 'Glow&Grow Coco Matcha', 3900, 'Nasz limitowany napój z matchą od Moshi Matcha.', 2);
   shopItem('ss_sp_carpatree', 'apparel', 'Strój Carpatree – zestaw', 13900, 'Komplet do treningu marki Carpatree.', 3);
+  // Bar po treningu – pozycje demo jak w barze studia demo (ceny przykładowe, do zmiany w panelu). Strona WWW → Menu
+  // pokazuje napoje baru, dopóki studio nie wpisze własnych pozycji w edytorze strony.
+  const barItem = (id: string, name: string, price: number, desc: string, nutrition: Record<string, unknown>, sort: number) =>
+    run(
+      "INSERT INTO shop_products (id, studio_id, category, name, description, price_grosze, status, variants_json, nutrition_json, reward_eligible, created_at) VALUES (?, ?, 'drink', ?, ?, ?, 'available', ?, ?, 0, ?)",
+      id, S, name, desc, price, JSON.stringify([{ id: 'one', stock: null }]), JSON.stringify(nutrition), iso(new Date(now.getTime() + sort * 1000)),
+    );
+  barItem('ss_bar_shake', 'Shake białkowy wanilia–banan', 1900, 'Białko serwatkowe, banan, mleko owsiane, szczypta cynamonu.', { serving: '400 ml', kcal: 260, protein: 30, carbs: 24, sugar: 14, fat: 4 }, 4);
+  barItem('ss_bar_latte', 'Matcha latte', 1600, 'Ceremonialna matcha na mleku owsianym, bez cukru.', { serving: '300 ml', kcal: 120, protein: 3, carbs: 18, sugar: 9, fat: 4, caffeine: 70 }, 5);
+  barItem('ss_bar_smoothie', 'Zielone smoothie', 1800, 'Szpinak, ananas, jabłko, imbir, limonka.', { serving: '350 ml', kcal: 180, protein: 5, carbs: 34, sugar: 22, fiber: 6 }, 6);
+  barItem('ss_bar_water', 'Woda z elektrolitami', 800, 'Schłodzona, z cytryną i solą himalajską.', { serving: '500 ml' }, 7);
 
   seedHalloween(db, now, owner, T.weronika);
 }

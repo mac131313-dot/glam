@@ -1,0 +1,51 @@
+/* Mailing (staff/Mailing.tsx) – układ jak w aplikacji mobilnej: kafelki, karta automatu, podgląd skrzynki, pływający przycisk. */
+.mailing { max-width: 560px; }
+
+.mail-note { margin: 0; padding: 12px 16px; border-radius: var(--radius-sm); background: var(--soft); }
+
+.mail-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mail-stat { display: flex; flex-direction: column; gap: 2px; padding: 14px 12px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.mail-stat b { font-family: var(--font-head); font-size: 1.5rem; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.mail-stat span { font-size: var(--text-xs); color: var(--muted); }
+.mail-stat.is-strong { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.mail-stat.is-strong span { color: color-mix(in srgb, var(--accent-ink) 75%, transparent); }
+
+.mail-auto { display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: var(--radius); background: var(--soft); }
+.mail-auto-head { display: flex; align-items: center; gap: 12px; }
+.mail-auto-icon { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); flex: none; }
+.mail-auto-title { display: block; font-family: var(--font-head); font-weight: 600; }
+
+.mail-preview { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); box-shadow: 0 6px 24px -14px rgb(0 0 0 / 0.25); }
+.mail-preview-head { display: flex; align-items: center; gap: 10px; }
+.mail-preview-head .grow { display: flex; flex-direction: column; min-width: 0; }
+.mail-avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-family: var(--font-display); font-style: italic; font-size: 1.1rem; flex: none; }
+.mail-from { font-weight: 600; font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-subject { margin: 4px 0 0; font-size: 1.02rem; line-height: 1.3; }
+.mail-body { white-space: pre-line; font-size: var(--text-sm); line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
+.mail-preview.is-compact .mail-body { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); }
+.mail-footer { margin: 6px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: var(--text-xs); color: var(--muted); }
+
+.mail-history { list-style: none; margin: 0; padding: 0; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid color-mix(in srgb, var(--line) 60%, transparent); overflow: hidden; }
+.mail-history li + li { border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.mail-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mail-row:active { background: var(--soft); }
+.mail-row-icon { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--soft); flex: none; }
+.mail-row-icon.is-auto { background: var(--accent); color: var(--accent-ink); }
+.mail-row-text { display: flex; flex-direction: column; min-width: 0; }
+.mail-row-subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.mailing textarea.mail-textarea.input.input { min-height: 180px; resize: vertical; line-height: 1.5; }
+.mail-vars { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -8px; }
+.mail-var { border: 1px dashed var(--line); background: transparent; color: var(--ink); border-radius: var(--radius-pill); padding: 6px 12px; font-family: var(--font-label); font-size: var(--text-xs); cursor: pointer; }
+.mail-var:active { background: var(--soft); }
+.mail-var-legend { display: grid; gap: 4px; margin: 0; font-size: var(--text-xs); color: var(--muted); }
+.mail-var-legend div { display: flex; gap: 8px; }
+.mail-var-legend dt { font-family: var(--font-label); color: var(--ink); min-width: 92px; }
+.mail-var-legend dd { margin: 0; }
+
+.mail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* Pływający przycisk nad paskiem zakładek (w aplikacji recepcji) albo przy dolnej krawędzi (panel). */
+.mail-fab { position: sticky; bottom: 24px; align-self: flex-end; z-index: 5; display: inline-flex; align-items: center; gap: 8px; min-height: 54px; padding: 0 22px; border: 0; border-radius: var(--radius-pill); background: var(--accent); color: var(--accent-ink); font-family: var(--font-head); font-weight: 500; font-size: var(--text-base); cursor: pointer; box-shadow: 0 10px 30px -10px rgb(0 0 0 / 0.45); transition: transform 0.2s var(--ease); }
+.mail-fab:active { transform: scale(0.96); }
+.phone .mail-fab { bottom: calc(104px + env(safe-area-inset-bottom)); }
