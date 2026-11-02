@@ -35,6 +35,13 @@
       "autoPort": true
     },
     {
+      "name": "www",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "const h=require('http'),f=require('fs'),p=require('path'),r=p.resolve('www'),t={'.html':'text/html; charset=utf-8','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml'};h.createServer((q,s)=>{let u=decodeURIComponent(q.url.split('?')[0]);if(u.endsWith('/'))u+='index.html';const fp=p.join(r,u);if(!fp.startsWith(r))return s.writeHead(403).end();f.readFile(fp,(e,d)=>{if(e)return s.writeHead(404).end('404');s.writeHead(200,{'Content-Type':t[p.extname(fp)]||'application/octet-stream'}).end(d)})}).listen(4321,()=>console.log('www on http://localhost:4321'))"],
+      "port": 4321,
+      "autoPort": false
+    },
+    {
       "name": "web-win",
       "runtimeExecutable": "node",
       "runtimeArgs": ["-e", "process.env.API_PORT='3002'; require('child_process').spawn('npm', ['run', 'dev', '-w', '@glam/web'], { stdio: 'inherit', shell: true }).on('exit', (c) => process.exit(c ?? 0))"],
