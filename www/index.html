@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>GLAM – aplikacja i panel dla studia ruchu i wellness</title>
-    <meta name="description" content="GLAM to jeden system dla studia pilatesu, jogi i stretchingu: aplikacja z Twoim logo dla klientek, panel do grafiku, karnetów i marketingu, recepcja z kodem QR i strona WWW studia." />
+    <meta name="description" content="GLAM to jeden system dla studia pilatesu, jogi i stretchingu: aplikacja z Twoim logo dla klientek, panel do grafiku, karnetów i marketingu, recepcja z kodem QR, wydarzenia prywatne i strona WWW studia." />
     <meta name="theme-color" content="#f3f0ea" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="GLAM – studio, do którego się wraca" />
@@ -25,8 +25,9 @@
         <a class="wordmark" href="#" aria-label="GLAM, strona główna">glam</a>
         <nav class="nav-links" aria-label="Główna nawigacja">
           <a href="#funkcje">Funkcje</a>
+          <a href="#wydarzenia">Wydarzenia</a>
+          <a href="#relacje">Relacje</a>
           <a href="#dlaczego">Dlaczego GLAM</a>
-          <a href="#start">Jak zacząć</a>
           <a href="#pytania">Pytania</a>
         </nav>
         <a class="btn sm" href="#kontakt">Umów pokaz</a>
@@ -160,6 +161,7 @@
             <h3>Recepcja i wejście</h3>
             <ul class="list">
               <li><b>Kod QR co minutę.</b> Zrzut ekranu wysłany koleżance szybko przestaje działać.</li>
+              <li><b>Inteligentne klamki.</b> Drzwi sali otwierają się z aplikacji, na tych samych zasadach co wejście.</li>
               <li><b>Działa offline.</b> Wejście nie zależy od internetu w sali.</li>
               <li><b>Kasa.</b> Karnety i wejściówki sprzedane na miejscu.</li>
               <li><b>Dzisiejsze zapisy</b> w jednym widoku i notatka ze zmiany.</li>
@@ -179,7 +181,7 @@
             <ul class="list">
               <li><b>Merch z logo studia.</b> Bluzy, maty i akcesoria z dostawą do domu.</li>
               <li><b>Kursy online.</b> Program trenerki w aplikacji, lekcja po lekcji.</li>
-              <li><b>Treningi do domu.</b> Trenerka nagrywa, Ty akceptujesz przed publikacją.</li>
+              <li><b>Treningi do domu.</b> Trenerka nagrywa, Ty akceptujesz. Klientka włączy je też na telewizorze.</li>
               <li><b>E-booki.</b> Poradniki i plany ćwiczeń do pobrania.</li>
               <li><b>Jedna kasa.</b> Te same metody płatności co przy karnetach, także BLIK i Przelewy24.</li>
             </ul>
@@ -226,6 +228,85 @@
                 <div class="b-card"><small>pon · 18:00</small><b>Barre flow</b></div>
               </div>
               <span class="b-btn">Kup karnet</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Wydarzenia prywatne: kreator w aplikacji klientki (packages/core/src/events.ts) -->
+      <section class="section wrap" id="wydarzenia">
+        <div class="head">
+          <p class="eyebrow">Wydarzenia</p>
+          <h2>Urodziny w studiu? <b>Klientka zorganizuje je sama.</b></h2>
+          <p class="lead">Kreator w aplikacji prowadzi od okazji do zaproszeń, a Ty wysyłasz ofertę i potwierdzasz termin.</p>
+        </div>
+        <div class="panel">
+          <div class="panel-copy">
+            <ul class="list">
+              <li><b>Sześć okazji.</b> Urodziny, babski wieczór, prezent-trening, rocznica, grupa z pracy i rodzinne zajęcia.</li>
+              <li><b>Tylko wolne terminy.</b> Kreator pokazuje godziny, w których sala i trenerka są wolne.</li>
+              <li><b>Cena z Twojego cennika.</b> Zaliczka w aplikacji albo płatność na miejscu.</li>
+              <li><b>Zaproszenia dla gości.</b> Link i kod QR, a w aplikacji widać, kto potwierdził.</li>
+              <li><b>Spotkania w studiu.</b> Ogłaszasz spotkanie z trenerką, a klientki dostają powiadomienie.</li>
+            </ul>
+          </div>
+          <div class="panel-visual" aria-hidden="true">
+            <div class="mock stack">
+              <div class="m-label">Moje wydarzenie</div>
+              <div class="m-head">Urodziny <b>Oli</b></div>
+              <div class="m-row"><span>sob 14.11 · 14:00</span><small>90 min</small></div>
+              <div class="m-row"><span>Reformer z Anią</span><small>sala reformerów</small></div>
+              <div class="m-row"><span>Goście</span><small>8 z 10 potwierdziło</small></div>
+              <div class="m-label top">Dodatki</div>
+              <div class="chips"><span class="chip on">playlista na życzenie</span><span class="chip">dekoracje</span><span class="chip on">poczęstunek</span></div>
+              <p class="note">Dane przykładowe</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Relacje: powitania, kartki, nagrody, muzyka, społeczność, ankiety -->
+      <section class="section wrap" id="relacje">
+        <div class="head">
+          <p class="eyebrow">Relacje</p>
+          <h2>Klientki wracają, <b>bo ktoś o nich pamięta.</b></h2>
+        </div>
+        <div class="grid">
+          <div class="item"><h3>Powitanie od trenerki</h3><p>Nowa klientka dostaje wiadomość podpisaną imieniem trenerki, także z krótkim wideo. Przed wysyłką ją akceptujesz.</p></div>
+          <div class="item"><h3>Odręczna kartka po miesiącu</h3><p>Kilka zdań od trenerki na papierze, bez szablonu. Panel pilnuje, komu jeszcze wysłać.</p></div>
+          <div class="item"><h3>Nagroda po 10. zajęciach</h3><p>Upominek czeka w „Mojej szafce” i do odbioru w recepcji. Odznaki i serie bez rankingów.</p></div>
+          <div class="item"><h3>Muzyka zajęć</h3><p>Playlisty studia ze Spotify i Apple Music przypięte do zajęć. Klientki proponują utwory.</p></div>
+          <div class="item"><h3>Wyzwania i grupy</h3><p>Wspólne cele i rozmowy w społeczności, do której należą tylko Twoje klientki.</p></div>
+          <div class="item"><h3>Ankieta „Co się stało?”</h3><p>Życzliwe pytanie do klientek, które przestały przychodzić. Do tego krótka ocena co 10. trening.</p></div>
+        </div>
+      </section>
+
+      <!-- Zespół: dzień trenerki, profil, kursy, karta klientki, analityka -->
+      <section class="section wrap" id="zespol">
+        <div class="head">
+          <p class="eyebrow">Zespół</p>
+          <h2>Trenerki prowadzą zajęcia, <b>GLAM pamięta resztę.</b></h2>
+        </div>
+        <div class="panel flip">
+          <div class="panel-copy">
+            <ul class="list">
+              <li><b>Dzień w telefonie.</b> Uczestniczki z celem i uwagami zdrowotnymi (za zgodą), check-in i lista oczekujących.</li>
+              <li><b>Profil z filmem.</b> Bio i film „poznajmy się”, a pod nim zapis na najbliższe zajęcia trenerki.</li>
+              <li><b>Własne kursy.</b> Szkic, test z kilkoma klientkami, Twoja akceptacja i publikacja.</li>
+              <li><b>Karta klientki.</b> Karnety, historia z ocenami, prywatny notatnik postępów i plan indywidualny.</li>
+              <li><b>Liczby, które coś mówią.</b> Retencja po 30, 60 i 90 dniach, uśpione klientki i ryzyko odejścia.</li>
+            </ul>
+          </div>
+          <div class="panel-visual" aria-hidden="true">
+            <div class="mock stack">
+              <div class="m-label">Dziś · 18:00 · Pilates reformer</div>
+              <div class="m-row"><span>Magda</span><small>cel: mocne plecy</small></div>
+              <div class="m-row"><span>Ola</span><small>pierwsze zajęcia</small></div>
+              <div class="m-row"><span>Kasia</span><small>uwaga: kolano</small></div>
+              <div class="m-row"><span>Ewa</span><small>lista oczekujących</small></div>
+              <div class="m-label top">Obecność</div>
+              <div class="chips"><span class="chip on">7 na sali</span><span class="chip">1 nieobecna</span></div>
+              <p class="note">Dane przykładowe</p>
             </div>
           </div>
         </div>
@@ -287,6 +368,14 @@
           <details>
             <summary>Czy trenerki muszą się uczyć nowego systemu?</summary>
             <p>Trenerka widzi tylko swój dzień, swoje grupy i wiadomości. Wszystko działa też na telefonie.</p>
+          </details>
+          <details>
+            <summary>Czy trenerki mogą sprzedawać własne kursy?</summary>
+            <p>Tak. Trenerka przygotowuje kurs i testuje go z kilkoma klientkami, a Ty akceptujesz go przed publikacją. Jej udział w sprzedaży ustawiasz w panelu.</p>
+          </details>
+          <details>
+            <summary>Skąd jest muzyka na zajęciach?</summary>
+            <p>Z Waszych playlist w Spotify i Apple Music. GLAM ich nie odtwarza, tylko przypina do zajęć, a klientki mogą proponować utwory.</p>
           </details>
         </div>
       </section>
