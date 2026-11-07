@@ -1,6 +1,6 @@
 // Sesja oddechu / medytacji prowadzona przez aplikację. Tempo wyznacza obraz zależny od rytmu: przy wyciszeniu
 // piwonia, która rozkwita na wdechu i mięknie na wydechu, przy skupieniu (rytm pudełkowy) kwadrat oddechu z kropką.
-// Bez cyfr, licznika i paska postępu – długość klientka wybrała na początku, w trakcie liczy się tylko oddech. Haptyka na początku każdej fazy i spokojny szum – oba do włączenia i wyłączenia w trakcie.
+// Na górze cienki pasek z odliczaniem do końca – dyskretny, żeby nie odciągał od oddechu. Haptyka na początku każdej fazy i spokojny szum – oba do włączenia i wyłączenia w trakcie.
 // Na końcu podziękowanie, rytuał tygodnia i myśl na dziś – zaproszenie, żeby wrócić jutro.
 import { useEffect, useRef, useState } from 'react';
 import { breathAt, patternById, promptAt, sessionById, visualFor, type BreathRitual } from '@glam/core';
@@ -143,11 +143,7 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
     setDone(false);
   };
 
-  if (done) return <Thanks ritual={ritual} onAgain={again} onClose={onClose} />;
-
-  const phase = pattern.phases[view.index];
-  const prompt = session ? promptAt(session, view.elapsed) : undefined;
-
+  // Hooki muszą być przed wczesnym returnem (Thanks), inaczej React gubi ich kolejność.
   // Po chwili bez dotyku przyciski cichną – zostaje kwiat i słowo. Dotknięcie ekranu albo pauza przywraca je od razu.
   const [still, setStill] = useState(false);
   const wake = () => setStill(false);
@@ -156,6 +152,11 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
     const t = window.setTimeout(() => setStill(true), 4000);
     return () => window.clearTimeout(t);
   }, [still, paused]);
+
+  if (done) return <Thanks ritual={ritual} onAgain={again} onClose={onClose} />;
+
+  const phase = pattern.phases[view.index];
+  const prompt = session ? promptAt(session, view.elapsed) : undefined;
 
   const word = (
     <div key={paused ? 'p' : view.index} className="breath-word" aria-live="polite">
@@ -167,7 +168,8 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
     <div className={`player ${visual === 'square' ? 'player-focus' : 'player-photo'}${still && !paused ? ' is-still' : ''}`} onPointerDown={wake} onKeyDown={wake} role="dialog" aria-modal="true" aria-label={title}>
       {/* Wyciszenie: sama piwonia, bez kół – kwiat jest rytmem. Łodyga gaśnie nad napisami (styles.css). */}
       {visual === 'bloom' && <BreathBloom variant="full" level={() => level.current} hold={!paused && phase.kind === 'hold'} className={paused ? 'is-paused' : ''} />}
-      <header className="row" style={{ justifyContent: 'flex-end' }}>
+      <header className="row breath-top">
+        <SessionTimer left={Math.max(0, totalSec - view.elapsed)} total={totalSec} paused={paused} />
         <button className="icon-btn glass-icon" onClick={onClose} aria-label="Zakończ sesję">
           <Icon name="close" />
         </button>
@@ -206,6 +208,19 @@ export function BreathPlayer({ request, onClose }: { request: BreathRequest; onC
           </button>
         </div>
       </footer>
+    </div>
+  );
+}
+
+/** Odliczanie do końca sesji: cienki pasek, który się kurczy, i czas obok. */
+function SessionTimer({ left, total, paused }: { left: number; total: number; paused: boolean }) {
+  const label = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  return (
+    <div className={`session-timer${paused ? ' is-paused' : ''}`} role="timer" aria-label={`Do końca ${label}`}>
+      <div className="session-timer-track">
+        <div className="session-timer-fill" style={{ transform: `scaleX(${total ? left / total : 0})` }} />
+      </div>
+      <span className="session-timer-time">{label}</span>
     </div>
   );
 }
